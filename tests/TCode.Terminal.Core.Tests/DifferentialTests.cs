@@ -13,10 +13,10 @@ public sealed class DifferentialTests
     private static readonly string[] Fragments =
     [
         "hello", "世界", "\x1b[31m", "\x1b[1;4;38;2;10;200;30m", "\x1b[0m", "\r\n", "\x1b[2J", "\x1b[H", "\x1b[5;3H", "\x1b[K", "\x1b[1K",
-        "\x1b[2K", "\x1b[3L", "\x1b[2M", "\x1b[4@", "\x1b[2P", "\x1b[3X", "\x1b[2;5r", "\x1b[r", "\x1bM", "\x1bD", "\x1b[?1049h", "\x1b[?1049l",
+        "\x1b[2K", "\x1b[3L", "\x1b[2M", "\x1b[4@", "\x1b[2P", "\x1b[3X", "\x1b[2;5r", "\x1b[r", "\x1bM", "\u001bD", "\x1b[?1049h", "\x1b[?1049l",
         "\x1b[44m   \x1b[49m", "😀", "é", "\x1b[?2027h", "\x1b[?2027l", "\x1b[3S", "\x1b[2T", "\t", "\b", "\x1b[?7l", "\x1b[?7h",
         "abcdefghijklmnopqrstuvwxyz0123456789", "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\", "\x1b[7m inv \x1b[27m", "\x1b[?25l", "\x1b[?25h",
-        "\x1b]133;A\x07$ ", "\x1b]133;C\x07", "\x1b]133;D;0\x07", "\x1b[3 q", "\x1b#8", "\x1b[10;20H*", "\x1bc",
+        "\x1b]133;A\x07$ ", "\x1b]133;C\x07", "\x1b]133;D;0\x07", "\x1b[3 q", "\x1b#8", "\x1b[10;20H*", "\u001bc",
     ];
 
     [Theory]
@@ -82,10 +82,16 @@ public sealed class DifferentialTests
                 var same = TCell.Codepoint(ec) == TCell.Codepoint(ac) && TCell.Width(ec) == TCell.Width(ac) &&
                            TCell.Semantic(ec) == TCell.Semantic(ac) && TCell.Hyperlink(ec) == TCell.Hyperlink(ac) &&
                            e.Styles[TCell.StyleIndex(ec)] == a.Styles[TCell.StyleIndex(ac)] && e.TextAt(x) == a.TextAt(x);
-                Assert.True(same, $"{where}: cell ({x},{y}) expected '{e.TextAt(x)}' {e.Styles[TCell.StyleIndex(ec)]}, got '{a.TextAt(x)}' {a.Styles[TCell.StyleIndex(ac)]}\n" +
+                Assert.True(same, $"{where}: cell ({x},{y}) expected {Describe(e, x)}, got {Describe(a, x)}\n" +
                                   $"expected row: {RowText(e)}\nactual row:   {RowText(a)}");
             }
         }
+    }
+
+    private static string Describe(RowSnapshot row, int x)
+    {
+        var c = row.Cells[x];
+        return $"'{row.TextAt(x)}' width={TCell.Width(c)} semantic={TCell.Semantic(c)} link={TCell.Hyperlink(c)} style={row.Styles[TCell.StyleIndex(c)]}";
     }
 
     private static string RowText(RowSnapshot row) => string.Concat(Enumerable.Range(0, row.Cells.Length).Select(x => row.TextAt(x) ?? " "));

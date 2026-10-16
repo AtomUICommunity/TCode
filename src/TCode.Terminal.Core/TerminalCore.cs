@@ -8,21 +8,31 @@ namespace TCode.Terminal.Core;
 /// <summary>
 /// 一个终端状态机（libghostty-vt）。非线程安全：只能由其所属的 actor 线程调用
 /// （docs/terminal/01-architecture.md §6.1、02-core-ghostty.md §6、§14）。
-/// M0：只实现写入、resize、模式查询、纯文本导出与快照往返；其余门面 API 在 M1 补齐。
+/// 镜像核心（pty host）与 UI 侧核心使用同一个类型，区别只在传入的 <see cref="ITerminalEffects"/>（02 §7.2）。
 /// </summary>
 public sealed unsafe class TerminalCore : IDisposable
 {
     private nint _terminal;
     private GCHandle<TerminalCore> _self;
     private readonly ITerminalEffects _effects;
+    private readonly CommandTracker _commands;
+    private TerminalReplyProfile _replies;
+    private ColorScheme _scheme;
+    private TerminalSize _size;
     private bool _inCallback;
     private FrameCapturer? _capturer;
+    private nint _xtversion;
+    private nint _terminfoName;
 
-    private TerminalCore(nint terminal, ITerminalEffects effects)
+    private TerminalCore(nint terminal, ITerminalEffects effects, in TerminalCoreOptions options)
     {
         _terminal = terminal;
         _effects = effects;
+        _replies = options.Replies;
+        _scheme = options.Replies.Scheme;
+        _size = options.Size;
         _self = new GCHandle<TerminalCore>(this);
+        _commands = new CommandTracker(this);
         InstallCallbacks();
     }
 
@@ -31,8 +41,8 @@ public sealed unsafe class TerminalCore : IDisposable
         GhosttyRuntime.EnsureInitialized();
         nint terminal;
         Check(GhosttyNative.TerminalNew(null, &terminal, checked((ushort)options.Size.Columns), checked((ushort)options.Size.Rows)));
-        var core = new TerminalCore(terminal, effects ?? NullTerminalEffects.Instance);
-        core.Configure(options);
+        var core = new TerminalCore(terminal, effects ?? NullTerminalEffects.Instance, options);
+        core.Configure(options, applyModeDefaults: true);
         return core;
     }
 
@@ -58,9 +68,9 @@ public sealed unsafe class TerminalCore : IDisposable
                 GhosttyNative.SnapshotDecoderFree(decoder);
             }
         }
-        // 快照恢复终端状态（含回滚上限等），不恢复宿主回调与只属于本进程的选项，所以重新配置。
-        var core = new TerminalCore(terminal, effects ?? NullTerminalEffects.Instance);
-        core.Configure(options);
+        // 快照恢复终端状态（含模式与回滚上限），不恢复宿主回调与只属于本进程的选项，所以重新配置；模式默认值已在快照里
+        var core = new TerminalCore(terminal, effects ?? NullTerminalEffects.Instance, options);
+        core.Configure(options, applyModeDefaults: false);
         return core;
     }
 
@@ -71,7 +81,7 @@ public sealed unsafe class TerminalCore : IDisposable
             ushort cols, rows;
             Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Cols, &cols));
             Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Rows, &rows));
-            return new TerminalSize(cols, rows, 0, 0);
+            return new TerminalSize(cols, rows, _size.CellWidth, _size.CellHeight);
         }
     }
 
@@ -97,16 +107,25 @@ public sealed unsafe class TerminalCore : IDisposable
         }
     }
 
-    /// <summary>OSC 0/2 设置的标题；没有时为空字符串。</summary>
-    public string Title
+    /// <summary>光标是否在 shell 提示符或输入区（依赖 OSC 133；备用屏时为 false）。关闭确认用它判断"空闲"。</summary>
+    public bool CursorAtPrompt
     {
         get
         {
-            GhosttyString title;
-            var r = GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Title, &title);
-            return r == GhosttyResult.NoValue || title.Len == 0 ? string.Empty : Decode(title);
+            bool atPrompt;
+            Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.CursorAtPrompt, &atPrompt));
+            return atPrompt;
         }
     }
+
+    /// <summary>OSC 0/2 设置的标题；没有时为空字符串。</summary>
+    public string Title => ReadString(GhosttyTerminalData.Title);
+
+    /// <summary>OSC 7 / 9;9 / 1337 设置的工作目录原文（file:// URI 或路径，不可信输入）。</summary>
+    public string WorkingDirectoryRaw => ReadString(GhosttyTerminalData.Pwd);
+
+    /// <summary>OSC 133 / 633 命令记录（镜像核心）。</summary>
+    public CommandTracker Commands => _commands;
 
     public void Write(ReadOnlySpan<byte> data)
     {
@@ -120,6 +139,7 @@ public sealed unsafe class TerminalCore : IDisposable
     public void Resize(TerminalSize size)
     {
         EnsureNotInCallback();
+        _size = size;
         Check(GhosttyNative.TerminalResize(Handle, checked((ushort)size.Columns), checked((ushort)size.Rows),
             (uint)size.CellWidth, (uint)size.CellHeight));
     }
@@ -128,6 +148,71 @@ public sealed unsafe class TerminalCore : IDisposable
     {
         EnsureNotInCallback();
         GhosttyNative.TerminalReset(Handle);
+    }
+
+    /// <summary>
+    /// ⌘K 清屏（04 的 Clear 记录，02 §6.6）：C API 没有清屏函数，注入等价序列。只能在解析器处于 ground 时调用，
+    /// 否则会切断程序的半截序列；注入的字节不经过 PTY，也没有应答。
+    /// </summary>
+    public void Clear(ClearTarget target)
+    {
+        EnsureNotInCallback();
+        if (!IsParserGround)
+        {
+            throw new InvalidOperationException("Clear must be applied at a parser ground boundary.");
+        }
+        var bytes = target switch
+        {
+            ClearTarget.Scrollback => "\x1b[3J"u8,
+            ClearTarget.Screen => "\x1b[H\x1b[2J"u8,
+            _ => "\x1b[H\x1b[2J\x1b[3J"u8,
+        };
+        fixed (byte* p = bytes)
+        {
+            GhosttyNative.TerminalVtWrite(Handle, p, (nuint)bytes.Length);
+        }
+    }
+
+    /// <summary>默认颜色与明暗（日志中的 SetColors 记录，01 §3.2 规则 5）。OSC 4/10/11 查询与 996 / 2031 以此作答。</summary>
+    public void SetDefaultColors(TerminalPalette palette, ColorScheme scheme)
+    {
+        EnsureNotInCallback();
+        _scheme = scheme;
+        var fg = new GhosttyColorRgb { R = palette.Foreground.R, G = palette.Foreground.G, B = palette.Foreground.B };
+        var bg = new GhosttyColorRgb { R = palette.Background.R, G = palette.Background.G, B = palette.Background.B };
+        Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.ColorForeground, &fg));
+        Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.ColorBackground, &bg));
+        if (palette.Cursor is { } c)
+        {
+            var cursor = new GhosttyColorRgb { R = c.R, G = c.G, B = c.B };
+            Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.ColorCursor, &cursor));
+        }
+        else
+        {
+            Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.ColorCursor, null));
+        }
+        if (palette.Colors.Length != 256)
+        {
+            throw new ArgumentException("The palette must have 256 colors.", nameof(palette));
+        }
+        var colors = stackalloc GhosttyColorRgb[256];
+        for (var i = 0; i < 256; i++)
+        {
+            colors[i] = new GhosttyColorRgb { R = palette.Colors[i].R, G = palette.Colors[i].G, B = palette.Colors[i].B };
+        }
+        Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.ColorPalette, colors));
+    }
+
+    /// <summary>
+    /// 补发一次延后的剪贴板读取应答（O3，01 §3.2 规则 6）：<paramref name="data"/> 为 null 表示拒绝（不应答）。
+    /// 应答直接经 <see cref="ITerminalEffects.WriteToPty"/> 写回，使用与请求相同的终止符。
+    /// </summary>
+    public void CompleteClipboardRead(in PendingClipboardRead request, ReadOnlySpan<byte> data)
+    {
+        EnsureNotInCallback();
+        var kind = request.Target switch { ClipboardTarget.Selection => 's', ClipboardTarget.Primary => 'p', _ => 'c' };
+        var reply = $"\x1b]52;{kind};{Convert.ToBase64String(data)}{(request.BelTerminator ? "\a" : "\x1b\\")}";
+        _effects.WriteToPty(Encoding.ASCII.GetBytes(reply));
     }
 
     /// <summary>DEC 私有模式（<paramref name="ansi"/> 为 false）或 ANSI 模式的当前值；未知模式返回 false。</summary>
@@ -155,18 +240,7 @@ public sealed unsafe class TerminalCore : IDisposable
             byte* output;
             nuint length;
             Check(GhosttyNative.FormatterFormatAlloc(formatter, null, &output, &length));
-            if (output == null || length == 0)
-            {
-                return string.Empty;  // 空屏时库返回空指针
-            }
-            try
-            {
-                return Encoding.UTF8.GetString(output, checked((int)length));
-            }
-            finally
-            {
-                GhosttyNative.Free(null, output, length);
-            }
+            return TakeString(output, length);
         }
         finally
         {
@@ -217,15 +291,18 @@ public sealed unsafe class TerminalCore : IDisposable
             return;
         }
         // 子对象先于终端释放（02 §4.6）
+        _commands.Dispose();
         _capturer?.Dispose();
         _capturer = null;
         // 先释放终端，再释放 GCHandle：否则最后一次回调可能拿到已释放的句柄（02 §4.5）。
         GhosttyNative.TerminalFree(_terminal);
         _terminal = 0;
         _self.Dispose();
+        FreeNative(ref _xtversion);
+        FreeNative(ref _terminfoName);
     }
 
-    private nint Handle
+    internal nint Handle
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
@@ -235,11 +312,13 @@ public sealed unsafe class TerminalCore : IDisposable
         }
     }
 
-    private void Configure(in TerminalCoreOptions options)
+    private void Configure(in TerminalCoreOptions options, bool applyModeDefaults)
     {
         // Ghostty 自有的字形协议注册的字形不进快照，开启会导致重连后两份核心不一致（02 §3）。
-        bool glyphProtocol = false;
-        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.GlyphProtocol, &glyphProtocol));
+        bool off = false;
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.GlyphProtocol, &off));
+        // 标题回报会把程序可控的字符串注入输入流（10 §6.2），保持关闭
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.TitleReport, &off));
         // 库默认的回滚字节上限很小，必须显式设置（research/04 §0.8）。
         nuint maxBytes = (nuint)options.ScrollbackMaxBytes;
         Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.ScrollbackMaxBytes, &maxBytes));
@@ -256,17 +335,56 @@ public sealed unsafe class TerminalCore : IDisposable
         // 跟踪未完成的转义序列 / UTF-8，快照因此可以在任意字节位置编码（02 §9）
         nuint continuation = (nuint)options.ContinuationMaxBytes;
         Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.ContinuationMaxBytes, &continuation));
+        // OSC 633 等未知序列交给我们（02 §12.3）
+        nuint unknownMax = 4096;
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.UnknownMaxBytes, &unknownMax));
+
+        _terminfoName = AllocString(options.TerminfoName);
+        var tn = new GhosttyString { Ptr = (byte*)_terminfoName, Len = (nuint)Encoding.UTF8.GetByteCount(options.TerminfoName) };
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.TerminfoName, &tn));
+        _xtversion = AllocString(options.Replies.XtVersion);
+
+        var cursorStyle = (GhosttyTerminalCursorStyle)(int)options.DefaultCursorStyle;
+        var blink = options.DefaultCursorBlink;
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.DefaultCursorStyle, &cursorStyle));
+        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.DefaultCursorBlink, &blink));
+
+        if (applyModeDefaults)
+        {
+            // 宽度策略：mode 2027 的复位默认值（RIS 后也保持）；当前值同步设置
+            var grapheme = new GhosttyTerminalModeConfig { Mode = GhosttyHelpers.ModeNew(2027, false), Value = options.Width == WidthPolicy.Grapheme };
+            Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.ModeDefault, &grapheme));
+            Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.Mode, &grapheme));
+        }
     }
 
     private void InstallCallbacks()
     {
-        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.Userdata, (void*)GCHandle<TerminalCore>.ToIntPtr(_self)));
-        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.WritePty,
-            (delegate* unmanaged[Cdecl]<nint, nint, byte*, nuint, void>)&Callbacks.WritePty));
-        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.Bell,
-            (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.Bell));
-        Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.TitleChanged,
-            (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.TitleChanged));
+        var t = _terminal;
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Userdata, (void*)GCHandle<TerminalCore>.ToIntPtr(_self)));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.WritePty, (delegate* unmanaged[Cdecl]<nint, nint, byte*, nuint, void>)&Callbacks.WritePty));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Bell, (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.Bell));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.TitleChanged, (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.TitleChanged));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.PwdChanged, (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.PwdChanged));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Xtversion, (delegate* unmanaged[Cdecl]<nint, nint, GhosttyString>)&Callbacks.XtVersion));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.DeviceAttributes,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyDeviceAttributes*, byte>)&Callbacks.DeviceAttributes));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Size, (delegate* unmanaged[Cdecl]<nint, nint, GhosttySizeReportSize*, byte>)&Callbacks.SizeReport));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.ColorScheme, (delegate* unmanaged[Cdecl]<nint, nint, GhosttyColorScheme*, byte>)&Callbacks.Scheme));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.ClipboardWrite,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyClipboardWrite*, void>)&Callbacks.ClipboardWrite));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.ClipboardRead,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyClipboardRead*, void>)&Callbacks.ClipboardRead));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.DesktopNotification,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalDesktopNotification*, void>)&Callbacks.Notification));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.ProgressReport,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalProgressReport*, void>)&Callbacks.Progress));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.SemanticPrompt,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalSemanticPrompt*, void>)&Callbacks.SemanticPrompt));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.RenderHold, (delegate* unmanaged[Cdecl]<nint, nint, byte, void>)&Callbacks.RenderHold));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Reset, (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.Reset));
+        Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.UnknownSequence,
+            (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalUnknownSequence*, void>)&Callbacks.UnknownSequence));
     }
 
     private void EnsureNotInCallback()
@@ -277,7 +395,48 @@ public sealed unsafe class TerminalCore : IDisposable
         }
     }
 
-    private static string Decode(GhosttyString s) => Encoding.UTF8.GetString(s.Ptr, checked((int)s.Len));
+    private string ReadString(GhosttyTerminalData data)
+    {
+        GhosttyString s;
+        var r = GhosttyNative.TerminalGet(Handle, data, &s);
+        return r != GhosttyResult.Success || s.Len == 0 ? string.Empty : Encoding.UTF8.GetString(s.Ptr, checked((int)s.Len));
+    }
+
+    internal static string Decode(in GhosttyString s) => s.Len == 0 || s.Ptr == null ? string.Empty : Encoding.UTF8.GetString(s.Ptr, checked((int)s.Len));
+
+    internal static string TakeString(byte* output, nuint length)
+    {
+        if (output == null || length == 0)
+        {
+            return string.Empty;  // 空结果时库返回空指针
+        }
+        try
+        {
+            return Encoding.UTF8.GetString(output, checked((int)length));
+        }
+        finally
+        {
+            GhosttyNative.Free(null, output, length);
+        }
+    }
+
+    private static nint AllocString(string value)
+    {
+        var count = Encoding.UTF8.GetByteCount(value);
+        var p = (byte*)NativeMemory.Alloc((nuint)count + 1);
+        Encoding.UTF8.GetBytes(value, new Span<byte>(p, count));
+        p[count] = 0;
+        return (nint)p;
+    }
+
+    private static void FreeNative(ref nint p)
+    {
+        if (p != 0)
+        {
+            NativeMemory.Free((void*)p);
+            p = 0;
+        }
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void Check(GhosttyResult result, [CallerArgumentExpression(nameof(result))] string expression = "")
@@ -295,42 +454,25 @@ public sealed unsafe class TerminalCore : IDisposable
         _ => new GhosttyException(result, expression),
     };
 
-    /// <summary>原生回调。异常绝不能穿过原生帧，否则进程直接终止（02 §4.5）。</summary>
-    private static class Callbacks
-    {
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        public static void WritePty(nint terminal, nint userdata, byte* data, nuint length)
-        {
-            var core = GCHandle<TerminalCore>.FromIntPtr(userdata).Target;
-            core.Invoke(static (c, s) => c._effects.WriteToPty(s), new ReadOnlySpan<byte>(data, checked((int)length)));
-        }
+    /// <summary>effect 回调中抛出的异常次数（被吞掉并记录，不穿过原生帧）。</summary>
+    public int CallbackFaults { get; private set; }
 
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        public static void Bell(nint terminal, nint userdata)
-        {
-            var core = GCHandle<TerminalCore>.FromIntPtr(userdata).Target;
-            core.Invoke(static (c, _) => c._effects.Bell(), ReadOnlySpan<byte>.Empty);
-        }
+    public Exception? LastCallbackFault { get; private set; }
 
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        public static void TitleChanged(nint terminal, nint userdata)
-        {
-            var core = GCHandle<TerminalCore>.FromIntPtr(userdata).Target;
-            core.Invoke(static (c, _) => c._effects.TitleChanged(c.TitleNoCheck()), ReadOnlySpan<byte>.Empty);
-        }
-    }
-
-    private void Invoke(EffectAction action, ReadOnlySpan<byte> data)
+    /// <summary>在回调中执行托管代码：标记重入、吞掉异常（异常绝不能穿过原生帧，否则进程直接终止，02 §4.5）。</summary>
+    private bool Guard<TState>(TState state, delegate*<TerminalCore, TState, void> action) where TState : allows ref struct
     {
         _inCallback = true;
         try
         {
-            action(this, data);
+            action(this, state);
+            return true;
         }
         catch (Exception ex)
         {
             CallbackFaults++;
             LastCallbackFault = ex;
+            return false;
         }
         finally
         {
@@ -338,18 +480,229 @@ public sealed unsafe class TerminalCore : IDisposable
         }
     }
 
-    private delegate void EffectAction(TerminalCore core, ReadOnlySpan<byte> data);
+    private static TerminalCore From(nint userdata) => GCHandle<TerminalCore>.FromIntPtr(userdata).Target;
 
-    // 回调内只允许只读查询（头文件只禁止重入 vt_write）。
-    private string TitleNoCheck()
+    private static class Callbacks
     {
-        GhosttyString title;
-        var r = GhosttyNative.TerminalGet(_terminal, GhosttyTerminalData.Title, &title);
-        return r == GhosttyResult.NoValue || title.Len == 0 ? string.Empty : Decode(title);
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void WritePty(nint terminal, nint userdata, byte* data, nuint length) =>
+            From(userdata).Guard(new ReadOnlySpan<byte>(data, checked((int)length)), &OnWritePty);
+
+        private static void OnWritePty(TerminalCore c, ReadOnlySpan<byte> data) => c._effects.WriteToPty(data);
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void Bell(nint terminal, nint userdata) => From(userdata).Guard(0, &OnBell);
+
+        private static void OnBell(TerminalCore c, int _) => c._effects.Bell();
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void TitleChanged(nint terminal, nint userdata) => From(userdata).Guard(0, &OnTitle);
+
+        // 回调内只允许只读查询（头文件只禁止重入 vt_write）
+        private static void OnTitle(TerminalCore c, int _) => c._effects.TitleChanged(c.ReadString(GhosttyTerminalData.Title));
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void PwdChanged(nint terminal, nint userdata) => From(userdata).Guard(0, &OnPwd);
+
+        private static void OnPwd(TerminalCore c, int _) => c._effects.WorkingDirectoryChanged(c.ReadString(GhosttyTerminalData.Pwd));
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static GhosttyString XtVersion(nint terminal, nint userdata)
+        {
+            var c = From(userdata);
+            return new GhosttyString { Ptr = (byte*)c._xtversion, Len = (nuint)Encoding.UTF8.GetByteCount(c._replies.XtVersion) };
+        }
+
+        /// <summary>DA1 <c>?62;22;52c</c>（不允许 OSC 52 写时去掉 52）、DA2 <c>&gt;1;10;0c</c>（与 Ghostty 一致）、DA3 单元 0（10 §2）。</summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static byte DeviceAttributes(nint terminal, nint userdata, GhosttyDeviceAttributes* attrs)
+        {
+            var c = From(userdata);
+            attrs->Primary.ConformanceLevel = 62;
+            attrs->Primary.Features[0] = 22;
+            attrs->Primary.NumFeatures = 1;
+            if (c._replies.AdvertiseOsc52)
+            {
+                attrs->Primary.Features[1] = 52;
+                attrs->Primary.NumFeatures = 2;
+            }
+            attrs->Secondary.DeviceType = 1;
+            attrs->Secondary.FirmwareVersion = 10;
+            attrs->Secondary.RomCartridge = 0;
+            return 1;
+        }
+
+        /// <summary>XTWINOPS 14/16/18/19 t 与 2048：核心最近一次 Resize 的尺寸（cell 像素）。</summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static byte SizeReport(nint terminal, nint userdata, GhosttySizeReportSize* size)
+        {
+            var c = From(userdata);
+            ushort cols, rows;
+            GhosttyNative.TerminalGet(terminal, GhosttyTerminalData.Cols, &cols);
+            GhosttyNative.TerminalGet(terminal, GhosttyTerminalData.Rows, &rows);
+            size->Columns = cols;
+            size->Rows = rows;
+            size->CellWidth = (uint)Math.Max(0, c._size.CellWidth);
+            size->CellHeight = (uint)Math.Max(0, c._size.CellHeight);
+            return 1;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static byte Scheme(nint terminal, nint userdata, GhosttyColorScheme* scheme)
+        {
+            *scheme = From(userdata)._scheme == ColorScheme.Light ? GhosttyColorScheme.Light : GhosttyColorScheme.Dark;
+            return 1;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void ClipboardWrite(nint terminal, nint userdata, GhosttyClipboardWrite* write)
+        {
+            var c = From(userdata);
+            var result = ClipboardWriteResult.Denied;
+            c._inCallback = true;
+            try
+            {
+                for (var i = 0; i < (int)write->ContentsLen && result == ClipboardWriteResult.Denied; i++)
+                {
+                    var content = write->Contents[i];
+                    var mime = Decode(content.Mime);
+                    if (mime is "text/plain" or "")
+                    {
+                        result = c._effects.ClipboardWrite(Target(write->Location), mime,
+                            new ReadOnlySpan<byte>(content.Data.Ptr, checked((int)content.Data.Len)));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                c.CallbackFaults++;
+                c.LastCallbackFault = ex;
+            }
+            finally
+            {
+                c._inCallback = false;
+            }
+            var reply = GhosttyClipboardWriteReply.Create();
+            reply.Result = result == ClipboardWriteResult.Success ? GhosttyClipboardWriteResult.Success : GhosttyClipboardWriteResult.Denied;
+            ((delegate* unmanaged[Cdecl]<GhosttyClipboardWrite*, GhosttyClipboardWriteReply*, void>)write->Reply)(write, &reply);
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void ClipboardRead(nint terminal, nint userdata, GhosttyClipboardRead* read)
+        {
+            var c = From(userdata);
+            // O3：库记录了请求的终止符；Deferred 时不调用 reply，由 CompleteClipboardRead 稍后写回
+            var request = new PendingClipboardRead(Target(read->Location), GhosttyNative.TcodeClipboardReadTerminator(terminal) == 1);
+            var decision = ClipboardReadDecision.Denied;
+            c._inCallback = true;
+            try
+            {
+                decision = c._effects.ClipboardRead(request);
+            }
+            catch (Exception ex)
+            {
+                c.CallbackFaults++;
+                c.LastCallbackFault = ex;
+            }
+            finally
+            {
+                c._inCallback = false;
+            }
+            if (decision == ClipboardReadDecision.Denied)
+            {
+                var reply = GhosttyClipboardReadReply.Create();
+                reply.Result = GhosttyClipboardReadResult.Denied;
+                ((delegate* unmanaged[Cdecl]<GhosttyClipboardRead*, GhosttyClipboardReadReply*, void>)read->Reply)(read, &reply);
+            }
+        }
+
+        private static ClipboardTarget Target(GhosttyClipboardLocation location) => location switch
+        {
+            GhosttyClipboardLocation.Selection => ClipboardTarget.Selection,
+            GhosttyClipboardLocation.Primary => ClipboardTarget.Primary,
+            _ => ClipboardTarget.Standard,
+        };
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void Notification(nint terminal, nint userdata, GhosttyTerminalDesktopNotification* n) =>
+            From(userdata).Guard((Title: Decode(n->Title), Body: Decode(n->Body)), &OnNotification);
+
+        private static void OnNotification(TerminalCore c, (string Title, string Body) n) => c._effects.Notification(n.Title, n.Body);
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void Progress(nint terminal, nint userdata, GhosttyTerminalProgressReport* report) =>
+            From(userdata).Guard(((ProgressState)(int)report->State, report->Progress < 0 ? (int?)null : report->Progress), &OnProgress);
+
+        private static void OnProgress(TerminalCore c, (ProgressState State, int? Percent) p) => c._effects.Progress(p.State, p.Percent);
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void SemanticPrompt(nint terminal, nint userdata, GhosttyTerminalSemanticPrompt* e)
+        {
+            if (e->Kind == GhosttySemanticPromptKind.Invalid)
+            {
+                return;
+            }
+            var ev = new SemanticPromptEvent(
+                e->Kind switch
+                {
+                    GhosttySemanticPromptKind.PromptStart => SemanticPromptKind.PromptStart,
+                    GhosttySemanticPromptKind.InputStart => SemanticPromptKind.InputStart,
+                    GhosttySemanticPromptKind.OutputStart => SemanticPromptKind.OutputStart,
+                    _ => SemanticPromptKind.CommandEnd,
+                },
+                e->PromptKind == GhosttySemanticPromptPromptKind.Primary,
+                e->HasExitCode ? e->ExitCode : null,
+                e->Command.Len > 0 ? Decode(e->Command) : null,
+                e->Error.Len > 0 ? Decode(e->Error) : null);
+            From(userdata).Guard(ev, &OnSemanticPrompt);
+        }
+
+        private static void OnSemanticPrompt(TerminalCore c, SemanticPromptEvent e)
+        {
+            c._commands.OnSemanticPrompt(e, fromOsc633: false);
+            c._effects.SemanticPrompt(e);
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void RenderHold(nint terminal, nint userdata, byte held) => From(userdata).Guard(held != 0, &OnRenderHold);
+
+        private static void OnRenderHold(TerminalCore c, bool held) => c._effects.RenderHold(held);
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void Reset(nint terminal, nint userdata) => From(userdata).Guard(0, &OnReset);
+
+        private static void OnReset(TerminalCore c, int _)
+        {
+            c._commands.Clear();
+            c._effects.FullReset();
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void UnknownSequence(nint terminal, nint userdata, GhosttyTerminalUnknownSequence* sequence)
+        {
+            if (sequence->Tag != GhosttyTerminalUnknownSequenceTag.Osc)
+            {
+                return;
+            }
+            var osc = sequence->Value.Osc;
+            From(userdata).Guard((Data: (nint)osc.Content.Ptr, Length: (int)osc.Content.Len, osc.Truncated), &OnUnknownOsc);
+        }
+
+        private static void OnUnknownOsc(TerminalCore c, (nint Data, int Length, bool Truncated) osc)
+        {
+            var payload = new ReadOnlySpan<byte>((byte*)osc.Data, osc.Length);
+            if (!osc.Truncated)
+            {
+                c._commands.OnOsc633(payload);
+            }
+            c._effects.UnknownOsc(payload, osc.Truncated);
+        }
     }
+}
 
-    /// <summary>effect 回调中抛出的异常次数（被吞掉并记录，不穿过原生帧）。</summary>
-    public int CallbackFaults { get; private set; }
-
-    public Exception? LastCallbackFault { get; private set; }
+public enum ClearTarget
+{
+    Screen,
+    Scrollback,
+    All,
 }

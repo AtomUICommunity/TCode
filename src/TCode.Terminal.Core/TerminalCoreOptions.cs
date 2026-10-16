@@ -1,7 +1,7 @@
 namespace TCode.Terminal.Core;
 
 /// <summary>
-/// 创建核心时的配置。镜像核心与 UI 侧核心中"影响状态"的项必须一致（01 §3.2 规则 2），
+/// 创建核心时的配置。镜像核心与 UI 侧核心中"影响状态"的项必须一致（01 §3.2 规则 2、02 §7.1），
 /// 由 pty host 在 session/attach 的应答中下发。
 /// </summary>
 public readonly record struct TerminalCoreOptions(TerminalSize Size)
@@ -20,4 +20,38 @@ public readonly record struct TerminalCoreOptions(TerminalSize Size)
 
     /// <summary>OSC 52 读剪贴板改为延后应答（overlay O3）。镜像核心设为 true，由 host 询问 UI 后再写回。</summary>
     public bool DeferClipboardRead { get; init; }
+
+    /// <summary>
+    /// 宽度策略：mode 2027（字形簇）的复位默认值。Compat（macOS / Linux 默认）按码点计宽，程序可开启 2027；
+    /// Grapheme（Windows，与 ConPTY 的 GLYPH_WIDTH_GRAPHEMES 一致）默认按字形簇（10 §5）。
+    /// </summary>
+    public WidthPolicy Width { get; init; } = WidthPolicy.Compat;
+
+    public CursorStyle DefaultCursorStyle { get; init; } = CursorStyle.Block;
+
+    public bool DefaultCursorBlink { get; init; }
+
+    /// <summary>XTGETTCAP TN 的应答。</summary>
+    public string TerminfoName { get; init; } = "xterm-256color";
+
+    /// <summary>查询应答（DA、XTVERSION、明暗）。</summary>
+    public TerminalReplyProfile Replies { get; init; } = TerminalReplyProfile.Default;
+}
+
+public enum WidthPolicy
+{
+    Compat,
+    Grapheme,
+}
+
+public enum ColorScheme
+{
+    Dark,
+    Light,
+}
+
+/// <summary>由核心自己作答的查询（10 §2）。</summary>
+public sealed record TerminalReplyProfile(string XtVersion, bool AdvertiseOsc52, ColorScheme Scheme)
+{
+    public static readonly TerminalReplyProfile Default = new("TCode", AdvertiseOsc52: true, ColorScheme.Dark);
 }

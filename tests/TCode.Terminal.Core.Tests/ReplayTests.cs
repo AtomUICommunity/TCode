@@ -60,7 +60,7 @@ public sealed class ReplayTests
         using var core = Create(cols: 10);
         Write(core, "0123456789abcdef");
         core.Resize(new TerminalSize(20, 5, 8, 16));
-        Assert.Equal(new TerminalSize(20, 5, 0, 0), core.Size);
+        Assert.Equal(new TerminalSize(20, 5, 8, 16), core.Size);
         Assert.Equal("0123456789abcdef", core.FormatPlainText());
     }
 

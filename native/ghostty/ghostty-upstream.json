@@ -54,7 +54,7 @@
       "ids": [
         "O5"
       ],
-      "reason": "Row metadata (OSC 133 semantic_prompt, wrap / wrap_continuation in cursorResetWrap) changes without marking the row dirty; found by the differential test (02 §15)"
+      "reason": "Rows changed without being marked dirty: OSC 133 semantic_prompt, wrap / wrap_continuation in cursorResetWrap, and the previous row's stale spacer_head cleared when a wrapped wide char is overwritten. Found by the differential test (02 §15)."
     }
   ],
   "updatedAt": "2026-10-17"
