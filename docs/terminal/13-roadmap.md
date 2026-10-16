@@ -82,7 +82,7 @@ M0 中发现、需要后续处理的：
 | C | **完成** | `InputModes`；按键 / 鼠标 / 焦点编码；粘贴安全检查与 bracketed paste |
 | D | **完成** | 选区（范围、矩形、词、行、全部、命令输出）与选区文本；视口滚动（顶 / 底 / 行 / 指定行 / 按提示符）；搜索（`TerminalSearch`，视口高亮在捕获时换算）；OSC 8 超链接解析进帧（`FrameSnapshot.Links` + `ResolvedStyle.HyperlinkId`，同一地址跨帧 id 不变，上限 65535）。帧新增 `Selection` / `Search` / `Links`，仅选区或搜索变化也会产生新帧 |
 | E | **完成** | 随包 ConPTY：`native/ConPty.targets`（不用包自带 targets，见 12 §5.5），CI 检查布局、自检断言 Bundled；Windows 前台进程：`ProcessTree`（Toolhelp32 + `GetProcessTimes` 防 pid 复用，排除 conhost / OpenConsole），纯函数部分跨平台测试；PTY 压力测试 T10–T14（`PtyStressTests`，默认 CI 规模，`TCODE_PTY_STRESS=1` 按文档规模，每晚运行） |
-| F | 待做 | esctest2 驱动与黄金样本回放进 CI |
+| F | **完成** | `.grid` 快照格式（`TCode.Terminal.Core.Testing.GridSnapshot`）与 asciicast 读取（`Cast`）；黄金样本：xterm.js 76 个 + Alacritty 45 个（`tools/terminal/fixtures/convert-fixtures.py`），每个夹具三项断言（上游参照文本、`.grid` 回归锁定、分块不变性）；fuzz：上游 AFL++ 语料 PR 子集 694 个 + 结构化生成器 20 种子 × 1 MiB，不变量含增量 = 全量、宽字符成对、快照往返；esctest2 驱动 `tools/terminal/EscTestRunner`（一致性测试模式 `TerminalCoreOptions.Conformance`），CI 作业以 known-failures 为门禁 |
 
 阶段 D 的实测：
 - 行选区（`select_line`）止于最后一个非空格列，不是整行宽度；视图按选区区间绘制即可，不要自行补齐。
@@ -94,6 +94,13 @@ M0 中发现、需要后续处理的：
 - 背压：消费方暂停 2 s 后积压约 263–266 KiB（上限 256 KiB + 一次 64 KiB 读取）。
 - 吞吐：1 GiB 约 23–34 MiB/s（macOS arm64），与 Python 直接读 PTY 相同，见 03 §14 T11。
 - fd 基线要在首个会话之后取：退出监视器、线程池等进程级单例在首次使用时创建，不算泄漏。
+
+阶段 F 的实测：
+- **参照文本**：121 个夹具中 96 个与上游参照（xterm / Alacritty 的实际输出）完全一致；25 个登记在 `Fixtures/known-differences.txt`。其中 8 个是 Alacritty 参照本身与 xterm 不同（不支持 DECSCA、忽略 DECCOLM）；其余是 libghostty 与 xterm 的差异，最集中的一类是**带多个参数的光标移动**（`CSI 3;5 A`：xterm 取第一个参数，libghostty 忽略整个序列，6 个夹具），其次是未实现的 VPB、SR/SL、DECIC/DECDC。
+- xterm.js 的参照经由 tty 生成，转换时必须按 ONLCR 把 `\n` 换成 `\r\n`；Alacritty 的 `grid.json` 是环形缓冲（`inner[0]` 为最底行），制表符本身存在起始格。
+- **快照往返**（fuzz 不变量）发现 libghostty 快照不保存两项状态：mode 2026（同步输出，临时状态，可接受）与直接用 `CSI ? 12 h/l` 设置的光标闪烁（经 DECSCUSR 设置的会保存）。后者影响 pty host 重连后的光标闪烁，列为 overlay 候选（§5 第 11 项）。
+- **esctest2**（macOS arm64，与 Ghostty 同一 esctest 提交）：387 通过、42 个 xterm 已知缺陷、138 失败；通过率 387 / 525 = 73.7%。失败中 44 个是查询没有应答（OSC 5 特殊颜色、若干 DECDSR），其余为应答值或屏幕内容不同；分类见 `EscTest/known-failures.txt`。11 §1.1.4 的"Tier 0/1 相关文件通过率 ≥ 95%"尚未按 Tier 拆分统计，留到 M3 与 10 §7 的 Tier 表对照后再评估。
+- esctest 偶发整轮失败（启动时第一个应答丢失，之后全部超时），驱动会整轮重跑一次；新增失败会单独重跑，单独能通过的只记为不稳定。
 
 ### M2 pty host（约 3–4 周）
 
@@ -176,6 +183,7 @@ M0 中发现、需要后续处理的：
 | 8 | 是否向 Tmds.Ssh 上游提 PR 补 API 缺口 | 是，在 SSH 二期开始前 | SSH 二期 |
 | 9 | 每晚基准是否需要固定硬件的自托管 runner | 需要；没有的话基准只作参考，不作门禁 | M1 |
 | 10 | 是否允许开发者录制一次真实的 Claude Code / Codex 会话作为测试夹具入库（CI 中不调用模型） | 允许，录制前清理掉密钥和私有内容 | M3 |
+| 11 | M1 回放与 fuzz 发现的 libghostty 与 xterm 的差异是否用 overlay 修正：①带多个参数的光标移动（CUU/CUD/CUF/CUB/HPR/VPR）取第一个参数；②快照保存 mode 12；③DEC 特殊图形字符集的 `_` 显示为空白 | ①②做 overlay（改动小，①直接影响"与系统终端一致"），同时向上游提议题；③先向上游确认再定 | M3 |
 
 ## 6. 与终端无关、可单独处理的现有问题
 

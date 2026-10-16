@@ -1,6 +1,7 @@
 using System.IO.Pipelines;
 using System.Text;
 using TCode.Terminal.Core;
+using TCode.Terminal.Core.Testing;
 using TCode.Terminal.Pty;
 using TCode.Terminal.Pty.Windows;
 
@@ -47,6 +48,11 @@ internal static class SelfTest
             Check(search.TotalMatches == 1 && frame.Search?.Matches.Length == 1, "search");
             Check(frame.LinkOf(frame.Rows[1].Styles[TCell.StyleIndex(frame.Rows[1].Cells[0])]) == "https://tcode.dev", "hyperlinks");
             core.EndSearch();
+
+            using var styled = TerminalCore.Create(new TerminalCoreOptions(new TerminalSize(10, 2, 8, 16)));
+            styled.Write("\u001b[1;31mR\u001b[0m中"u8);
+            var grid = GridSnapshot.Capture(styled);
+            Check(grid.Contains("s1 fg=1 bold") && grid.Contains("|R中\u2063") && grid.Contains("w:1"), "grid snapshot (.grid format)");
         }
 
         // 2. PTY：启动 shell，读输出，退出码

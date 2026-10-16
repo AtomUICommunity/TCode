@@ -9,7 +9,7 @@ on:
   pull_request:
     paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
   workflow_dispatch:
-  # 每晚：PTY 压力测试按文档规模（03 §14 T10–T14），差分测试扫 200 个种子
+  # 每晚：PTY 压力测试按文档规模（03 §14 T10–T14），差分测试扫 200 个种子，结构化 fuzz 跑 20 分钟
   schedule:
     - cron: "17 19 * * *"
 
@@ -106,12 +106,19 @@ jobs:
         run: dotnet test tests/TCode.Terminal.Core.Tests
         env:
           TCODE_DIFF_SEEDS: ${{ github.event_name == 'schedule' && '200' || '' }}
+          TCODE_FUZZ_MINUTES: ${{ github.event_name == 'schedule' && '20' || '' }}
       - name: Test PTY
         run: dotnet test tests/TCode.Terminal.Pty.Tests --logger "console;verbosity=normal"
         env:
           TCODE_PTY_STRESS: ${{ github.event_name == 'schedule' && '1' || '' }}
       - name: Test view (headless snapshots)
         run: dotnet test tests/TCode.Terminal.Avalonia.Tests
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-${{ matrix.rid }}
+          path: artifacts/test-results/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -134,3 +141,36 @@ jobs:
       - name: Run AOT self-test
         shell: bash
         run: artifacts/publish/ptyhost/tcode-ptyhost --self-test
+
+  # esctest2（11 §1.1.4）：真实 PTY + 一致性测试模式的核心。新增失败（单独重跑仍失败）阻断；已知失败见 known-failures.txt
+  esctest:
+    name: esctest2 (linux-x64)
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts/native
+          merge-multiple: true
+      - name: Restore executable bits
+        run: chmod +x artifacts/native/*/tcode-pty-spawn
+      - name: Fetch esctest2 (pinned, sha256 checked)
+        id: fetch
+        run: echo "dir=$(tools/terminal/fetch-esctest.sh)" >> "$GITHUB_OUTPUT"
+      - name: Run esctest2
+        run: |
+          dotnet run --project tools/terminal/EscTestRunner -c Release -- \
+            --esctest "${{ steps.fetch.outputs.dir }}" \
+            --known tests/TCode.Terminal.Core.Tests/EscTest/known-failures.txt \
+            --log artifacts/esctest.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: esctest-log
+          path: artifacts/esctest.log*
+          if-no-files-found: ignore

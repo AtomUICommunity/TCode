@@ -17,6 +17,7 @@ public sealed unsafe class TerminalCore : IDisposable
     private readonly ITerminalEffects _effects;
     private readonly CommandTracker _commands;
     private TerminalReplyProfile _replies;
+    private readonly ConformanceMode? _conformance;
     private ColorScheme _scheme;
     private TerminalSize _size;
     private bool _inCallback;
@@ -31,6 +32,7 @@ public sealed unsafe class TerminalCore : IDisposable
         _terminal = terminal;
         _effects = effects;
         _replies = options.Replies;
+        _conformance = options.Conformance;
         _scheme = options.Replies.Scheme;
         _size = options.Size;
         _self = new GCHandle<TerminalCore>(this);
@@ -629,6 +631,15 @@ public sealed unsafe class TerminalCore : IDisposable
         var blink = options.DefaultCursorBlink;
         Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.DefaultCursorStyle, &cursorStyle));
         Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.DefaultCursorBlink, &blink));
+        if (options.Conformance is { } conformance)
+        {
+            var on = true;
+            var extension = conformance.XtChecksumExtension;
+            Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.XtChecksumReport, &on));
+            Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.XtChecksumExtension, &extension));
+            // 标题回报（CSI 21 t 等）在产品中关闭（10 §6.2）；一致性测试按 xterm 开启
+            Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.TitleReport, &on));
+        }
 
         if (applyModeDefaults)
         {
@@ -666,6 +677,11 @@ public sealed unsafe class TerminalCore : IDisposable
         Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.Reset, (delegate* unmanaged[Cdecl]<nint, nint, void>)&Callbacks.Reset));
         Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.UnknownSequence,
             (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalUnknownSequence*, void>)&Callbacks.UnknownSequence));
+        if (_conformance is not null)
+        {
+            Check(GhosttyNative.TerminalSet(t, GhosttyTerminalOption.ResizeWindow,
+                (delegate* unmanaged[Cdecl]<nint, nint, GhosttyTerminalResizeWindow*, void>)&Callbacks.ResizeWindow));
+        }
     }
 
     private void EnsureNotInCallback()
@@ -817,6 +833,17 @@ public sealed unsafe class TerminalCore : IDisposable
         public static byte DeviceAttributes(nint terminal, nint userdata, GhosttyDeviceAttributes* attrs)
         {
             var c = From(userdata);
+            if (c._conformance is not null)
+            {
+                // esctest 最高测到 VT520：DA1 ?65;22c，DA2 >64;10;0c
+                attrs->Primary.ConformanceLevel = 65;
+                attrs->Primary.Features[0] = 22;
+                attrs->Primary.NumFeatures = 1;
+                attrs->Secondary.DeviceType = 64;
+                attrs->Secondary.FirmwareVersion = 10;
+                attrs->Secondary.RomCartridge = 0;
+                return 1;
+            }
             attrs->Primary.ConformanceLevel = 62;
             attrs->Primary.Features[0] = 22;
             attrs->Primary.NumFeatures = 1;
@@ -966,6 +993,17 @@ public sealed unsafe class TerminalCore : IDisposable
         public static void RenderHold(nint terminal, nint userdata, byte held) => From(userdata).Guard(held != 0, &OnRenderHold);
 
         private static void OnRenderHold(TerminalCore c, bool held) => c._effects.RenderHold(held);
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static void ResizeWindow(nint terminal, nint userdata, GhosttyTerminalResizeWindow* request)
+        {
+            if (request->Tag == GhosttyTerminalResizeWindowTag.Grid)
+            {
+                From(userdata).Guard((request->Value.Grid.Columns, request->Value.Grid.Rows), &OnResizeWindow);
+            }
+        }
+
+        private static void OnResizeWindow(TerminalCore c, (ushort Columns, ushort Rows) r) => c._effects.ResizeWindowRequested(r.Columns, r.Rows);
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         public static void Reset(nint terminal, nint userdata) => From(userdata).Guard(0, &OnReset);

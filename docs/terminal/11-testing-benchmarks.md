@@ -22,6 +22,13 @@
 
 ---
 
+> **M1 实际落地（2026-10-17）**：
+> - `.grid` 与 asciicast 读取在 `src/TCode.Terminal.Core/Testing/`（`GridSnapshot`、`Cast`），与 §2.2 的差异写在 `GridSnapshot` 的注释里（不写 margins、`e:`；语义区间按行写游程）。
+> - 黄金样本在 `tests/TCode.Terminal.Core.Tests/Replay/`，夹具在 `Fixtures/{xtermjs,alacritty}/`，每个夹具有 `.cast`、`.ref.txt`（上游参照）、`.grid`（TCode 的回归锁定）；参照差异登记在 `Fixtures/known-differences.txt`。
+> - fuzz 在 `Fuzz/`：上游语料子集打包为 `Fixtures/fuzz/corpus.jsonl`；暂在进程内运行（子进程隔离未做）。
+> - esctest 驱动是 `tools/terminal/EscTestRunner`，esctest2 由 `tools/terminal/fetch-esctest.sh` 按 `native/ghostty/esctest.json` 下载校验；§1.1.4 的 `TestMode` 实现为 `TerminalCoreOptions.Conformance`（`ConformanceMode`），另外开启了标题回报。
+> - 每晚任务：`TCODE_DIFF_SEEDS=200`、`TCODE_FUZZ_MINUTES=20`、`TCODE_PTY_STRESS=1`。实测数字见 [13](13-roadmap.md) "M1 实施状态"。
+
 ## 1. 测试分层
 
 | 层 | 项目 | 运行时机 | 平台 | 里程碑 |

@@ -11,6 +11,10 @@
         <PackageReference Include="xunit.runner.visualstudio" />
     </ItemGroup>
     <ItemGroup>
+        <!-- 回放夹具（11 §1.1.1）：黄金样本更新时写回源目录，见 Replay/FixtureCatalog.cs -->
+        <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\..\src\TCode.Terminal.Core\TCode.Terminal.Core.csproj" />
     </ItemGroup>
 </Project>

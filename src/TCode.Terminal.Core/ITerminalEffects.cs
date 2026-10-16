@@ -39,6 +39,9 @@ public interface ITerminalEffects
     /// <summary>mode 2026：程序开始 / 结束一帧的同步输出。</summary>
     void RenderHold(bool hold) { }
 
+    /// <summary>程序请求改变窗口文本区尺寸（CSI 8 ; rows ; cols t，0 表示保持）。只在 <see cref="TerminalCoreOptions.Conformance"/> 下转发。</summary>
+    void ResizeWindowRequested(int columns, int rows) { }
+
     /// <summary>RIS 之后（标题、pwd 已清空，不会再单独通知）。</summary>
     void FullReset() { }
 

@@ -36,7 +36,16 @@ public readonly record struct TerminalCoreOptions(TerminalSize Size)
 
     /// <summary>查询应答（DA、XTVERSION、明暗）。</summary>
     public TerminalReplyProfile Replies { get; init; } = TerminalReplyProfile.Default;
+
+    /// <summary>
+    /// 一致性测试模式（esctest2 驱动专用，11 §1.1.4）：开启 DECRQCRA 校验和应答、以 VT520 作答 DA、转发 CSI 8 t 窗口尺寸请求。
+    /// 校验和应答让程序能逐格读回屏幕内容，产品构建中永远为 null。
+    /// </summary>
+    public ConformanceMode? Conformance { get; init; }
 }
+
+/// <param name="XtChecksumExtension">DECRQCRA 算法位（xterm 的 checksumExtension；esctest 的 --xterm-checksum ≥ 334 对应 23）。</param>
+public sealed record ConformanceMode(byte XtChecksumExtension = 23);
 
 public enum WidthPolicy
 {

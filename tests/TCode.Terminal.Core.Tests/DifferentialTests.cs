@@ -65,7 +65,7 @@ public sealed class DifferentialTests
         }
     }
 
-    private static void AssertSameScreen(FrameSnapshot expected, FrameSnapshot actual, string where)
+    internal static void AssertSameScreen(FrameSnapshot expected, FrameSnapshot actual, string where)
     {
         Assert.Equal(expected.Columns, actual.Columns);
         Assert.Equal(expected.Rows.Length, actual.Rows.Length);

@@ -1,0 +1,37 @@
+# 与上游参照文本（.ref.txt）的已知差异（11 §1.1.1）。格式："source/name  # 原因"。
+# 这些夹具仍然回放（不崩溃、分块不变、.grid 锁定），只跳过与参照文本的比较；差异消失时测试输出会提示删除。
+# 原因来自参照与实际输出的差异；标注"推断"的条目尚未对照 libghostty 源码核实。
+# 分类：[ghostty] libghostty 与 xterm 的行为不同（候选 overlay 或上游议题）；[alacritty] Alacritty 的参照本身与 xterm 不同。
+
+# [ghostty] 光标移动带多个参数（CSI 3;5 A 等）：xterm 取第一个参数，libghostty 忽略整个序列。候选 overlay（13 §5）
+xtermjs/t0020-CUF  # CSI 10;3 C 被忽略
+xtermjs/t0021-CUB  # CSI 2;3 D 被忽略
+xtermjs/t0022-CUU  # CSI 3;5 A 被忽略
+xtermjs/t0024-CUD  # CSI 3;5 B 被忽略
+xtermjs/t0030-HPR  # CSI 10;3 a 被忽略
+xtermjs/t0034-VPR  # CSI 3;5 e 被忽略
+
+# [ghostty] 未实现的序列
+xtermjs/t0032-VPB  # CSI k（VPB）未实现
+xtermjs/t0033-VPB_scroll  # CSI k（VPB）未实现
+xtermjs/t600-DECSTBM_SR  # CSI Ps SP A（SR，右移列）未实现
+xtermjs/t601-DECSTBM_SL  # CSI Ps SP @（SL，左移列）未实现
+xtermjs/t602-DECSTBM_DECIC  # CSI Ps ' }（DECIC）未实现
+xtermjs/t603-DECSTBM_DECDC  # CSI Ps ' ~（DECDC）未实现
+
+# [ghostty] 边界行为与 xterm 不同
+xtermjs/t0040-REP  # REP 在行首 / 非图形字符之后的处理不同（由差异推断，未逐行核对源码）
+xtermjs/t0060-DECSC  # 在待换行状态（第 80 列）保存光标：恢复后 xterm 保留待换行标志（由差异推断，未逐行核对源码）
+xtermjs/t0061-CSI_s  # 同 DECSC（CSI s / CSI u）
+xtermjs/t0077-DECSTBM_quirks  # 省略或为 0 的边界参数（CSI ;4r、CSI 15;0r）解释不同（由差异推断，未逐行核对源码）
+xtermjs/t0103-reverse_wrap  # 反向回绕（?45）跨行退格的细节不同（由差异推断，未逐行核对源码）
+alacritty/saved_cursor  # DEC 特殊图形字符集的 '_'（0x5F）：xterm / Alacritty 显示为空白，libghostty 保留 '_'
+alacritty/saved_cursor_alt  # 同上
+alacritty/erase_in_line  # 待换行状态下 EL 的处理不同（由差异推断，未逐行核对源码）
+
+# [alacritty] 参照本身与 xterm 不同
+alacritty/selective_erasure  # Alacritty 没有实现 DECSCA，参照里受保护字符也被擦除；libghostty 与 xterm 一致
+alacritty/deccolm_reset  # Alacritty 忽略 DECCOLM（?3），libghostty 在 ?40 开启时按 xterm 切换列数并清屏
+alacritty/decaln_reset  # 同上（DECCOLM 之后的 DECALN）
+alacritty/vttest_insert  # vttest 用 ?40h + ?3l 切到 80 列；Alacritty 保持 105 列
+alacritty/vttest_cursor_movement_1  # 同上（DECCOLM）
