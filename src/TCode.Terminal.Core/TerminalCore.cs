@@ -16,10 +16,7 @@ public sealed unsafe class TerminalCore : IDisposable
     private GCHandle<TerminalCore> _self;
     private readonly ITerminalEffects _effects;
     private bool _inCallback;
-    private nint _renderState;
-    private nint _rowIterator;
-    private nint _rowCells;
-    private long _generation;
+    private FrameCapturer? _capturer;
 
     private TerminalCore(nint terminal, ITerminalEffects effects)
     {
@@ -136,19 +133,19 @@ public sealed unsafe class TerminalCore : IDisposable
     /// <summary>DEC 私有模式（<paramref name="ansi"/> 为 false）或 ANSI 模式的当前值；未知模式返回 false。</summary>
     public bool GetMode(int mode, bool ansi = false)
     {
-        var config = new GhosttyTerminalModeConfig { Mode = GhosttyNative.ModeNew(checked((ushort)mode), ansi) };
+        var config = new GhosttyTerminalModeConfig { Mode = GhosttyHelpers.ModeNew(checked((ushort)mode), ansi) };
         var r = GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Mode, &config);
         return r == GhosttyResult.Success && config.Value;
     }
 
     /// <summary>xterm modifyOtherKeys 2 是否开启（overlay O4）。</summary>
-    public bool ModifyOtherKeys2 => GhosttyNative.ModifyOtherKeys2(Handle);
+    public bool ModifyOtherKeys2 => GhosttyNative.TcodeModifyOtherKeys2(Handle);
 
     /// <summary>当前屏幕（含回滚）的纯文本：软换行合并，去掉行尾空白。</summary>
     public string FormatPlainText()
     {
         EnsureNotInCallback();
-        var options = GhosttyFormatterTerminalOptions.Create(GhosttyFormatterFormat.Plain);
+        var options = GhosttyHelpers.FormatterOptions(GhosttyFormatterFormat.Plain);
         options.Unwrap = true;
         options.Trim = true;
         nint formatter;
@@ -178,83 +175,22 @@ public sealed unsafe class TerminalCore : IDisposable
     }
 
     /// <summary>
-    /// 捕获当前视口（M0：全量逐格读取，未做脏行增量与样式去重；02 §8 的增量算法在 M1 实现）。
-    /// 只在 UI 侧核心上使用。
+    /// 捕获当前视口（02 §8）：只重建脏行，未变化的行与上一帧共享对象；没有任何变化时返回 null。
+    /// 只在 UI 侧核心上使用（每个终端只能有一个 render state）。
     /// </summary>
-    public FrameSnapshot CaptureFrame()
+    public FrameSnapshot? CaptureFrame(bool force = false)
     {
         EnsureNotInCallback();
-        if (_renderState == 0)
-        {
-            nint state, iterator, cells;
-            Check(GhosttyNative.RenderStateNew(null, &state));
-            Check(GhosttyNative.RowIteratorNew(null, &iterator));
-            Check(GhosttyNative.RowCellsNew(null, &cells));
-            (_renderState, _rowIterator, _rowCells) = (state, iterator, cells);
-        }
-        Check(GhosttyNative.RenderStateUpdate(_renderState, Handle));
+        _capturer ??= new FrameCapturer();
+        return _capturer.Capture(Handle, force);
+    }
 
-        ushort cols, rows;
-        GhosttyColorRgb fg, bg;
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.Cols, &cols));
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.Rows, &rows));
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.ColorForeground, &fg));
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.ColorBackground, &bg));
-
-        var snapshotRows = new RowSnapshot[rows];
-        var iteratorHandle = _rowIterator;
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.RowIterator, &iteratorHandle));
-        var text = stackalloc byte[256];
-        var y = 0;
-        while (y < rows && GhosttyNative.RowIteratorNext(_rowIterator))
-        {
-            var cellsHandle = _rowCells;
-            Check(GhosttyNative.RowGet(_rowIterator, GhosttyRenderStateRowData.Cells, &cellsHandle));
-            var cells = new TerminalCell[cols];
-            for (var x = 0; x < cols && GhosttyNative.RowCellsNext(_rowCells); x++)
-            {
-                ulong raw;
-                int wide;
-                Check(GhosttyNative.RowCellsGet(_rowCells, GhosttyRenderStateRowCellsData.Raw, &raw));
-                Check(GhosttyNative.CellGet(raw, GhosttyCellData.Wide, &wide));
-                var buffer = new GhosttyBuffer { Ptr = text, Cap = 256 };
-                var r = GhosttyNative.RowCellsGet(_rowCells, GhosttyRenderStateRowCellsData.GraphemesUtf8, &buffer);
-                string? value = r == GhosttyResult.Success && buffer.Len > 0 ? Encoding.UTF8.GetString(text, (int)buffer.Len) : null;
-                GhosttyColorRgb cfg, cbg;
-                TerminalRgb? cellFg = GhosttyNative.RowCellsGet(_rowCells, GhosttyRenderStateRowCellsData.FgColor, &cfg) == GhosttyResult.Success
-                    ? new TerminalRgb(cfg.R, cfg.G, cfg.B) : null;
-                TerminalRgb? cellBg = GhosttyNative.RowCellsGet(_rowCells, GhosttyRenderStateRowCellsData.BgColor, &cbg) == GhosttyResult.Success
-                    ? new TerminalRgb(cbg.R, cbg.G, cbg.B) : null;
-                cells[x] = new TerminalCell(value, (CellWidth)wide, cellFg, cellBg);
-            }
-            snapshotRows[y++] = new RowSnapshot(cells);
-        }
-        for (; y < rows; y++)
-        {
-            snapshotRows[y] = new RowSnapshot(new TerminalCell[cols]);
-        }
-
-        bool hasCursor, cursorVisible;
-        ushort cx = 0, cy = 0;
-        int cursorStyle;
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.CursorViewportHasValue, &hasCursor));
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.CursorVisible, &cursorVisible));
-        Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.CursorVisualStyle, &cursorStyle));
-        if (hasCursor)
-        {
-            Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.CursorViewportX, &cx));
-            Check(GhosttyNative.RenderStateGet(_renderState, GhosttyRenderStateData.CursorViewportY, &cy));
-        }
-
-        return new FrameSnapshot
-        {
-            Generation = ++_generation,
-            Columns = cols,
-            Rows = snapshotRows,
-            Cursor = new TerminalCursor(cx, cy, hasCursor && cursorVisible, (CursorStyle)cursorStyle),
-            Foreground = new TerminalRgb(fg.R, fg.G, fg.B),
-            Background = new TerminalRgb(bg.R, bg.G, bg.B),
-        };
+    /// <summary>用一个临时的 render state 全量捕获（差分测试的"全量重建"对照，02 §15）。不能与 <see cref="CaptureFrame"/> 用在同一个核心上。</summary>
+    internal FrameSnapshot CaptureFresh()
+    {
+        EnsureNotInCallback();
+        using var capturer = new FrameCapturer();
+        return capturer.Capture(Handle, force: true)!;
     }
 
     /// <summary>完整快照（包括未完成的解析器输入），用于 pty host 重连与持久化（04 §8、§10）。</summary>
@@ -281,13 +217,8 @@ public sealed unsafe class TerminalCore : IDisposable
             return;
         }
         // 子对象先于终端释放（02 §4.6）
-        if (_renderState != 0)
-        {
-            GhosttyNative.RowCellsFree(_rowCells);
-            GhosttyNative.RowIteratorFree(_rowIterator);
-            GhosttyNative.RenderStateFree(_renderState);
-            _renderState = 0;
-        }
+        _capturer?.Dispose();
+        _capturer = null;
         // 先释放终端，再释放 GCHandle：否则最后一次回调可能拿到已释放的句柄（02 §4.5）。
         GhosttyNative.TerminalFree(_terminal);
         _terminal = 0;
@@ -321,7 +252,7 @@ public sealed unsafe class TerminalCore : IDisposable
         {
             Resize(options.Size);
         }
-        GhosttyNative.SetClipboardReadDeferred(_terminal, options.DeferClipboardRead);
+        GhosttyNative.TcodeSetClipboardReadDeferred(_terminal, options.DeferClipboardRead);
         // 跟踪未完成的转义序列 / UTF-8，快照因此可以在任意字节位置编码（02 §9）
         nuint continuation = (nuint)options.ContinuationMaxBytes;
         Check(GhosttyNative.TerminalSet(_terminal, GhosttyTerminalOption.ContinuationMaxBytes, &continuation));

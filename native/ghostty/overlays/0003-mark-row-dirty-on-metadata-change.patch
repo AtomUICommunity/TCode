@@ -1,0 +1,59 @@
+diff --git a/src/terminal/Screen.zig b/src/terminal/Screen.zig
+index 820455e..494911f 100644
+--- a/src/terminal/Screen.zig
++++ b/src/terminal/Screen.zig
+@@ -1646,9 +1646,12 @@ pub fn cursorResetWrap(self: *Screen) void {
+ 
+     // This row does not wrap and the next row is not wrapped to
+     page_row.wrap = false;
++    page_row.dirty = true; // TCode overlay O5
+ 
+     if (self.cursor.page_pin.down(1)) |next_row| {
+-        next_row.rowAndCell().row.wrap_continuation = false;
++        const next = next_row.rowAndCell().row;
++        next.wrap_continuation = false;
++        next.dirty = true; // TCode overlay O5
+     }
+ 
+     // If the last cell in the row is a spacer head we need to clear it.
+@@ -2974,6 +2977,8 @@ pub fn cursorSetSemanticContent(self: *Screen, t: union(enum) {
+                 .initial, .right => .prompt,
+                 .continuation, .secondary => .prompt_continuation,
+             };
++            // TCode overlay O5: row metadata changed, the row must be redrawn.
++            cursor.page_row.dirty = true;
+         },
+     }
+ }
+diff --git a/src/terminal/Terminal.zig b/src/terminal/Terminal.zig
+index 2667c51..5c2ae6a 100644
+--- a/src/terminal/Terminal.zig
++++ b/src/terminal/Terminal.zig
+@@ -1819,7 +1819,10 @@ fn printWrap(self: *Terminal) !void {
+     cursor.semantic_content_clear_eol = old_semantic_clear;
+     switch (old_semantic) {
+         .output, .input => {},
+-        .prompt => cursor.page_row.semantic_prompt = .prompt_continuation,
++        .prompt => {
++            cursor.page_row.semantic_prompt = .prompt_continuation;
++            cursor.page_row.dirty = true; // TCode overlay O5
++        },
+     }
+ 
+     if (mark_wrap) {
+@@ -2227,6 +2230,7 @@ pub fn semanticPrompt(
+                 self.screens.active.cursor.x == 0)
+             {
+                 self.screens.active.cursor.page_row.semantic_prompt = .none;
++                self.screens.active.cursor.page_row.dirty = true; // TCode overlay O5
+             }
+         },
+ 
+@@ -2382,6 +2386,7 @@ pub fn index(self: *Terminal) !void {
+             // type later and outputs something. We handle that in the
+             // semanticPrompt function.
+             screen.cursor.page_row.semantic_prompt = .prompt_continuation;
++            screen.cursor.page_row.dirty = true; // TCode overlay O5
+         }
+     } else {
+         // This should never be set in the output mode.

@@ -101,9 +101,9 @@ public sealed class TerminalView : Control
         var m = Metrics;
         var scale = m.Scaling;
         var pad = Math.Round(Padding * scale);
-        var background = Brush(frame?.Background ?? new TerminalRgb(0, 0, 0));
-        context.FillRectangle(background, new Rect(Bounds.Size));
-        if (frame is null)
+        var palette = frame?.Palette;
+        context.FillRectangle(Brush(palette?.Background ?? new TerminalRgb(0, 0, 0)), new Rect(Bounds.Size));
+        if (frame is null || palette is null)
         {
             return;
         }
@@ -114,14 +114,15 @@ public sealed class TerminalView : Control
 
         for (var y = 0; y < frame.Rows.Length; y++)
         {
-            var cells = frame.Rows[y].Cells;
+            var row = frame.Rows[y];
+            var cells = row.Cells;
 
-            // 背景：同色的连续格合并成一个矩形
+            // 背景：同色的连续格合并成一个矩形（inverse 时前景作背景）
             for (var x = 0; x < cells.Length;)
             {
-                var bg = cells[x].Background;
+                var bg = BackgroundOf(row, cells[x], palette);
                 var end = x + 1;
-                while (end < cells.Length && cells[end].Background == bg)
+                while (end < cells.Length && BackgroundOf(row, cells[end], palette) == bg)
                 {
                     end++;
                 }
@@ -136,19 +137,26 @@ public sealed class TerminalView : Control
             for (var x = 0; x < cells.Length; x++)
             {
                 var cell = cells[x];
-                if (string.IsNullOrEmpty(cell.Text) || cell.Text == " " || cell.Width == CellWidth.SpacerTail)
+                if (TCell.Codepoint(cell) is 0 or ' ' || TCell.Width(cell) == CellWidth.SpacerTail)
                 {
                     continue;
                 }
-                DrawText(context, cell, Cell(x, y), frame.Foreground, m);
+                var style = row.Styles[TCell.StyleIndex(cell)];
+                if (style.Flags.HasFlag(StyleFlags.Invisible))
+                {
+                    continue;
+                }
+                DrawText(context, row.TextAt(x)!, TCell.Width(cell), ForegroundOf(style, palette), Cell(x, y), m);
             }
         }
 
-        if (frame.Cursor.Visible)
+        var cursor = frame.Cursor;
+        if (cursor.Visible && cursor.Row < frame.Rows.Length && cursor.Column < frame.Columns)
         {
-            var rect = Cell(frame.Cursor.Column, frame.Cursor.Row);
-            var cursorBrush = Brush(frame.Foreground);
-            switch (frame.Cursor.Style)
+            var rect = Cell(cursor.Column, cursor.Row);
+            var cursorColor = palette.Cursor ?? palette.Foreground;
+            var cursorBrush = Brush(cursorColor);
+            switch (cursor.Style)
             {
                 case CursorStyle.Bar:
                     context.FillRectangle(cursorBrush, rect.WithWidth(Math.Max(1, m.UnderlineThickness) / scale));
@@ -161,29 +169,44 @@ public sealed class TerminalView : Control
                     break;
                 default:
                     context.FillRectangle(cursorBrush, rect);
-                    var under = frame.Rows[frame.Cursor.Row].Cells[frame.Cursor.Column];
-                    if (!string.IsNullOrEmpty(under.Text))
+                    var row = frame.Rows[cursor.Row];
+                    if (row.TextAt(cursor.Column) is { } under)
                     {
-                        DrawText(context, under with { Foreground = frame.Background }, rect, frame.Foreground, m);
+                        DrawText(context, under, TCell.Width(row.Cells[cursor.Column]), palette.Background, rect, m);
                     }
                     break;
             }
         }
     }
 
-    private void DrawText(DrawingContext context, TerminalCell cell, Rect cellRect, TerminalRgb defaultForeground, CellMetrics m)
+    private static TerminalRgb ForegroundOf(in ResolvedStyle style, TerminalPalette palette)
     {
-        var text = cell.Text!;
+        var fg = style.Flags.HasFlag(StyleFlags.Inverse) ? palette.Resolve(style.Background, foreground: false) : palette.Resolve(style.Foreground, foreground: true);
+        return style.Flags.HasFlag(StyleFlags.Faint) ? new TerminalRgb((byte)(fg.R / 2), (byte)(fg.G / 2), (byte)(fg.B / 2)) : fg;
+    }
+
+    private static TerminalRgb? BackgroundOf(RowSnapshot row, ulong cell, TerminalPalette palette)
+    {
+        var style = row.Styles[TCell.StyleIndex(cell)];
+        if (style.Flags.HasFlag(StyleFlags.Inverse))
+        {
+            return palette.Resolve(style.Foreground, foreground: true);
+        }
+        return style.Background.IsDefault ? null : palette.Resolve(style.Background, foreground: false);
+    }
+
+    private void DrawText(DrawingContext context, string text, CellWidth width, TerminalRgb color, Rect cellRect, CellMetrics m)
+    {
         var codepoint = char.ConvertToUtf32(text, 0);
         var face = FaceFor(codepoint);
         if (face is null || !face.CharacterToGlyphMap.TryGetGlyph(codepoint, out var glyph))
         {
             return;
         }
-        var advance = (cell.Width == CellWidth.Wide ? 2 : 1) * m.CellWidth / m.Scaling;
+        var advance = (width == CellWidth.Wide ? 2 : 1) * m.CellWidth / m.Scaling;
         var origin = new Point(cellRect.X, cellRect.Y + m.BaselineY / m.Scaling);
         var run = new GlyphRun(face, m.EmSizePx / m.Scaling, text.AsMemory(), [new GlyphInfo(glyph, 0, advance)], origin);
-        context.DrawGlyphRun(Brush(cell.Foreground ?? defaultForeground), run);
+        context.DrawGlyphRun(Brush(color), run);
     }
 
     private GlyphTypeface? FaceFor(int codepoint)

@@ -23,7 +23,7 @@ public sealed class TerminalViewSnapshotTests
                 "│ 名称 │ 状态 │\r\n" +
                 "└──────┴──────┘\r\n" +
                 "\x1b[30;43m warn \x1b[0m \x1b[38;2;255;100;0mtruecolor\x1b[0m\r\n$ "));
-            var frame = core.CaptureFrame();
+            var frame = core.CaptureFrame()!;
 
             var view = new TerminalView { Snapshot = frame, FontFamily = new FontFamily("Menlo, Consolas, DejaVu Sans Mono"), FontSize = 13 };
             var window = new Window { Content = view, SizeToContent = SizeToContent.WidthAndHeight, Background = Brushes.Black };
