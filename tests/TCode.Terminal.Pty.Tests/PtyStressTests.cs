@@ -72,9 +72,20 @@ public sealed class PtyStressTests
     [Fact]
     public async Task T12_ConcurrentSessions()
     {
-        const int count = 50;
+        // 第一批用于预热：50 个并发会话会让线程池扩容，新线程自带 OS 句柄（Windows 上尤其明显），不算泄漏。
+        // 基线取在第一批之后；真正的泄漏会随第二批继续增长
+        var pids = await RunConcurrentBatchAsync();
         await WarmUpAsync();
         var fdsBefore = OpenDescriptors();
+        var threadsBefore = ThreadCount();
+        pids.AddRange(await RunConcurrentBatchAsync());
+        Log($"threads: before {threadsBefore}, after {ThreadCount()}");
+        await AssertNoLeaksAsync(fdsBefore, pids);
+    }
+
+    private static async Task<List<int>> RunConcurrentBatchAsync()
+    {
+        const int count = 50;
         var sessions = Enumerable.Range(0, count).Select(i => LocalPty.Start(Shell($"echo session-{i}"))).ToList();
         var outputs = await Task.WhenAll(sessions.Select(s => ReadAllAsync(s.Output, Timeout)));
         var exits = await Task.WhenAll(sessions.Select(s => s.Exited.WaitAsync(Timeout)));
@@ -88,7 +99,13 @@ public sealed class PtyStressTests
             Assert.Contains($"session-{i}", outputs[i]);
             Assert.Equal(0, exits[i].ExitCode);
         }
-        await AssertNoLeaksAsync(fdsBefore, pids);
+        return pids;
+    }
+
+    private static int ThreadCount()
+    {
+        using var self = Process.GetCurrentProcess();
+        return self.Threads.Count;
     }
 
     [Fact]
