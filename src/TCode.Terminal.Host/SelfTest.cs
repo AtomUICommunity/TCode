@@ -35,6 +35,17 @@ internal static class SelfTest
             Check(core.GetMode(9001), "overlay O1 tracks win32-input-mode");
             using var restored = TerminalCore.Restore(core.EncodeSnapshot(), new TerminalCoreOptions(Size));
             Check(restored.FormatPlainText() == "hello world" && restored.GetMode(9001), "snapshot round trip");
+
+            core.Write("\r\n\u001b]8;;https://tcode.dev\u001b\\link\u001b]8;;\u001b\\"u8);
+            core.Select(SelectionRequest.Word(new ViewportPoint(7, 0)));
+            var search = core.CreateSearch();
+            search.Needle = "link";
+            search.Update();
+            var frame = core.CaptureFrame(force: true)!;
+            Check(core.GetSelectionText() == "world" && frame.Selection.Length == 1, "selection");
+            Check(search.TotalMatches == 1 && frame.Search?.Matches.Length == 1, "search");
+            Check(frame.LinkOf(frame.Rows[1].Styles[TCell.StyleIndex(frame.Rows[1].Cells[0])]) == "https://tcode.dev", "hyperlinks");
+            core.EndSearch();
         }
 
         // 2. PTY：启动 shell，读输出，退出码

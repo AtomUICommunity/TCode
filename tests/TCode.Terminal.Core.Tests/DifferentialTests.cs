@@ -15,7 +15,7 @@ public sealed class DifferentialTests
         "hello", "世界", "\x1b[31m", "\x1b[1;4;38;2;10;200;30m", "\x1b[0m", "\r\n", "\x1b[2J", "\x1b[H", "\x1b[5;3H", "\x1b[K", "\x1b[1K",
         "\x1b[2K", "\x1b[3L", "\x1b[2M", "\x1b[4@", "\x1b[2P", "\x1b[3X", "\x1b[2;5r", "\x1b[r", "\x1bM", "\u001bD", "\x1b[?1049h", "\x1b[?1049l",
         "\x1b[44m   \x1b[49m", "😀", "é", "\x1b[?2027h", "\x1b[?2027l", "\x1b[3S", "\x1b[2T", "\t", "\b", "\x1b[?7l", "\x1b[?7h",
-        "abcdefghijklmnopqrstuvwxyz0123456789", "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\", "\x1b[7m inv \x1b[27m", "\x1b[?25l", "\x1b[?25h",
+        "abcdefghijklmnopqrstuvwxyz0123456789", "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\", "\x1b]8;id=2;https://tcode.dev/a\x1b\\b\x1b]8;;\x1b\\", "\x1b[7m inv \x1b[27m", "\x1b[?25l", "\x1b[?25h",
         "\x1b]133;A\x07$ ", "\x1b]133;C\x07", "\x1b]133;D;0\x07", "\x1b[3 q", "\x1b#8", "\x1b[10;20H*", "\u001bc",
     ];
 
@@ -81,12 +81,16 @@ public sealed class DifferentialTests
                 var ac = a.Cells[x];
                 var same = TCell.Codepoint(ec) == TCell.Codepoint(ac) && TCell.Width(ec) == TCell.Width(ac) &&
                            TCell.Semantic(ec) == TCell.Semantic(ac) && TCell.Hyperlink(ec) == TCell.Hyperlink(ac) &&
-                           e.Styles[TCell.StyleIndex(ec)] == a.Styles[TCell.StyleIndex(ac)] && e.TextAt(x) == a.TextAt(x);
+                           SameStyle(expected, e.Styles[TCell.StyleIndex(ec)], actual, a.Styles[TCell.StyleIndex(ac)]) && e.TextAt(x) == a.TextAt(x);
                 Assert.True(same, $"{where}: cell ({x},{y}) expected {Describe(e, x)}, got {Describe(a, x)}\n" +
                                   $"expected row: {RowText(e)}\nactual row:   {RowText(a)}");
             }
         }
     }
+
+    /// <summary>超链接 id 是各自捕获器的内部编号，按地址比较。</summary>
+    private static bool SameStyle(FrameSnapshot ef, ResolvedStyle es, FrameSnapshot af, ResolvedStyle @as) =>
+        es with { HyperlinkId = 0 } == @as with { HyperlinkId = 0 } && ef.LinkOf(es) == af.LinkOf(@as);
 
     private static string Describe(RowSnapshot row, int x)
     {

@@ -73,6 +73,22 @@ M0 中发现、需要后续处理的：
 
 验收：Tier 0 全部通过（[10](10-protocol-compat.md) §7.1）；ASCII 解析吞吐达到实测修订后的目标。
 
+#### M1 实施状态（2026-10-17）
+
+| 阶段 | 状态 | 内容 |
+|---|---|---|
+| A | **完成** | 绑定生成器（`tools/terminal/ghostty_bindgen.py`，类型取自 `ghostty_type_json()`，函数取自头文件）；增量 `CaptureFrame`（只重建脏行、按内容哈希复用行对象）；差分测试；overlay O5（漏标脏行） |
+| B | **完成** | `ITerminalEffects`（剪贴板、通知、进度、标题、cwd…）；核心应答的查询（DA1/DA2/XTVERSION/尺寸/配色）；OSC 133/633 `CommandTracker` |
+| C | **完成** | `InputModes`；按键 / 鼠标 / 焦点编码；粘贴安全检查与 bracketed paste |
+| D | **完成** | 选区（范围、矩形、词、行、全部、命令输出）与选区文本；视口滚动（顶 / 底 / 行 / 指定行 / 按提示符）；搜索（`TerminalSearch`，视口高亮在捕获时换算）；OSC 8 超链接解析进帧（`FrameSnapshot.Links` + `ResolvedStyle.HyperlinkId`，同一地址跨帧 id 不变，上限 65535）。帧新增 `Selection` / `Search` / `Links`，仅选区或搜索变化也会产生新帧 |
+| E | 待做 | 随包 ConPTY（conpty.dll + OpenConsole.exe）；Toolhelp32 前台进程；PTY 压力测试 |
+| F | 待做 | esctest2 驱动与黄金样本回放进 CI |
+
+阶段 D 的实测：
+- 行选区（`select_line`）止于最后一个非空格列，不是整行宽度；视图按选区区间绘制即可，不要自行补齐。
+- 选区与搜索匹配都是未跟踪的 grid ref，只在下一次终端变更前有效，所以视口区间在 `CaptureFrame` 内换算，不跨线程传递 grid ref。
+- 超链接 id 是捕获器内部编号：两个捕获器（例如差分测试的增量 / 全量）对同一地址可能给出不同 id，比较时按地址比较。
+
 ### M2 pty host（约 3–4 周）
 
 按 [04](04-pty-host.md) §17 的 7 步：协议与客户端 → host 核心（监听、认证、actor、日志、流控）→ attach 快照与多客户端 → 发现、启动、心跳、宽限期 → 持久化与 revive → 受限令牌与 `command/*` 接口 → 升级并存。外加 04 §18.1 采纳的补充（BaseEnvironment、集成等级、`setPersist` 等）。

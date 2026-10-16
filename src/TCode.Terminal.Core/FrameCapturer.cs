@@ -11,7 +11,12 @@ internal sealed unsafe class FrameCapturer : IDisposable
 {
     private readonly GhosttyCellLayout _layout = GhosttyCellLayout.Current;
     private readonly Dictionary<(ulong, ulong), RowSnapshot> _rowsById = [];
-    private readonly Dictionary<(ushort Sid, uint Bg), int> _styleIndex = [];
+    private readonly TerminalCore _core;
+    private readonly Dictionary<(ushort Sid, uint Bg, int Link), int> _styleIndex = [];
+    private readonly Dictionary<string, int> _linkIds = new(StringComparer.Ordinal);
+    private readonly List<string> _links = [];
+    private string[] _linksPublished = [];
+    private readonly List<CellSpan> _spanBuffer = [];
     private readonly List<ResolvedStyle> _styles = [];
     private readonly Dictionary<int, int[]> _graphemes = [];
     private readonly uint[] _graphemeBuffer = new uint[64];
@@ -23,8 +28,12 @@ internal sealed unsafe class FrameCapturer : IDisposable
     private ulong _nextRowId;
     private long _generation;
 
-    public FrameCapturer()
+    /// <summary>超链接表上限：超出后新地址不再分配 id（HyperlinkId = 0，视图回退到 <see cref="TerminalCore.HyperlinkAt"/>）。</summary>
+    public const int MaxLinks = 65535;
+
+    public FrameCapturer(TerminalCore core)
     {
+        _core = core;
         nint state, rows, cells;
         TerminalCore.Check(GhosttyNative.RenderStateNew(null, &state));
         TerminalCore.Check(GhosttyNative.RenderStateRowIteratorNew(null, &rows));
@@ -44,10 +53,14 @@ internal sealed unsafe class FrameCapturer : IDisposable
         var cursor = ReadCursor();
         var scrollbar = ReadScrollbar(terminal);
 
+        var selection = ReadSelection(rows, cols);
+        var search = _core.ActiveSearch?.Highlights(_core, rows, cols);
+
         var previous = _previous;
         var resized = previous is null || previous.Columns != cols || previous.Rows.Length != rows;
         var full = resized || dirty == GhosttyRenderStateDirty.Full;
-        if (!full && dirty == GhosttyRenderStateDirty.False && !force && previous!.Cursor == cursor && previous.Scrollbar == scrollbar)
+        if (!full && dirty == GhosttyRenderStateDirty.False && !force && previous!.Cursor == cursor && previous.Scrollbar == scrollbar &&
+            previous.Selection.AsSpan().SequenceEqual(selection) && SameSearch(previous.Search, search))
         {
             return null;
         }
@@ -63,7 +76,7 @@ internal sealed unsafe class FrameCapturer : IDisposable
         {
             for (var y = 0; y < rows && GhosttyNative.RenderStateRowIteratorNext(_rows); y++)
             {
-                result[y] = CaptureRow(cols);
+                result[y] = CaptureRow(cols, y);
             }
             for (var y = 0; y < rows; y++)
             {
@@ -77,7 +90,7 @@ internal sealed unsafe class FrameCapturer : IDisposable
             {
                 if (y < rows)
                 {
-                    result[y] = CaptureRow(cols);
+                    result[y] = CaptureRow(cols, y);
                 }
             }
         }
@@ -92,12 +105,15 @@ internal sealed unsafe class FrameCapturer : IDisposable
             Cursor = cursor,
             Palette = _palette,
             Scrollbar = scrollbar,
+            Selection = previous is not null && previous.Selection.AsSpan().SequenceEqual(selection) ? previous.Selection : selection,
+            Search = previous is not null && SameSearch(previous.Search, search) ? previous.Search : search,
+            Links = PublishLinks(),
         };
         _previous = frame;
         return frame;
     }
 
-    private RowSnapshot CaptureRow(int cols)
+    private RowSnapshot CaptureRow(int cols, int y)
     {
         GhosttyRenderStateRowId id;
         GhosttyCellsView view;
@@ -112,6 +128,7 @@ internal sealed unsafe class FrameCapturer : IDisposable
         _styles.Clear();
         _styles.Add(ResolvedStyle.Default);
         _graphemes.Clear();
+        var rowHasLink = RowBool(rawRow, GhosttyRowData.Hyperlink);
 
         var cells = new ulong[cols];
         var count = (int)Math.Min((ulong)cols, view.Len);
@@ -144,14 +161,15 @@ internal sealed unsafe class FrameCapturer : IDisposable
                     bg = TerminalColor.Rgb((byte)content, (byte)(content >> 8), (byte)(content >> 16)).Raw;
                     break;
             }
-            var style = sid == 0 && bg == 0 ? 0 : InternStyle(x, sid, bg);
+            var linkId = link && rowHasLink ? LinkId(x, y) : 0;
+            var style = sid == 0 && bg == 0 && linkId == 0 ? 0 : InternStyle(x, sid, bg, linkId);
             cells[x] = TCell.Pack(cp, wide, grapheme, style, semantic, link, cp == 0x10EEEE);
         }
 
         var flags = RowFlags.None;
         if (RowBool(rawRow, GhosttyRowData.Wrap)) flags |= RowFlags.SoftWrapped;
         if (RowBool(rawRow, GhosttyRowData.WrapContinuation)) flags |= RowFlags.WrapContinuation;
-        if (RowBool(rawRow, GhosttyRowData.Hyperlink)) flags |= RowFlags.HasHyperlink;
+        if (rowHasLink) flags |= RowFlags.HasHyperlink;
         if (RowBool(rawRow, GhosttyRowData.KittyVirtualPlaceholder)) flags |= RowFlags.KittyPlaceholder;
         if (RowPrompt(rawRow)) flags |= RowFlags.PromptLine;
 
@@ -181,9 +199,9 @@ internal sealed unsafe class FrameCapturer : IDisposable
         return row;
     }
 
-    private int InternStyle(int x, ushort sid, uint bgOverride)
+    private int InternStyle(int x, ushort sid, uint bgOverride, int linkId)
     {
-        if (_styleIndex.TryGetValue((sid, bgOverride), out var index))
+        if (_styleIndex.TryGetValue((sid, bgOverride, linkId), out var index))
         {
             return index;
         }
@@ -208,11 +226,65 @@ internal sealed unsafe class FrameCapturer : IDisposable
         {
             style = style with { Background = new TerminalColor(bgOverride) };
         }
+        if (linkId != 0)
+        {
+            style = style with { HyperlinkId = linkId };
+        }
         index = _styles.Count;
         _styles.Add(style);
-        _styleIndex[(sid, bgOverride)] = index;
+        _styleIndex[(sid, bgOverride, linkId)] = index;
         return index;
     }
+
+    /// <summary>OSC 8 地址 → 帧内超链接 id（从 1 开始，0 = 无）。同一地址跨帧 id 不变，行快照可以复用。</summary>
+    private int LinkId(int x, int y)
+    {
+        var p = new GhosttyPoint { Tag = GhosttyPointTag.Viewport };
+        p.Value.Coordinate = new GhosttyPointCoordinate { X = (ushort)x, Y = (uint)y };
+        var gridRef = GhosttyGridRef.Create();
+        if (GhosttyNative.TerminalGridRef(_core.Handle, p, &gridRef) != GhosttyResult.Success ||
+            TerminalCore.HyperlinkOf(&gridRef) is not { } uri)
+        {
+            return 0;
+        }
+        if (_linkIds.TryGetValue(uri, out var id))
+        {
+            return id;
+        }
+        if (_links.Count >= MaxLinks)
+        {
+            return 0;
+        }
+        _links.Add(uri);
+        id = _links.Count;
+        _linkIds[uri] = id;
+        return id;
+    }
+
+    private string[] PublishLinks()
+    {
+        if (_linksPublished.Length != _links.Count)
+        {
+            _linksPublished = _links.ToArray();
+        }
+        return _linksPublished;
+    }
+
+    private CellSpan[] ReadSelection(int rows, int cols)
+    {
+        var selection = GhosttySelection.Create();
+        if (GhosttyNative.TerminalGet(_core.Handle, GhosttyTerminalData.Selection, &selection) != GhosttyResult.Success)
+        {
+            return [];
+        }
+        _spanBuffer.Clear();
+        _core.SelectionSpans(&selection, rows, cols, _spanBuffer);
+        return _spanBuffer.Count == 0 ? [] : _spanBuffer.ToArray();
+    }
+
+    private static bool SameSearch(SearchHighlights? a, SearchHighlights? b) =>
+        ReferenceEquals(a, b) || (a is not null && b is not null && a.TotalMatches == b.TotalMatches && a.SelectedIndex == b.SelectedIndex &&
+                                  a.Matches.AsSpan().SequenceEqual(b.Matches) && a.Selected.AsSpan().SequenceEqual(b.Selected));
 
     private bool CaptureGrapheme(int x)
     {

@@ -21,6 +21,7 @@ public sealed unsafe class TerminalCore : IDisposable
     private TerminalSize _size;
     private bool _inCallback;
     private FrameCapturer? _capturer;
+    private TerminalSearch? _search;
     private System.Buffers.IBufferWriter<byte>? _pasteCapture;
     private nint _xtversion;
     private nint _terminfoName;
@@ -216,6 +217,201 @@ public sealed unsafe class TerminalCore : IDisposable
         _effects.WriteToPty(Encoding.ASCII.GetBytes(reply));
     }
 
+    /// <summary>滚动视口（UI 侧核心；不改变终端内容，不需要同步到镜像核心）。</summary>
+    public void ScrollViewport(ViewportScroll scroll)
+    {
+        EnsureNotInCallback();
+        var behavior = new GhosttyTerminalScrollViewport
+        {
+            Tag = scroll.Kind switch
+            {
+                ViewportScrollKind.Top => GhosttyTerminalScrollViewportTag.Top,
+                ViewportScrollKind.Bottom => GhosttyTerminalScrollViewportTag.Bottom,
+                ViewportScrollKind.Row => GhosttyTerminalScrollViewportTag.Row,
+                ViewportScrollKind.Prompt => GhosttyTerminalScrollViewportTag.DeltaPrompt,
+                _ => GhosttyTerminalScrollViewportTag.Delta,
+            },
+        };
+        if (scroll.Kind == ViewportScrollKind.Row)
+        {
+            behavior.Value.Row = (ulong)Math.Max(0, scroll.Amount);
+        }
+        else
+        {
+            behavior.Value.Delta = scroll.Amount;
+        }
+        GhosttyNative.TerminalScrollViewport(Handle, behavior);
+    }
+
+    /// <summary>设置选区（UI 侧核心）。点击位置没有可选内容时返回 false（例如 CommandOutput 没有语义标记）。</summary>
+    public bool Select(in SelectionRequest request)
+    {
+        EnsureNotInCallback();
+        var selection = GhosttySelection.Create();
+        GhosttyResult r;
+        switch (request.Kind)
+        {
+            case SelectionKind.All:
+                r = GhosttyNative.TerminalSelectAll(Handle, &selection);
+                break;
+            case SelectionKind.Word:
+            {
+                var options = GhosttyTerminalSelectWordOptions.Create();
+                options.Ref = GridRef(request.Start);
+                r = GhosttyNative.TerminalSelectWord(Handle, &options, &selection);
+                break;
+            }
+            case SelectionKind.Line:
+            {
+                var options = GhosttyTerminalSelectLineOptions.Create();
+                options.Ref = GridRef(request.Start);
+                options.SemanticPromptBoundary = true;
+                r = GhosttyNative.TerminalSelectLine(Handle, &options, &selection);
+                break;
+            }
+            case SelectionKind.CommandOutput:
+                r = GhosttyNative.TerminalSelectOutput(Handle, GridRef(request.Start), &selection);
+                break;
+            default:
+                selection.Start = GridRef(request.Start);
+                selection.End = GridRef(request.End);
+                selection.Rectangle = request.Rectangle;
+                r = GhosttyResult.Success;
+                break;
+        }
+        if (r != GhosttyResult.Success)
+        {
+            return false;
+        }
+        Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.Selection, &selection));
+        return true;
+    }
+
+    public void ClearSelection()
+    {
+        EnsureNotInCallback();
+        Check(GhosttyNative.TerminalSet(Handle, GhosttyTerminalOption.Selection, null));
+    }
+
+    public bool HasSelection
+    {
+        get
+        {
+            var selection = GhosttySelection.Create();
+            return GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Selection, &selection) == GhosttyResult.Success;
+        }
+    }
+
+    /// <summary>当前选区的文本；没有选区时返回 null。软换行合并、去掉行尾空白。</summary>
+    public string? GetSelectionText(TextFormat format = TextFormat.Plain)
+    {
+        EnsureNotInCallback();
+        var selection = GhosttySelection.Create();
+        if (GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Selection, &selection) != GhosttyResult.Success)
+        {
+            return null;
+        }
+        var options = GhosttyTerminalSelectionFormatOptions.Create();
+        options.Emit = (GhosttyFormatterFormat)(int)format;
+        options.Unwrap = true;
+        options.Trim = true;
+        options.Selection = &selection;
+        byte* output;
+        nuint length;
+        Check(GhosttyNative.TerminalSelectionFormatAlloc(Handle, null, options, &output, &length));
+        return TakeString(output, length);
+    }
+
+    /// <summary>创建搜索；同时作为 <see cref="CaptureFrame"/> 的高亮来源（一个核心同时最多一个活动搜索）。</summary>
+    public TerminalSearch CreateSearch()
+    {
+        EnsureNotInCallback();
+        _search?.Dispose();
+        _search = new TerminalSearch(this);
+        return _search;
+    }
+
+    /// <summary>结束搜索并释放（必须在 actor 线程）。</summary>
+    public void EndSearch()
+    {
+        _search?.Dispose();
+        _search = null;
+    }
+
+    /// <summary>视口某格的 OSC 8 超链接地址；没有时返回 null。</summary>
+    public string? HyperlinkAt(ViewportPoint point)
+    {
+        EnsureNotInCallback();
+        var gridRef = GridRef(point);
+        return HyperlinkOf(&gridRef);
+    }
+
+    internal static string? HyperlinkOf(GhosttyGridRef* gridRef)
+    {
+        Span<byte> buffer = stackalloc byte[2048];
+        fixed (byte* p = buffer)
+        {
+            nuint length;
+            var r = GhosttyNative.GridRefHyperlinkUri(gridRef, p, (nuint)buffer.Length, &length);
+            if (r == GhosttyResult.OutOfSpace)
+            {
+                var large = new byte[(int)length];
+                fixed (byte* q = large)
+                {
+                    r = GhosttyNative.GridRefHyperlinkUri(gridRef, q, length, &length);
+                    return r == GhosttyResult.Success && length > 0 ? Encoding.UTF8.GetString(q, (int)length) : null;
+                }
+            }
+            return r == GhosttyResult.Success && length > 0 ? Encoding.UTF8.GetString(p, (int)length) : null;
+        }
+    }
+
+    internal GhosttyGridRef GridRef(ViewportPoint point)
+    {
+        var p = new GhosttyPoint { Tag = GhosttyPointTag.Viewport };
+        p.Value.Coordinate = new GhosttyPointCoordinate { X = (ushort)Math.Max(0, point.Column), Y = (uint)Math.Max(0, point.Row) };
+        var gridRef = GhosttyGridRef.Create();
+        Check(GhosttyNative.TerminalGridRef(Handle, p, &gridRef));
+        return gridRef;
+    }
+
+    /// <summary>把一个选区（未跟踪的 grid ref）换算成视口内每行的高亮区间（02 §8.6）。</summary>
+    internal void SelectionSpans(GhosttySelection* selection, int rows, int cols, List<CellSpan> spans)
+    {
+        var ordered = GhosttySelection.Create();
+        if (GhosttyNative.TerminalSelectionOrdered(Handle, selection, GhosttySelectionOrder.Forward, &ordered) != GhosttyResult.Success)
+        {
+            return;
+        }
+        GhosttyPointCoordinate start, end;
+        if (GhosttyNative.TerminalPointFromGridRef(Handle, &ordered.Start, GhosttyPointTag.Screen, &start) != GhosttyResult.Success ||
+            GhosttyNative.TerminalPointFromGridRef(Handle, &ordered.End, GhosttyPointTag.Screen, &end) != GhosttyResult.Success)
+        {
+            return;
+        }
+        GhosttyTerminalScrollbar scrollbar;
+        Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.Scrollbar, &scrollbar));
+        var top = (long)scrollbar.Offset;
+        var firstRow = (long)start.Y - top;
+        var lastRow = (long)end.Y - top;
+        for (var row = Math.Max(0, firstRow); row <= Math.Min(rows - 1, lastRow); row++)
+        {
+            int from, to;
+            if (ordered.Rectangle)
+            {
+                (from, to) = (Math.Min(start.X, end.X), Math.Max(start.X, end.X));
+            }
+            else
+            {
+                from = row == firstRow ? start.X : 0;
+                to = row == lastRow ? end.X : cols - 1;
+            }
+            spans.Add(new CellSpan((int)row, from, Math.Min(to, cols - 1)));
+        }
+    }
+
+    internal TerminalSearch? ActiveSearch => _search;
+
     /// <summary>编码输入所需的模式（02 §13.1）。视图 actor 每处理完一批 Write 调用一次，变化才发布。</summary>
     public InputModes ReadInputModes()
     {
@@ -338,7 +534,7 @@ public sealed unsafe class TerminalCore : IDisposable
     public FrameSnapshot? CaptureFrame(bool force = false)
     {
         EnsureNotInCallback();
-        _capturer ??= new FrameCapturer();
+        _capturer ??= new FrameCapturer(this);
         return _capturer.Capture(Handle, force);
     }
 
@@ -346,7 +542,7 @@ public sealed unsafe class TerminalCore : IDisposable
     internal FrameSnapshot CaptureFresh()
     {
         EnsureNotInCallback();
-        using var capturer = new FrameCapturer();
+        using var capturer = new FrameCapturer(this);
         return capturer.Capture(Handle, force: true)!;
     }
 
@@ -375,6 +571,8 @@ public sealed unsafe class TerminalCore : IDisposable
         }
         // 子对象先于终端释放（02 §4.6）
         _commands.Dispose();
+        _search?.Dispose();
+        _search = null;
         _capturer?.Dispose();
         _capturer = null;
         // 先释放终端，再释放 GCHandle：否则最后一次回调可能拿到已释放的句柄（02 §4.5）。

@@ -18,6 +18,18 @@ public sealed class FrameSnapshot
 
     public required ScrollbarState Scrollbar { get; init; }
 
+    /// <summary>选区在视口内的逐行区间（没有选区时为空数组）。没变化时沿用上一帧的数组引用。</summary>
+    public CellSpan[] Selection { get; init; } = [];
+
+    /// <summary>活动搜索的视口高亮；没有搜索或搜索词为空时为 null。</summary>
+    public SearchHighlights? Search { get; init; }
+
+    /// <summary>超链接表：<see cref="ResolvedStyle.HyperlinkId"/> - 1 为下标。只增不减（同一地址跨帧 id 不变）。</summary>
+    public IReadOnlyList<string> Links { get; init; } = [];
+
+    /// <summary>某样式对应的超链接地址。</summary>
+    public string? LinkOf(in ResolvedStyle style) => style.HyperlinkId > 0 && style.HyperlinkId <= Links.Count ? Links[style.HyperlinkId - 1] : null;
+
     /// <summary>mode 2026 期间被冻结的帧。</summary>
     public bool RenderHeld { get; init; }
 }
