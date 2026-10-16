@@ -234,7 +234,12 @@ public sealed class PtyStressTests
     {
         if (OperatingSystem.IsWindows())
         {
-            return Process.GetCurrentProcess().HandleCount;
+            // 托管 Thread 在终结前一直持有 OS 线程句柄：先回收，避免把已结束的读 / 写 / 等待线程算成泄漏
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            using var self = Process.GetCurrentProcess();
+            return self.HandleCount;
         }
         return Directory.GetFileSystemEntries(OperatingSystem.IsLinux() ? "/proc/self/fd" : "/dev/fd").Length;
     }

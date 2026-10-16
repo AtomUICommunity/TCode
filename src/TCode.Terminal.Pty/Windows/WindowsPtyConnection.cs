@@ -30,6 +30,10 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
     private nint _process;
     private nint _job;
     private nint _readThreadHandle;
+    private readonly Lock _readThreadLock = new();
+
+    /// <summary>进程句柄由 CloseAsync 与等待线程共同持有：两边都结束（计数到 2）时由后到的一方关闭。</summary>
+    private int _processHandleReleases;
     private long _startedAt;
     private long _lastOutputTick;
     private volatile bool _discarding;
@@ -288,16 +292,19 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
             Win32.TerminateProcess(_process, 1);
             await Task.WhenAny(_exited.Task, Task.Delay(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
         }
-        if (!_readerDone.Wait(1000) && _readThreadHandle != 0)
+        if (!_readerDone.Wait(1000))
         {
-            Win32.CancelSynchronousIo(_readThreadHandle);
+            lock (_readThreadLock)
+            {
+                if (_readThreadHandle != 0)
+                {
+                    Win32.CancelSynchronousIo(_readThreadHandle);
+                }
+            }
         }
         Win32.CloseHandle(_inWrite);
         Win32.CloseHandle(_outRead);
-        if (_exited.Task.IsCompleted)
-        {
-            Win32.CloseHandle(_process);  // 等待线程已结束；否则保留句柄，让它继续等待
-        }
+        ReleaseProcessHandle();  // 等待线程还在等时由它最后关闭
         ReleaseJob();
     }
 
@@ -339,7 +346,10 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
     {
         nint self;
         Win32.DuplicateHandle(Win32.GetCurrentProcess(), Win32.GetCurrentThread(), Win32.GetCurrentProcess(), &self, 0, 0, 2 /* SAME_ACCESS */);
-        _readThreadHandle = self;
+        lock (_readThreadLock)
+        {
+            _readThreadHandle = self;
+        }
         var writer = _output.Writer;
         byte[]? scratch = null;
         try
@@ -387,6 +397,11 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
         }
         finally
         {
+            lock (_readThreadLock)
+            {
+                Win32.CloseHandle(_readThreadHandle);
+                _readThreadHandle = 0;
+            }
             _readerDone.Set();
         }
     }
@@ -439,6 +454,15 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
             _readerDone.Wait(20);
         }
         _exited.TrySetResult(exit);
+        ReleaseProcessHandle();
+    }
+
+    private void ReleaseProcessHandle()
+    {
+        if (Interlocked.Increment(ref _processHandleReleases) == 2)
+        {
+            Win32.CloseHandle(_process);
+        }
     }
 
     private static PtyException Error(string what)
