@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TCode.Terminal.Avalonia</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Avalonia" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TCode.Terminal.Core\TCode.Terminal.Core.csproj" />
+    </ItemGroup>
+</Project>

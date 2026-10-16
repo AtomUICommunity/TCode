@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>TCode.Terminal.Host</RootNamespace>
+        <AssemblyName>tcode-ptyhost</AssemblyName>
+        <PublishAot>true</PublishAot>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TCode.Terminal.Pty\TCode.Terminal.Pty.csproj" />
+    </ItemGroup>
+</Project>

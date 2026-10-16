@@ -1,0 +1,121 @@
+# 终端组件（docs/terminal）的 CI：原生库（libghostty-vt、libtcodepty）→ 三平台测试 → AOT 发布与自检。
+# 原生库在 Linux 上用 zig 交叉编译 linux / windows 目标；macOS 目标需要 Apple SDK，在 macOS runner 上构建。
+name: terminal
+
+on:
+  push:
+    branches: [main]
+    paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+  pull_request:
+    paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  native:
+    name: native (${{ matrix.host }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: linux
+            os: ubuntu-24.04
+            rids: linux-x64 linux-arm64 win-x64 win-arm64
+            pty_rids: linux-x64 linux-arm64
+          - host: macos
+            os: macos-15
+            rids: osx-arm64 osx-x64
+            pty_rids: osx-arm64 osx-x64
+    env:
+      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache-global
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install llvm-strip
+        if: matrix.host == 'linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q llvm
+      - name: Cache Zig toolchain and packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/tcode/zig
+            ${{ github.workspace }}/.zig-cache-global
+          key: zig-${{ matrix.host }}-${{ hashFiles('native/toolchain.json', 'native/ghostty/ghostty-upstream.json') }}
+      - name: Build libghostty-vt
+        run: for rid in ${{ matrix.rids }}; do tools/terminal/build-ghostty.sh "$rid"; done
+      - name: Build libtcodepty and spawn helper
+        run: for rid in ${{ matrix.pty_rids }}; do native/tcodepty/build.sh "$rid"; done
+      - name: Check Linux glibc floor (2.28)
+        if: matrix.host == 'linux'
+        run: |
+          for f in artifacts/native/linux-*/lib*.so; do
+            max=$(objdump -T "$f" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+            echo "$f requires $max"
+            [ "$(printf '%s\nGLIBC_2.28\n' "$max" | sort -V | tail -1)" = "GLIBC_2.28" ]
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.host }}
+          path: |
+            artifacts/native/*/*ghostty-vt.*
+            artifacts/native/*/*tcodepty.*
+            artifacts/native/*/tcode-pty-spawn
+            artifacts/native/*/ghostty-commit.txt
+          if-no-files-found: error
+
+  test:
+    name: test (${{ matrix.rid }})
+    needs: native
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: macos-15
+            rid: osx-arm64
+          - os: windows-2022
+            rid: win-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts/native
+          merge-multiple: true
+      - name: Restore executable bits
+        if: runner.os != 'Windows'
+        run: chmod +x artifacts/native/*/tcode-pty-spawn
+      - name: Install vim (self-test exercises a full-screen program)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -q vim
+      - name: Test core
+        run: dotnet test tests/TCode.Terminal.Core.Tests
+      - name: Test PTY
+        run: dotnet test tests/TCode.Terminal.Pty.Tests
+      - name: Test view (headless snapshots)
+        run: dotnet test tests/TCode.Terminal.Avalonia.Tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snapshots-${{ matrix.rid }}
+          path: tests/TCode.Terminal.Avalonia.Tests/bin/Debug/net10.0/snapshots/
+          if-no-files-found: ignore
+      - name: AOT publish tcode-ptyhost (0 IL warnings)
+        shell: bash
+        run: |
+          dotnet publish src/TCode.Terminal.Host -c Release -r ${{ matrix.rid }} -o artifacts/publish/ptyhost 2>&1 | tee publish.log
+          if grep -E 'warning IL[0-9]{4}' publish.log; then echo "::error::AOT/trim warnings"; exit 1; fi
+      - name: Run AOT self-test
+        shell: bash
+        run: artifacts/publish/ptyhost/tcode-ptyhost --self-test
