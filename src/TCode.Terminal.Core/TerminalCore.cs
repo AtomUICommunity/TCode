@@ -21,6 +21,7 @@ public sealed unsafe class TerminalCore : IDisposable
     private TerminalSize _size;
     private bool _inCallback;
     private FrameCapturer? _capturer;
+    private System.Buffers.IBufferWriter<byte>? _pasteCapture;
     private nint _xtversion;
     private nint _terminfoName;
 
@@ -213,6 +214,88 @@ public sealed unsafe class TerminalCore : IDisposable
         var kind = request.Target switch { ClipboardTarget.Selection => 's', ClipboardTarget.Primary => 'p', _ => 'c' };
         var reply = $"\x1b]52;{kind};{Convert.ToBase64String(data)}{(request.BelTerminator ? "\a" : "\x1b\\")}";
         _effects.WriteToPty(Encoding.ASCII.GetBytes(reply));
+    }
+
+    /// <summary>编码输入所需的模式（02 §13.1）。视图 actor 每处理完一批 Write 调用一次，变化才发布。</summary>
+    public InputModes ReadInputModes()
+    {
+        byte kitty;
+        bool alt;
+        Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.KittyKeyboardFlags, &kitty));
+        GhosttyTerminalScreen screen;
+        Check(GhosttyNative.TerminalGet(Handle, GhosttyTerminalData.ActiveScreen, &screen));
+        alt = screen != GhosttyTerminalScreen.Primary;
+        var tracking = GetMode(1003) ? MouseTracking.Any : GetMode(1002) ? MouseTracking.Button : GetMode(1000) ? MouseTracking.Normal
+            : GetMode(9) ? MouseTracking.X10 : MouseTracking.None;
+        var format = GetMode(1016) ? MouseFormat.SgrPixels : GetMode(1006) ? MouseFormat.Sgr : GetMode(1015) ? MouseFormat.Urxvt
+            : GetMode(1005) ? MouseFormat.Utf8 : MouseFormat.X10;
+        return new InputModes
+        {
+            CursorKeyApplication = GetMode(1),
+            KeypadApplication = GetMode(66),
+            IgnoreKeypadWithNumLock = GetMode(1035),
+            AltEscPrefix = GetMode(1036),
+            BackarrowSendsBackspace = GetMode(67),
+            ModifyOtherKeys2 = ModifyOtherKeys2,
+            KittyFlags = kitty,
+            MouseTracking = tracking,
+            MouseFormat = format,
+            AlternateScroll = GetMode(1007),
+            AlternateScreen = alt,
+            BracketedPaste = GetMode(2004),
+            FocusEvents = GetMode(1004),
+            GraphemeCluster = GetMode(2027),
+            Win32Input = GetMode(9001),
+            CursorAtPrompt = CursorAtPrompt,
+        };
+    }
+
+    /// <summary>
+    /// 编码一次粘贴（02 §13.3，在 UI 侧核心上执行）：按终端当前状态包裹（2004）或剥离危险控制字符，
+    /// 输出经 write_pty 进入捕获作用域写到 <paramref name="output"/>。内容可能注入命令且 <paramref name="allowUnsafe"/> 为 false 时，
+    /// 返回 <see cref="PasteOutcome.RequiresConfirmation"/>，什么也不写。
+    /// </summary>
+    public PasteOutcome EncodePaste(string text, bool allowUnsafe, System.Buffers.IBufferWriter<byte> output)
+    {
+        EnsureNotInCallback();
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var mime = "text/plain"u8;
+        fixed (byte* data = bytes)
+        fixed (byte* mimePtr = mime)
+        {
+            var source = new PasteSource { Data = data, Length = bytes.Length };
+            var mimeString = new GhosttyString { Ptr = mimePtr, Len = (nuint)mime.Length };
+            var paste = GhosttyPaste.Create();
+            paste.Location = GhosttyClipboardLocation.Standard;
+            paste.Source = GhosttyPasteSource.Text;
+            paste.Mimes = &mimeString;
+            paste.MimesLen = 1;
+            paste.Reader.Read = (nint)(delegate* unmanaged[Cdecl]<void*, GhosttyString, GhosttyWriter, byte>)&Callbacks.PasteRead;
+            paste.Reader.Userdata = &source;
+            paste.AllowUnsafe = allowUnsafe;
+            _pasteCapture = output;
+            try
+            {
+                bool written;
+                var r = GhosttyNative.TerminalPaste(Handle, &paste, &written);
+                if (r == GhosttyResult.Rejected)
+                {
+                    return PasteOutcome.RequiresConfirmation;
+                }
+                Check(r);
+                return written ? PasteOutcome.Written : PasteOutcome.Empty;
+            }
+            finally
+            {
+                _pasteCapture = null;
+            }
+        }
+    }
+
+    private struct PasteSource
+    {
+        public byte* Data;
+        public int Length;
     }
 
     /// <summary>DEC 私有模式（<paramref name="ansi"/> 为 false）或 ANSI 模式的当前值；未知模式返回 false。</summary>
@@ -488,7 +571,25 @@ public sealed unsafe class TerminalCore : IDisposable
         public static void WritePty(nint terminal, nint userdata, byte* data, nuint length) =>
             From(userdata).Guard(new ReadOnlySpan<byte>(data, checked((int)length)), &OnWritePty);
 
-        private static void OnWritePty(TerminalCore c, ReadOnlySpan<byte> data) => c._effects.WriteToPty(data);
+        private static void OnWritePty(TerminalCore c, ReadOnlySpan<byte> data)
+        {
+            // 粘贴的捕获作用域：UI 侧核心的 EncodePaste 期间，输出交给调用方而不是 effects（02 §7.2）
+            if (c._pasteCapture is { } capture)
+            {
+                System.Buffers.BuffersExtensions.Write(capture, data);
+                return;
+            }
+            c._effects.WriteToPty(data);
+        }
+
+        /// <summary>粘贴内容的 MIME 读取器：把整段文本写给库提供的 writer。</summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        public static byte PasteRead(void* userdata, GhosttyString mime, GhosttyWriter writer)
+        {
+            var source = (PasteSource*)userdata;
+            var write = (delegate* unmanaged[Cdecl]<void*, byte*, nuint, byte>)writer.Write;
+            return write(writer.Userdata, source->Data, (nuint)source->Length);
+        }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         public static void Bell(nint terminal, nint userdata) => From(userdata).Guard(0, &OnBell);

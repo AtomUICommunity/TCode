@@ -32,6 +32,8 @@ C_PRIM = {
     "int32_t": "int", "uint64_t": "ulong", "int64_t": "long", "size_t": "nuint", "float": "float",
     "double": "double", "bool": "bool", "char": "byte", "void": "void", "int": "int",
 }
+# 对外公开的枚举副本（门面 API 使用，值与原生枚举相同）：原生名 → 公共名
+PUBLIC_ENUMS = {"GhosttyKey": ("TerminalKey", "物理按键（W3C UI Events 的 KeyboardEvent.code），值与 GhosttyKey 相同。")}
 # 不是导出符号（wasm 专用）
 SKIP_HEADERS = {"wasm.h"}
 # C# 关键字
@@ -100,13 +102,21 @@ class Generator:
             kind = t["kind"]
             if kind == "enum":
                 out += self.gen_enum(name, t)
+
             elif kind in ("struct", "union"):
                 out += self.gen_struct(name, t)
         return "\n".join(out).rstrip() + "\n"
 
-    def gen_enum(self, name, t):
+    def gen_public(self):
+        out = [HEADER, "", "namespace TCode.Terminal.Core;", ""]
+        for native, (public, doc) in sorted(PUBLIC_ENUMS.items()):
+            out += self.gen_enum(public, self.types[native], public=True, doc=doc)
+        return "\n".join(out).rstrip() + "\n"
+
+    def gen_enum(self, name, t, public=False, doc=None):
         underlying = PRIM[t["underlying"]]
-        lines = [f"/// <summary>C: {name}（{t['prefix']}*）。</summary>", f"internal enum {name} : {underlying}", "{"]
+        summary = doc or f"C: {name}（{t['prefix']}*）。"
+        lines = [f"/// <summary>{summary}</summary>", f"{'public' if public else 'internal'} enum {name} : {underlying}", "{"]
         for member, value in t["values"].items():
             if member.endswith("MAX_VALUE") and value == 2147483647:
                 continue  # INT_MAX 哨兵（types.h），不生成
@@ -248,6 +258,8 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "GhosttyTypes.g.cs"), "w", encoding="utf-8") as f:
         f.write(gen.gen_types())
+    with open(os.path.join(a.out, "GhosttyPublic.g.cs"), "w", encoding="utf-8") as f:
+        f.write(gen.gen_public())
     native, count = gen.gen_functions(headers)
     with open(os.path.join(a.out, "GhosttyNative.g.cs"), "w", encoding="utf-8") as f:
         f.write(native)
