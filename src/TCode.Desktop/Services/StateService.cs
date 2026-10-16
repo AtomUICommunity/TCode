@@ -1,0 +1,112 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using TCode.Config;
+
+namespace TCode.Desktop.Services;
+
+public enum ThemeMode
+{
+    System,
+    Dark,
+    Light,
+}
+
+/// <summary>程序自己记录的状态（~/.tcode/state.json），用户无需手工编辑。用户配置在 settings.json（<see cref="UserSettingsService"/>）。</summary>
+public sealed class AppState
+{
+    public List<string> Workspaces { get; set; } = [];
+    public string? LastWorkspace { get; set; }
+    /// <summary>上次选择的模型（Ref：厂商/模型）。</summary>
+    public string? LastModelId { get; set; }
+    /// <summary>收藏的模型（Ref）。</summary>
+    public List<string> FavoriteModels { get; set; } = [];
+    /// <summary>上次选择的会话参数；新会话按当前模型的可选值就近修正。</summary>
+    public string? LastThinkingLevel { get; set; }
+    public bool LastFastMode { get; set; }
+    public int? LastContextWindow { get; set; }
+    /// <summary>每个项目（路径）上次选择的权限档位：ask / autoApprove（完全授权不记住）。</summary>
+    public Dictionary<string, string> PermissionModes { get; set; } = [];
+}
+
+[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    UseStringEnumConverter = true, PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(AppState))]
+internal sealed partial class StateJsonContext : JsonSerializerContext;
+
+/// <summary>读写 state.json。首次运行时从旧的 desktop.json 迁移（语言、主题移到 settings.json）。</summary>
+public sealed class StateService
+{
+    private readonly string _path;
+
+    public StateService()
+        : this(ConfigPaths.StateFile)
+    {
+    }
+
+    /// <summary>指定状态文件位置（测试用）。</summary>
+    public StateService(string path)
+    {
+        _path = path;
+        Current = Load();
+    }
+
+    public AppState Current { get; }
+
+    public void Save() => Write(Current);
+
+    private AppState Load()
+    {
+        try
+        {
+            if (File.Exists(_path))
+            {
+                return JsonSerializer.Deserialize(File.ReadAllText(_path), StateJsonContext.Default.AppState) ?? new();
+            }
+            var legacy = Path.Combine(Path.GetDirectoryName(_path)!, "desktop.json");
+            if (File.Exists(legacy))
+            {
+                return MigrateLegacy(legacy);
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+        }
+        return new AppState();
+    }
+
+    /// <summary>desktop.json → state.json；其中的 language / themeMode 移到 settings.json（settings.json 已有时不覆盖）。</summary>
+    private AppState MigrateLegacy(string legacy)
+    {
+        var text = File.ReadAllText(legacy);
+        var state = JsonSerializer.Deserialize(text, StateJsonContext.Default.AppState) ?? new AppState();
+        if (JsonNode.Parse(text) is JsonObject old)
+        {
+            var language = old["language"]?.GetValue<string>();
+            var theme = old["themeMode"]?.GetValue<string>()?.ToLowerInvariant();
+            if (language is not null || theme is not null)
+            {
+                SettingsFile.Update(root =>
+                {
+                    if (language is not null && root["language"] is null)
+                    {
+                        root["language"] = language;
+                    }
+                    if (theme is not null && root["theme"] is null)
+                    {
+                        root["theme"] = theme;
+                    }
+                }, Path.Combine(Path.GetDirectoryName(_path)!, "settings.json"));
+            }
+        }
+        Write(state);
+        File.Move(legacy, legacy + ".bak", overwrite: true);
+        return state;
+    }
+
+    private void Write(AppState state)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        File.WriteAllText(_path, JsonSerializer.Serialize(state, StateJsonContext.Default.AppState));
+    }
+}

@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TCode.Ai/TCode.Ai.csproj" />
+    <Project Path="src/TCode.Agent/TCode.Agent.csproj" />
+    <Project Path="src/TCode.Agent.Coding/TCode.Agent.Coding.csproj" />
+    <Project Path="src/TCode.Rpc.Contracts/TCode.Rpc.Contracts.csproj" />
+    <Project Path="src/TCode.AgentHost/TCode.AgentHost.csproj" />
+    <Project Path="src/TCode.Config/TCode.Config.csproj" />
+    <Project Path="src/TCode.Runtimes/TCode.Runtimes.csproj" />
+    <Project Path="src/TCode.Desktop/TCode.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TCode.Agent.Tests/TCode.Agent.Tests.csproj" />
+    <Project Path="tests/TCode.AgentHost.Tests/TCode.AgentHost.Tests.csproj" />
+    <Project Path="tests/TCode.Ai.Tests/TCode.Ai.Tests.csproj" />
+    <Project Path="tests/TCode.Runtimes.Tests/TCode.Runtimes.Tests.csproj" />
+    <Project Path="tests/TCode.Desktop.Tests/TCode.Desktop.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,153 @@
+namespace TCode.Rpc;
+
+/// <summary>UI 侧使用的 <see cref="IAgentHostServer"/> 代理：每个方法对应一次 JSON-RPC 调用。</summary>
+public sealed class AgentHostServerProxy(JsonRpcConnection rpc) : IAgentHostServer
+{
+    private static RpcJsonContext J => RpcJsonContext.Default;
+
+    public Task<HostInfo> InitializeAsync(InitializeRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.Initialize, request, J.InitializeRequest, J.HostInfo, cancellationToken);
+
+    public Task<IReadOnlyList<ModelDto>> ListModelsAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListModels, J.IReadOnlyListModelDto, cancellationToken);
+
+    public Task<ProvidersSnapshotDto> ListProvidersAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListProviders, J.ProvidersSnapshotDto, cancellationToken);
+
+    public Task<IReadOnlyList<CatalogProviderDto>> ListCatalogProvidersAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListCatalogProviders, J.IReadOnlyListCatalogProviderDto, cancellationToken);
+
+    public Task ReloadSettingsAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ReloadSettings, cancellationToken);
+
+    public Task<ProviderTestResult> TestProviderAsync(ProviderTestRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.TestProvider, request, J.ProviderTestRequest, J.ProviderTestResult, cancellationToken);
+
+    public Task RefreshProviderModelsAsync(string providerId, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.RefreshProviderModels, new ProviderIdParams(providerId), J.ProviderIdParams, cancellationToken);
+
+    public Task<CatalogStatusDto> GetCatalogStatusAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.CatalogStatus, J.CatalogStatusDto, cancellationToken);
+
+    public Task<CatalogUpdateDto> CheckCatalogAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.CheckCatalog, J.CatalogUpdateDto, cancellationToken);
+
+    public Task<CatalogStatusDto> ApplyCatalogUpdateAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ApplyCatalogUpdate, J.CatalogStatusDto, cancellationToken);
+
+    public Task DiscardCatalogUpdateAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.DiscardCatalogUpdate, cancellationToken);
+
+    public Task<IReadOnlyList<RuntimeDto>> ListRuntimesAsync(CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListRuntimes, J.IReadOnlyListRuntimeDto, cancellationToken);
+
+    public Task<SessionDto> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.CreateSession, request, J.CreateSessionRequest, J.SessionDto, cancellationToken);
+
+    public Task<IReadOnlyList<SessionSummaryDto>> ListSessionsAsync(string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListSessions, new ListSessionsParams(cwd), J.ListSessionsParams, J.IReadOnlyListSessionSummaryDto, cancellationToken);
+
+    public Task<SessionPageDto> QuerySessionsAsync(string? cwd, int offset, int limit, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.QuerySessions, new QuerySessionsParams(cwd, offset, limit), J.QuerySessionsParams, J.SessionPageDto, cancellationToken);
+
+    public Task RenameSessionAsync(string filePath, string title, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.RenameSession, new RenameSessionParams(filePath, title), J.RenameSessionParams, cancellationToken);
+
+    public Task PinSessionAsync(string filePath, bool pinned, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.PinSession, new PinSessionParams(filePath, pinned), J.PinSessionParams, cancellationToken);
+
+    public Task DeleteSessionAsync(string filePath, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.DeleteSession, new SessionFileParams(filePath), J.SessionFileParams, cancellationToken);
+
+    public Task<OpenSessionResult> ForkSessionAsync(string filePath, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ForkSession, new SessionFileParams(filePath), J.SessionFileParams, J.OpenSessionResult, cancellationToken);
+
+    public Task<OpenSessionResult> OpenSessionAsync(string filePath, int? turnLimit, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.OpenSession, new OpenSessionParams(filePath, turnLimit), J.OpenSessionParams, J.OpenSessionResult, cancellationToken);
+
+    public Task<HistoryPageDto> GetHistoryAsync(string sessionId, int before, int turnLimit, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.SessionHistory, new HistoryPageParams(sessionId, before, turnLimit), J.HistoryPageParams, J.HistoryPageDto, cancellationToken);
+
+    public Task<OpenSessionResult> OpenSessionAsync(string filePath, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.OpenSession, new OpenSessionParams(filePath), J.OpenSessionParams, J.OpenSessionResult, cancellationToken);
+
+    public Task<PromptResult> PromptAsync(PromptRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.Prompt, request, J.PromptRequest, J.PromptResult, cancellationToken);
+
+    public Task AbortAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.Abort, new SessionIdParams(sessionId), J.SessionIdParams, cancellationToken);
+
+    public Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.SetModel, new SetModelParams(sessionId, modelId), J.SetModelParams, J.SessionOptionsDto, cancellationToken);
+
+    public Task<SessionOptionsDto> SetOptionsAsync(string sessionId, SessionOptionsDto options, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.SetOptions, new SetOptionsParams(sessionId, options), J.SetOptionsParams, J.SessionOptionsDto, cancellationToken);
+
+    public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.CloseSession, new SessionIdParams(sessionId), J.SessionIdParams, cancellationToken);
+}
+
+/// <summary>Host 侧：把 JSON-RPC 方法分发到 <see cref="IAgentHostServer"/> 实现。</summary>
+public static class AgentHostServerDispatcher
+{
+    public static void Register(JsonRpcConnection rpc, IAgentHostServer server)
+    {
+        var j = RpcJsonContext.Default;
+        rpc.AddRequestHandler(RpcMethods.Initialize, j.InitializeRequest, j.HostInfo, server.InitializeAsync);
+        rpc.AddRequestHandler(RpcMethods.ListModels, j.IReadOnlyListModelDto, server.ListModelsAsync);
+        rpc.AddRequestHandler(RpcMethods.ListProviders, j.ProvidersSnapshotDto, server.ListProvidersAsync);
+        rpc.AddRequestHandler(RpcMethods.ListCatalogProviders, j.IReadOnlyListCatalogProviderDto, server.ListCatalogProvidersAsync);
+        rpc.AddRequestHandler(RpcMethods.ReloadSettings, server.ReloadSettingsAsync);
+        rpc.AddRequestHandler(RpcMethods.TestProvider, j.ProviderTestRequest, j.ProviderTestResult, server.TestProviderAsync);
+        rpc.AddRequestHandler(RpcMethods.RefreshProviderModels, j.ProviderIdParams, (p, ct) => server.RefreshProviderModelsAsync(p.ProviderId, ct));
+        rpc.AddRequestHandler(RpcMethods.CatalogStatus, j.CatalogStatusDto, server.GetCatalogStatusAsync);
+        rpc.AddRequestHandler(RpcMethods.CheckCatalog, j.CatalogUpdateDto, server.CheckCatalogAsync);
+        rpc.AddRequestHandler(RpcMethods.ApplyCatalogUpdate, j.CatalogStatusDto, server.ApplyCatalogUpdateAsync);
+        rpc.AddRequestHandler(RpcMethods.DiscardCatalogUpdate, server.DiscardCatalogUpdateAsync);
+        rpc.AddRequestHandler(RpcMethods.ListRuntimes, j.IReadOnlyListRuntimeDto, server.ListRuntimesAsync);
+        rpc.AddRequestHandler(RpcMethods.CreateSession, j.CreateSessionRequest, j.SessionDto, server.CreateSessionAsync);
+        rpc.AddRequestHandler(RpcMethods.ListSessions, j.ListSessionsParams, j.IReadOnlyListSessionSummaryDto,
+            (p, ct) => server.ListSessionsAsync(p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.OpenSession, j.OpenSessionParams, j.OpenSessionResult, (p, ct) => server.OpenSessionAsync(p.FilePath, p.TurnLimit, ct));
+        rpc.AddRequestHandler(RpcMethods.SessionHistory, j.HistoryPageParams, j.HistoryPageDto,
+            (p, ct) => server.GetHistoryAsync(p.SessionId, p.Before, p.TurnLimit, ct));
+        rpc.AddRequestHandler(RpcMethods.QuerySessions, j.QuerySessionsParams, j.SessionPageDto,
+            (p, ct) => server.QuerySessionsAsync(p.Cwd, p.Offset, p.Limit, ct));
+        rpc.AddRequestHandler(RpcMethods.RenameSession, j.RenameSessionParams, (p, ct) => server.RenameSessionAsync(p.FilePath, p.Title, ct));
+        rpc.AddRequestHandler(RpcMethods.PinSession, j.PinSessionParams, (p, ct) => server.PinSessionAsync(p.FilePath, p.Pinned, ct));
+        rpc.AddRequestHandler(RpcMethods.DeleteSession, j.SessionFileParams, (p, ct) => server.DeleteSessionAsync(p.FilePath, ct));
+        rpc.AddRequestHandler(RpcMethods.ForkSession, j.SessionFileParams, j.OpenSessionResult, (p, ct) => server.ForkSessionAsync(p.FilePath, ct));
+        rpc.AddRequestHandler(RpcMethods.Prompt, j.PromptRequest, j.PromptResult, server.PromptAsync);
+        rpc.AddRequestHandler(RpcMethods.Abort, j.SessionIdParams, (p, ct) => server.AbortAsync(p.SessionId, ct));
+        rpc.AddRequestHandler(RpcMethods.SetModel, j.SetModelParams, j.SessionOptionsDto, (p, ct) => server.SetModelAsync(p.SessionId, p.ModelId, ct));
+        rpc.AddRequestHandler(RpcMethods.SetOptions, j.SetOptionsParams, j.SessionOptionsDto, (p, ct) => server.SetOptionsAsync(p.SessionId, p.Options, ct));
+        rpc.AddRequestHandler(RpcMethods.CloseSession, j.SessionIdParams, (p, ct) => server.CloseSessionAsync(p.SessionId, ct));
+    }
+}
+
+/// <summary>Host 侧使用的 <see cref="IAgentHostClient"/> 代理（推送通知、反向请求审批）。</summary>
+public sealed class AgentHostClientProxy(JsonRpcConnection rpc) : IAgentHostClient
+{
+    private static RpcJsonContext J => RpcJsonContext.Default;
+
+    public void OnSessionEvent(SessionEventNotification notification) =>
+        rpc.Notify(RpcMethods.SessionEvent, notification, J.SessionEventNotification);
+
+    public void OnModelsChanged(ModelsChangedNotification notification) =>
+        rpc.Notify(RpcMethods.ModelsChanged, notification, J.ModelsChangedNotification);
+
+    public Task<ToolApprovalResponse> RequestToolApprovalAsync(ToolApprovalRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ApproveTool, request, J.ToolApprovalRequest, J.ToolApprovalResponse, cancellationToken);
+}
+
+/// <summary>UI 侧：把 Host 发来的通知与请求分发到 <see cref="IAgentHostClient"/> 实现。</summary>
+public static class AgentHostClientDispatcher
+{
+    public static void Register(JsonRpcConnection rpc, IAgentHostClient client)
+    {
+        var j = RpcJsonContext.Default;
+        rpc.AddNotificationHandler(RpcMethods.SessionEvent, j.SessionEventNotification, client.OnSessionEvent);
+        rpc.AddNotificationHandler(RpcMethods.ModelsChanged, j.ModelsChangedNotification, client.OnModelsChanged);
+        rpc.AddRequestHandler(RpcMethods.ApproveTool, j.ToolApprovalRequest, j.ToolApprovalResponse, client.RequestToolApprovalAsync);
+    }
+}

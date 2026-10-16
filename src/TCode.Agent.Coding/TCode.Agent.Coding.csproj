@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TCode.Agent.Coding</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TCode.Agent\TCode.Agent.csproj" />
+        <ProjectReference Include="..\TCode.Config\TCode.Config.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="AngleSharp" />
+    </ItemGroup>
+</Project>

@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tcode.dev/schemas/settings.json",
+  "title": "TCode settings",
+  "description": "~/.tcode/settings.json — see docs/settings.md",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "model": {
+      "type": "string",
+      "description": "Default model for new sessions: <provider>/<model>, e.g. anthropic/claude-opus-5-5."
+    },
+    "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
+    "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
+    "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
+    "providers": {
+      "type": "object",
+      "description": "Keyed by provider id. A built-in id (anthropic, openai, deepseek, openrouter, …) overrides the catalog; any other id defines a custom provider.",
+      "additionalProperties": { "$ref": "#/definitions/provider" }
+    },
+    "webSearch": {
+      "type": "object",
+      "description": "Search backend for the built-in agent's web_search tool. The tool is unavailable until this is configured.",
+      "properties": {
+        "provider": { "enum": ["brave", "tavily", "exa", "searxng"] },
+        "apiKey": { "$ref": "#/definitions/secret" },
+        "baseUrl": { "type": "string", "description": "Custom endpoint. Required for searxng (the instance URL, with the JSON format enabled)." }
+      },
+      "required": ["provider"],
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "additionalDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra directories treated as part of the workspace: read-only tools need no approval inside them."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "secret": {
+      "type": "string",
+      "description": "Plain value, {env:VAR} or $VAR. Use \"\" for local servers that need no key."
+    },
+    "compat": {
+      "type": "object",
+      "description": "Escape hatch for verified vendor quirks. Usually auto-detected.",
+      "properties": {
+        "maxTokensField": { "enum": ["max_tokens", "max_completion_tokens"] },
+        "thinkingFormat": { "enum": ["None", "OpenAIEffort", "ThinkingType", "ThinkingTypeAndEffort", "EnableThinking", "OpenRouter"] },
+        "requiresReasoningContentOnAssistant": { "type": "boolean" },
+        "supportsDeveloperRole": { "type": "boolean" },
+        "supportsUsageInStreaming": { "type": "boolean" },
+        "supportsDisabledThinking": { "type": "boolean" },
+        "supportsEffort": { "type": "boolean" },
+        "authHeader": { "enum": ["x-api-key", "bearer"] },
+        "anthropicBetas": { "type": "array", "items": { "type": "string" } },
+        "reasoningEfforts": { "type": "array", "items": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"] } }
+      }
+    },
+    "model": {
+      "type": "object",
+      "description": "All fields optional; catalog metadata is used when the model is known.",
+      "properties": {
+        "api": {
+          "enum": ["chat", "responses", "messages"],
+          "description": "Wire protocol for this model. Defaults to the provider's protocol."
+        },
+        "baseUrl": { "type": "string", "description": "Base URL for this model. Defaults to the provider's base URL." },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "contextWindow": { "type": "integer", "minimum": 1, "description": "Default 128000 for unknown models." },
+        "maxTokens": { "type": "integer", "minimum": 1, "description": "Default 16384 for unknown models." },
+        "reasoning": { "type": "boolean" },
+        "efforts": { "type": "array", "items": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"] } },
+        "images": { "type": "boolean" },
+        "fastMode": { "type": "boolean" },
+        "compat": { "$ref": "#/definitions/compat" }
+      },
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "api": {
+          "enum": ["chat", "responses", "messages"],
+          "description": "Wire protocol: OpenAI Chat Completions, OpenAI Responses or Anthropic Messages. Required for custom providers."
+        },
+        "baseUrl": { "type": "string", "description": "Required for custom providers." },
+        "apiKey": { "$ref": "#/definitions/secret" },
+        "enabled": { "type": "boolean", "default": true },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "models": {
+          "type": "object",
+          "description": "When present, only these models are enabled. Use {} to take catalog defaults.",
+          "additionalProperties": { "$ref": "#/definitions/model" }
+        },
+        "compat": { "$ref": "#/definitions/compat" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

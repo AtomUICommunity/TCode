@@ -1,0 +1,146 @@
+using TCode.Ai.Messages;
+using TCode.Ai.Models;
+
+namespace TCode.Runtimes;
+
+/// <summary>
+/// 一种 Agent 运行时：外部 CLI（Claude Agent、Codex、ACP Agent）。
+/// 运行时的 <see cref="Id"/> 同时是其模型的 <see cref="ModelInfo.Provider"/>，
+/// 因此模型引用 <c>&lt;runtime&gt;/&lt;model&gt;</c> 就能确定由哪个运行时承载会话。
+/// </summary>
+public interface IAgentRuntime
+{
+    string Id { get; }
+
+    /// <summary>界面显示名（例如 “Claude Agent”）。</summary>
+    string DisplayName { get; }
+
+    /// <summary>最近一次探测的结果；未探测前为 <see cref="RuntimeStatus.Unknown"/>。</summary>
+    RuntimeDescriptor Descriptor { get; }
+
+    /// <summary>探测安装、版本、认证与模型列表（只读操作，不会触发模型轮次）。结果缓存在 <see cref="Descriptor"/>。</summary>
+    Task<RuntimeDescriptor> ProbeAsync(CancellationToken cancellationToken);
+
+    /// <summary>描述（尤其是模型列表）在探测之外发生变化时触发，例如会话启动后得知了 Agent 的可选模型。</summary>
+    event Action? DescriptorChanged;
+
+    /// <summary>启动一个会话（通常对应一个 CLI 子进程）。</summary>
+    Task<IRuntimeSession> StartSessionAsync(RuntimeSessionRequest request, CancellationToken cancellationToken);
+}
+
+public enum RuntimeStatus
+{
+    Unknown,
+    /// <summary>找到了可执行文件并探测成功。</summary>
+    Ready,
+    /// <summary>未找到可执行文件。</summary>
+    NotInstalled,
+    /// <summary>可执行文件存在，但探测失败（版本过低、未登录、协议错误等），见 <see cref="RuntimeDescriptor.Error"/>。</summary>
+    Error,
+}
+
+/// <summary>运行时的能力（参考 zeron：用数据描述差异，而不是在调用方写分支）。</summary>
+public sealed record RuntimeCapabilities
+{
+    /// <summary>运行中能否追加用户消息并在下一步生效（Codex turn/steer、Claude stdin 追加）。不能时按 follow-up 排队。</summary>
+    public bool SupportsSteering { get; init; }
+
+    /// <summary>能否恢复 CLI 侧的会话。</summary>
+    public bool SupportsResume { get; init; }
+
+    /// <summary>能否在会话中途切换模型。</summary>
+    public bool SupportsModelSwitch { get; init; }
+
+    /// <summary>工具参数是否流式到达（否则 ToolCallStarted/Delta/Ended 连续发出）。</summary>
+    public bool StreamsToolArguments { get; init; }
+}
+
+public sealed record RuntimeDescriptor(
+    string Id,
+    string DisplayName,
+    RuntimeStatus Status,
+    string? ExecutablePath = null,
+    string? Version = null,
+    string? AuthMethod = null,
+    string? Error = null)
+{
+    public RuntimeCapabilities Capabilities { get; init; } = new();
+    public IReadOnlyList<ModelInfo> Models { get; init; } = [];
+}
+
+/// <summary>每轮生效的参数（模型与思考档位可在两轮之间改变）。</summary>
+public sealed record TurnOptions(ModelInfo Model, ThinkingLevel ThinkingLevel, bool FastMode, TCode.Agent.PermissionMode Permission)
+{
+    /// <summary>审批自动允许（自动放行与完全授权）。</summary>
+    public bool AutoApprove => Permission != TCode.Agent.PermissionMode.Ask;
+}
+
+public sealed record RuntimeSessionRequest(
+    string Cwd,
+    TurnOptions Options,
+    /// <summary>恢复时的原生会话 id；null 表示新建。</summary>
+    string? ResumeSessionId,
+    IRuntimeHost Host);
+
+/// <summary>会话向 TCode 发起的交互：审批与提问。实现方负责超时与断连时的拒绝。</summary>
+public interface IRuntimeHost
+{
+    ValueTask<ApprovalDecision> RequestApprovalAsync(RuntimeApprovalRequest request, CancellationToken cancellationToken);
+
+    /// <summary>原生会话 id 确定或改变（例如恢复失败后新建）。</summary>
+    void OnNativeSessionId(string nativeSessionId);
+}
+
+/// <summary>
+/// 一个运行时会话。<see cref="RunTurnAsync"/> 运行一整轮，直到 CLI 的终止帧（Claude <c>result</c>、
+/// Codex <c>turn/completed</c>、ACP <c>session/prompt</c> 的响应）；取消令牌触发协议层中断，
+/// 中断后仍等待终止帧（有上限），保证进程可继续使用。
+/// </summary>
+public interface IRuntimeSession : IAsyncDisposable
+{
+    string? NativeSessionId { get; }
+
+    Task RunTurnAsync(UserMessage message, TurnOptions options, TurnWriter writer, CancellationToken cancellationToken);
+
+    /// <summary>运行中追加用户消息；返回 false 表示当前无法插入（调用方改为排队）。</summary>
+    ValueTask<bool> SteerAsync(UserMessage message, CancellationToken cancellationToken);
+}
+
+public enum ApprovalKind
+{
+    /// <summary>执行命令。</summary>
+    Command,
+    /// <summary>修改文件。</summary>
+    FileChange,
+    /// <summary>其他工具（MCP、网络等）。</summary>
+    Tool,
+}
+
+public sealed record RuntimeApprovalRequest(
+    string ToolCallId,
+    string ToolName,
+    string ArgumentsJson,
+    ApprovalKind Kind,
+    /// <summary>给用户看的一句话，例如命令行或文件路径。</summary>
+    string? Title = null,
+    /// <summary>CLI 给出的理由（例如 Codex 的 reason）。</summary>
+    string? Reason = null,
+    /// <summary>运行时是否支持“本会话内允许”。</summary>
+    bool CanAllowForSession = true);
+
+public enum ApprovalOutcome
+{
+    AllowOnce,
+    AllowForSession,
+    Deny,
+    /// <summary>中止整轮（用户取消，或轮次被中断时还未答复的审批）。</summary>
+    Cancel,
+}
+
+public sealed record ApprovalDecision(ApprovalOutcome Outcome, string? Message = null)
+{
+    public static ApprovalDecision AllowOnce { get; } = new(ApprovalOutcome.AllowOnce);
+    public static ApprovalDecision Cancel { get; } = new(ApprovalOutcome.Cancel);
+    public static ApprovalDecision Deny(string? message = null) => new(ApprovalOutcome.Deny, message);
+    public bool IsAllowed => Outcome is ApprovalOutcome.AllowOnce or ApprovalOutcome.AllowForSession;
+}

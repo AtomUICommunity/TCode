@@ -1,0 +1,177 @@
+<!--
+  Composer。两种形态：
+  - 默认（空状态居中）：输入框占满上方，下方工具栏为 附件 · 模型选择器 …… 发送；
+  - 紧凑（会话中停靠底部，Classes="compact"）：单行胶囊，附件 · 输入框 · 模型选择器 · 发送；
+    内容放不下一行（换行、超宽或带图片）时自动加上 multiline，回到上下两段的布局，输入框占满整宽。
+  只有一个模型选择器实例，两种形态通过样式调整 Grid 位置；权限选择器在 Composer 下方一行（MainWindow）。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:motion="using:TCode.Desktop.Motion"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:views="using:TCode.Desktop.Views"
+             xmlns:icons="using:TCode.Desktop.Icons"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             x:Class="TCode.Desktop.Views.ComposerView"
+             x:DataType="vm:ConversationViewModel">
+    <UserControl.Styles>
+        <!-- 行列位置只在样式里设置：本地值优先级高于样式，会让紧凑形态的样式失效。 -->
+        <!-- 背景与边框写在样式里（不用本地值），拖放高亮的样式才能覆盖 -->
+        <Style Selector="views|ComposerView Border#Frame">
+            <Setter Property="Background" Value="{DynamicResource TCode.ComposerBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TCode.ComposerBorder}" />
+            <!-- 单行胶囊 ↔ 两段的圆角、拖放高亮的颜色都平滑过渡 -->
+            <Setter Property="Transitions">
+                <Transitions>
+                    <motion:MotionCornerRadiusTransition Property="CornerRadius" />
+                    <motion:MotionBrushTransition Property="BorderBrush" />
+                    <motion:MotionBrushTransition Property="Background" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="views|ComposerView atom|TextArea#Input">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="Grid.ColumnSpan" Value="4" />
+            <Setter Property="MinLines" Value="2" />
+            <!-- 自动增高：从 MinLines 增长到 MaxLines（AtomUI 默认按固定 Lines 显示） -->
+            <Setter Property="IsAutoSize" Value="True" />
+        </Style>
+        <Style Selector="views|ComposerView atom|Button#Attach">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="0" />
+        </Style>
+        <Style Selector="views|ComposerView StackPanel#Pickers">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="Margin" Value="2,0,0,0" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+        <Style Selector="views|ComposerView Panel#SendArea">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.Column" Value="3" />
+        </Style>
+        <Style Selector="views|ComposerView.compact:not(.multiline) Border#Frame">
+            <Setter Property="CornerRadius" Value="22" />
+            <Setter Property="Padding" Value="6,5,6,5" />
+        </Style>
+        <Style Selector="views|ComposerView.compact:not(.multiline) atom|TextArea#Input">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="Grid.ColumnSpan" Value="1" />
+            <Setter Property="MinLines" Value="1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="views|ComposerView.compact:not(.multiline) StackPanel#Pickers">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Margin" Value="4,0" />
+        </Style>
+        <Style Selector="views|ComposerView.compact:not(.multiline) atom|Button#Attach">
+            <Setter Property="Grid.Row" Value="0" />
+        </Style>
+        <Style Selector="views|ComposerView.compact:not(.multiline) Panel#SendArea">
+            <Setter Property="Grid.Row" Value="0" />
+        </Style>
+        <!-- 紧凑形态展开成多行：留出与正文相近的行距和边距，工具栏与正文之间空开一些 -->
+        <Style Selector="views|ComposerView.compact.multiline Border#Frame">
+            <Setter Property="Padding" Value="10,12,10,8" />
+        </Style>
+        <Style Selector="views|ComposerView.compact.multiline atom|TextArea#Input">
+            <Setter Property="LineHeight" Value="22" />
+            <Setter Property="Margin" Value="2,0,2,8" />
+        </Style>
+        <!-- 拖入图片时的放下高亮 -->
+        <Style Selector="views|ComposerView.drop-target Border#Frame">
+            <Setter Property="BorderBrush" Value="{DynamicResource TCode.Accent}" />
+            <Setter Property="Background" Value="{DynamicResource TCode.AccentSoftBg}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Frame"
+            BorderThickness="1"
+            CornerRadius="{StaticResource TCode.RadiusLarge}"
+            Padding="8,8,8,8">
+        <!-- 内容变高（逐行增高、切到两段、加附件）时外框高度平滑过渡，底部工具栏保持不动 -->
+        <motion:SmoothSize Anchor="Bottom">
+        <DockPanel>
+        <!-- 图片附件：缩略图（点击全屏查看，右上角移除）；当前模型不支持图片时给出提示 -->
+        <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}" Margin="6,2,6,6"
+                      motion:ItemsMotion.Enter="Pop">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ImageAttachmentViewModel">
+                    <Panel Width="64" Height="64" Margin="0,0,8,4">
+                        <Border Classes="image-thumb" CornerRadius="8" ClipToBounds="True" Margin="0,6,6,0"
+                                Background="{DynamicResource TCode.HoverBg}" BorderBrush="{DynamicResource TCode.ComposerBorder}" BorderThickness="1"
+                                Cursor="Hand" ToolTip.Tip="{Binding FileName}" Tapped="OnThumbnailTapped">
+                            <Panel>
+                                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="3" Padding="4,0"
+                                        CornerRadius="4" Background="#99000000">
+                                    <TextBlock Text="{Binding Number, StringFormat='#{0}'}" FontSize="10" Foreground="White" />
+                                </Border>
+                            </Panel>
+                        </Border>
+                        <atom:Button Color="Default" Variant="Solid" Shape="Circle" SizeType="Small"
+                                     Width="18" Height="18" MinWidth="18" Padding="0"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top"
+                                     Command="{Binding $parent[views:ComposerView].((vm:ConversationViewModel)DataContext).RemoveAttachmentCommand, FallbackValue={x:Null}}"
+                                     CommandParameter="{Binding}" ToolTip.Tip="{loc:TCodeLangResource AttachmentRemove}">
+                            <atom:Button.Icon>
+                                <icons:LucideIcon Kind="X" Width="10" Height="10" />
+                            </atom:Button.Icon>
+                        </atom:Button>
+                    </Panel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock DockPanel.Dock="Top" Classes="secondary" FontSize="12" Margin="8,0,8,6" TextWrapping="Wrap"
+                   IsVisible="{Binding ShowImagesUnsupported}" Text="{loc:TCodeLangResource ImagesUnsupportedHint}" />
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto">
+            <atom:TextArea x:Name="Input"
+                           StyleVariant="Borderless"
+                           Background="Transparent"
+                           AcceptsReturn="True"
+                           TextWrapping="Wrap"
+                           MaxLines="10"
+                           PlaceholderText="{loc:TCodeLangResource ComposerPlaceholder}"
+                           Text="{Binding ComposerText, Mode=TwoWay}" />
+
+            <atom:Button x:Name="Attach" Color="Default" Variant="Text" Shape="Circle" SizeType="Small"
+                         VerticalAlignment="Center" Click="OnAttachClick" ToolTip.Tip="{loc:TCodeLangResource AttachFiles}">
+                <atom:Button.Icon>
+                    <icons:LucideIcon Kind="Paperclip" />
+                </atom:Button.Icon>
+            </atom:Button>
+
+            <StackPanel x:Name="Pickers" Orientation="Horizontal" VerticalAlignment="Center">
+                <views:ModelPickerView x:Name="Picker" VerticalAlignment="Center" DataContext="{Binding Picker}" />
+            </StackPanel>
+
+            <Panel x:Name="SendArea" VerticalAlignment="Center">
+                <atom:Button Color="Default" Variant="Solid" Shape="Circle" SizeType="Small"
+                             Command="{Binding SendCommand}" motion:Presence.IsPresent="{Binding !IsRunning}" motion:Presence.Effect="Pop"
+                             ToolTip.Tip="{loc:TCodeLangResource Send}">
+                    <atom:Button.Icon>
+                        <icons:LucideIcon Kind="ArrowUp" />
+                    </atom:Button.Icon>
+                </atom:Button>
+                <atom:Button Color="Default" Variant="Solid" Shape="Circle" SizeType="Small"
+                             Command="{Binding StopCommand}" motion:Presence.IsPresent="{Binding IsRunning}" motion:Presence.Effect="Pop"
+                             ToolTip.Tip="{loc:TCodeLangResource Stop}">
+                    <atom:Button.Icon>
+                        <icons:LucideIcon Kind="StopFilled" />
+                    </atom:Button.Icon>
+                </atom:Button>
+            </Panel>
+        </Grid>
+        </DockPanel>
+        </motion:SmoothSize>
+    </Border>
+</UserControl>

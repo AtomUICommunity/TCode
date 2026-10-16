@@ -1,0 +1,32 @@
+<Project>
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+        <AtomUIVersion>6.2.5</AtomUIVersion>
+        <AvaloniaVersion>12.1.3</AvaloniaVersion>
+        <StreamMarkVersion>0.1.0-alpha.15</StreamMarkVersion>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- UI：AtomUI 必须通过 NuGet 引用，版本与其依赖的 Avalonia 保持一致 -->
+        <PackageVersion Include="AtomUI.Desktop.Controls" Version="$(AtomUIVersion)" />
+        <PackageVersion Include="Avalonia" Version="$(AvaloniaVersion)" />
+        <PackageVersion Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+        <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.1" />
+        <PackageVersion Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+        <PackageVersion Include="Avalonia.Skia" Version="$(AvaloniaVersion)" />
+        <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <!-- Markdown 渲染：StreamMark（独立仓库，经本地 NuGet 源引用，见 nuget.config） -->
+        <PackageVersion Include="StreamMark.Avalonia" Version="$(StreamMarkVersion)" />
+        <PackageVersion Include="StreamMark.RaTeX" Version="$(StreamMarkVersion)" />
+        <PackageVersion Include="StreamMark.Highlighting.TextMate" Version="$(StreamMarkVersion)" />
+        <PackageVersion Include="StreamMark.Mermaid" Version="$(StreamMarkVersion)" />
+        <PackageVersion Include="StreamMark.Theme.AtomUI" Version="$(StreamMarkVersion)" />
+        <!-- 网页工具：HTML 解析（web_fetch 的正文提取与 Markdown 转换为自写代码，见 docs/design/builtin-agent-tools.md §8） -->
+        <PackageVersion Include="AngleSharp" Version="1.8.4" />
+        <!-- 宿主 / 进程通信 -->
+        <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+        <!-- 测试 -->
+        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+        <PackageVersion Include="xunit.v3" Version="3.2.2" />
+        <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    </ItemGroup>
+</Project>

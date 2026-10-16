@@ -1,0 +1,237 @@
+# TCode 设置文件规格
+
+TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` 改到别处。
+
+| 文件 | 由谁写入 | 内容 |
+|---|---|---|
+| `settings.json` | 用户（手工编辑或通过设置界面） | 厂商与模型、默认模型、语言、主题 |
+| `settings.schema.json` | TCode 启动时生成 | JSON Schema，供编辑器自动补全 |
+| `state.json` | 程序自动写入 | 收藏的模型、最近项目、上次使用的会话参数等 |
+| `sessions/` | Agent Host | 会话记录（JSONL） |
+
+## 1. 设计原则
+
+1. **能省则省**：内置模型目录（裁剪后的 models.dev 快照，再叠加 TCode 自己的补充）。
+   - 内置厂商只需要填一个 Key；
+   - 自定义厂商的模型只需要写 id，元数据缺失时使用保守的默认值。
+2. **同一套写法覆盖内置项**：`providers` 的键与内置厂商 id 相同时，写下的每个字段都是对内置值的覆盖；键不同时就是自定义厂商。
+3. **模型列表用以 id 为键的对象**：例如 `"glm-5": {}`，合并方便，也可以逐字段覆盖。
+4. **宽容解析**：
+   - 支持注释和末尾逗号（JSONC）；
+   - 字段名不区分大小写，未知字段会被忽略并给出提示；
+   - 解析失败时保留上一次正确的配置，并在设置界面和日志中显示错误。
+5. **热重载**：Agent Host 监听 `settings.json`，改动在 500ms 防抖后生效，并把新的模型列表推送给界面。
+   - 正在运行的请求不受影响；
+   - 下一次请求起使用新的 Key / Base URL；
+   - 已打开的会话中，同 id 的模型会更新为新配置。
+
+## 2. 格式
+
+```jsonc
+{
+  "$schema": "./settings.schema.json",
+
+  // 新会话的默认模型：<厂商 id>/<模型 id>。省略时使用第一个可用模型。
+  "model": "anthropic/claude-opus-5-5",
+
+  "language": "zh-CN",              // zh-CN | en-US
+  "theme": "system",                // system | dark | light
+
+  "providers": {
+    // ① 内置厂商：只写 Key
+    "anthropic": { "apiKey": "sk-ant-..." },
+
+    // ② 引用环境变量（也接受旧写法 "$DEEPSEEK_API_KEY"）
+    "deepseek": { "apiKey": "{env:DEEPSEEK_API_KEY}" },
+
+    // ③ 内置厂商：只启用其中几个模型，并覆盖某个模型的元数据
+    "openrouter": {
+      "apiKey": "{env:OPENROUTER_API_KEY}",
+      "models": {
+        "anthropic/claude-opus-5-5": {},
+        "qwen/qwen3-coder": { "contextWindow": 262144 }
+      }
+    },
+
+    // ④ 自定义的 OpenAI 兼容端点
+    "my-gateway": {
+      "name": "My Gateway",
+      "api": "chat",                 // chat | responses | messages
+      "baseUrl": "https://gw.example.com/v1",
+      "apiKey": "sk-...",
+      "models": {
+        "qwen3-coder": { "contextWindow": 262144, "reasoning": true },
+        "glm-5": {}
+      }
+    },
+
+    // ⑤ 暂时停用某个厂商（保留配置）
+    "openai": { "enabled": false }
+  }
+}
+```
+
+### 2.1 顶层字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `model` | string | 第一个可用模型 | `厂商/模型`。模型 id 本身可以包含 `/`（例如 OpenRouter），以第一个 `/` 作为分隔 |
+| `language` | `zh-CN` \| `en-US` | `zh-CN` | 界面语言 |
+| `theme` | `system` \| `dark` \| `light` | `system` | 主题 |
+| `providers` | object | `{}` | 键为厂商 id |
+| `webSearch` | object | 无 | 内置 Agent 的 `web_search` 后端，见 §2.6；不配置就不提供该工具 |
+| `permissions` | object | 无 | `additionalDirectories`：除 cwd 外，也算作工作区的目录。这些目录内的只读操作不需要审批 |
+
+### 2.2 厂商（`providers.<id>`）
+
+| 字段 | 类型 | 内置厂商 | 自定义厂商 | 说明 |
+|---|---|---|---|---|
+| `apiKey` | string | 可选 | 可选 | 明文、`{env:VAR}` 或 `$VAR`。内置厂商省略时依次读取目录中登记的环境变量（如 `ANTHROPIC_API_KEY`） |
+| `enabled` | bool | 可选 | 可选 | 默认 `true` |
+| `name` | string | 可选 | 可选，默认为 id | 显示名称 |
+| `api` | `chat` \| `responses` \| `messages` | 可选 | **必填** | 线协议：OpenAI Chat Completions / OpenAI Responses / Anthropic Messages |
+| `baseUrl` | string | 可选 | **必填** | 例如 `https://api.deepseek.com` |
+| `headers` | object | 可选 | 可选 | 附加请求头，值同样支持 `{env:VAR}` |
+| `models` | object | 可选 | 可选 | 见 2.3。自定义 / 本地厂商省略时自动从 `GET {baseUrl}/models` 获取并全部启用 |
+| `compat` | object | 可选 | 可选 | 厂商差异的兜底开关，见 2.4，通常不需要 |
+
+**模型的启用规则**
+- 自定义厂商与本地服务（Ollama、LM Studio）省略 `models` 时：Host 通过 `GET {baseUrl}/models`（Anthropic 协议为 `{baseUrl}/v1/models`）获取模型列表并全部启用。
+  - 结果会缓存，设置页中可以手动刷新；
+  - 获取失败且没有 `models` 时，该厂商显示为“配置错误”，**不影响其它配置**；
+  - 发现的模型 id 若在内置目录中存在（例如代理转发的 `deepseek-v4-pro`），自动沿用目录元数据。
+- 内置厂商省略 `models` 时，启用目录中的**推荐模型**：TCode 维护的推荐列表；没有推荐列表时，取最近发布、支持工具调用、未弃用的 8 个模型。
+- 写了 `models` 时，**只启用列出的模型**。值是对目录元数据的覆盖，`{}` 表示完全使用目录中的元数据。
+
+**什么情况下厂商会出现在模型选择器中**
+1. `enabled` 不是 `false`；
+2. 能得到 Key：配置里有，或者内置厂商登记的环境变量已设置；也可以是本地服务（目录中标记为无需 Key，例如 LM Studio，或者自定义厂商的 `apiKey` 写成 `""`）。
+
+### 2.3 模型（`providers.<id>.models.<modelId>`）
+
+所有字段都可选。目录中有该模型时用目录值作为默认，没有时用下表的“缺省”列。
+
+| 字段 | 类型 | 缺省 | 说明 |
+|---|---|---|---|
+| `api` | `chat` \| `responses` \| `messages` | 跟随厂商 | 该模型使用的线协议，例如同一网关下的 Claude 模型走 Anthropic Messages |
+| `baseUrl` | string | 跟随厂商 | 该模型的 Base URL |
+| `name` | string | 模型 id | 显示名称 |
+| `description` | string | — | 选择器中的一句话说明 |
+| `contextWindow` | int | 128000 | 上下文窗口 |
+| `maxTokens` | int | 16384 | 单次输出上限 |
+| `reasoning` | bool | false | 是否为推理模型 |
+| `efforts` | string[] | 按协议推导 | 可选的 effort 档位：`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 的子集 |
+| `images` | bool | false | 是否支持图片输入 |
+| `fastMode` | bool | false | 是否支持 fast mode |
+| `compat` | object | — | 同 2.4，只对这个模型生效 |
+
+模型使用 `messages` 协议且 Base URL 以 `/v1` 结尾时，会自动去掉末尾的 `/v1`。这是因为 Messages 适配器自己会拼 `/v1/messages`：网关常把 Base URL 写成 `…/v1` 给 Chat / Responses 用，同一个地址下的模型改用 Messages 时不需要改 URL。
+
+```jsonc
+"gw": {
+  "api": "chat", "baseUrl": "http://127.0.0.1:17321/v1",
+  "models": {
+    "glm-5.3-flash": {},                         // Chat Completions
+    "claude-opus-5-5": { "api": "messages" },    // → http://127.0.0.1:17321/v1/messages
+    "gpt-6.1-sol": { "api": "responses" }
+  }
+}
+```
+
+### 2.4 `compat`（兜底）
+
+一般由 TCode 根据 Base URL 和目录自动判断。只有遇到确认的厂商差异时才需要手写。字段与代码中的 `ModelCompat` 一一对应，常用的有：
+
+- `maxTokensField`：`max_tokens` \| `max_completion_tokens`
+- `thinkingFormat`：`OpenAIEffort` \| `ThinkingType` \| `ThinkingTypeAndEffort` \| `EnableThinking` \| `OpenRouter` \| `None`
+- `requiresReasoningContentOnAssistant`：带工具时，历史助手消息是否必须带 `reasoning_content`
+- `supportsDeveloperRole`、`supportsUsageInStreaming`、`supportsDisabledThinking`、`authHeader`（`x-api-key` \| `bearer`）、`anthropicBetas`
+
+### 2.6 网页搜索（`webSearch`）
+
+```jsonc
+"webSearch": { "provider": "brave", "apiKey": "{env:BRAVE_API_KEY}" }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `provider` | `brave` \| `tavily` \| `exa` \| `searxng` |
+| `apiKey` | 写法同模型 Key（明文、`{env:VAR}` 或 `$VAR`）。SearXNG 不需要 |
+| `baseUrl` | 自定义端点。使用 SearXNG 时必须填写，值为实例地址；实例必须在 `search.formats` 中开启 `json` |
+
+`web_fetch` 不需要配置。对外的网络请求在 Ask 档会按域名请求审批。
+
+## 3. 内置目录
+
+- **来源**：models.dev（`https://models.dev/api.json`）的快照，由 `tools/gen_catalog.py` 裁剪后作为嵌入资源放在 `src/TCode.AgentHost/Catalog/catalog.json`。
+- **只保留能映射到三种协议的厂商**：
+
+  | npm 包 | 协议 |
+  |---|---|
+  | `@ai-sdk/openai-compatible` | chat |
+  | `@openrouter/ai-sdk-provider` | chat |
+  | `@ai-sdk/xai` / `groq` / `cerebras` / `deepinfra` | chat，并补上 Base URL |
+  | `@ai-sdk/openai` | responses |
+  | `@ai-sdk/anthropic` | messages |
+
+- **只保留**支持工具调用、未弃用、输出为文本的模型。
+- **字段映射**：
+
+  | models.dev | TCode |
+  |---|---|
+  | `reasoning_options.effort.values` | `efforts` |
+  | 存在 `toggle` | 可以关闭思考（`supportsDisabledThinking`） |
+  | `interleaved.field == "reasoning_content"` | `requiresReasoningContentOnAssistant` |
+  | `limit.context` / `limit.output` | `contextWindow` / `maxTokens` |
+  | `modalities.input` 含 `image` | `images` |
+
+- **TCode 补充**（`BuiltInCatalog.Overlay`）：各厂商的推荐模型、一句话说明、fast mode，以及 models.dev 没有覆盖的默认 Base URL。
+- **优先级**：目录 → TCode 补充 → `settings.json`，后者覆盖前者。
+
+### 3.1 更新目录（手动）
+
+目录**从不自动更新**，只有用户确认后才会应用：
+
+1. **检查更新**：设置 › 通用 › 模型目录。Host 下载 `https://models.dev/api.json`（约 5.6MB），按与 `tools/gen_catalog.py` 相同的规则裁剪（`Catalog/ModelsDevTrimmer.cs`），然后与当前目录比较。结果暂存在 Host 内存中，**当前目录不变**。
+   - 已应用过更新时会带上 `If-None-Match`；目录没有变化时服务端返回 304，界面显示“目录已是最新”。
+2. **查看差异**：按厂商列出新增、移除、变更的模型，以及字段变化（名称、上下文、输出上限、推理、图片、推理档位、可否关闭思考、输入 / 输出价格、厂商的 Base URL 与协议）。
+   - 默认只显示用户已添加的厂商，可以切换为显示全部；
+   - 每个厂商最多显示 20 个模型。
+3. **应用更新或放弃**：应用后写入 `~/.tcode/cache/catalog.json`，替换目录，重载模型列表并推送 `models/changed`。放弃则丢弃暂存结果。
+
+- **失败处理**：网络错误、格式错误或结果为空时，不产生暂存结果，设置页显示错误。
+- **启动加载**：有有效缓存就用缓存（即上次应用的更新），否则用嵌入快照。
+- **规则一致性**：Python 与 C# 两份裁剪规则必须同步修改。用同一份 api.json 设置 `TCODE_MODELSDEV_FILE` 后运行 `TrimmerParityTests`，可以验证两者输出一致。
+
+### 2.5 错误的级别
+
+| 级别 | 示例 | 影响 |
+|---|---|---|
+| 文件错误 | JSON 语法错误、类型错误、`api` 取值非法 | 整个文件不生效，**沿用上一次正确的配置**，设置页顶部显示红色横幅 |
+| 厂商错误 | 自定义厂商缺少 `api` / `baseUrl`，没有可用模型 | 只停用该厂商，在它的详情页显示原因 |
+| 警告 | 未知字段 | 忽略该字段，写入日志 |
+
+## 4. 开发用 Fake 厂商
+
+满足以下任一条件时会出现 Fake 厂商：
+- 设置了环境变量 `TCODE_FAKE_PROVIDER=1`；
+- 没有任何其它可用模型。
+
+这样离线也能体验完整流程，配置了真实厂商后它不会混在模型列表里。
+
+## 5. 界面与写回
+
+- **入口**：设置页（侧栏 ⚙、⌘,、命令面板“打开设置”）。左侧导航：通用 / 模型与厂商 / 关于。
+- **模型与厂商**：主从双栏。
+  - 左栏：搜索；“已启用”组（已配置或检测到环境变量 Key 的厂商）；“可添加”组（推荐厂商，搜索时为整个目录中的匹配项）；底部是“自定义厂商”入口。
+  - 右栏：连接表单（协议、Base URL、Key 统一一个“保存”按钮，“测试连接”可以使用未保存的值）。
+  - 模型表：逐个开关、全部启用 / 停用、从 `/models` 刷新；每行显示能力标签（推理 / 图片 / fast mode）、上下文、输出上限和价格，点击编辑可以覆盖单个模型。
+  - 只有已写入 settings.json 的厂商显示启用开关；只选中未配置的厂商不会写文件。
+- **测试连接**：先请求 `/models`，不消耗 tokens；端点不支持时，用第一个启用的模型发一次最多 16 tokens 的请求。
+- **写回方式**：界面修改按 JSON 节点写回 `settings.json`，只改动涉及的字段，其余字段和键的顺序保持不变。
+  - **注释会丢失**：界面保存时会提示这一点；
+  - 写入后把文件权限设为 0600，因为文件里可能有明文 Key。
+- **模型启用开关**：某个内置厂商第一次在界面上切换模型启用时，先把当前启用的推荐模型写进 `models`，再做增删。
+- **迁移**：
+  - 旧的 `models.json` 中的 Provider 会在启动时合并进 `settings.json`，原文件改名为 `models.json.bak`；
+  - 旧的 `desktop.json` 中，语言和主题移到 `settings.json`，其余内容移到 `state.json`。

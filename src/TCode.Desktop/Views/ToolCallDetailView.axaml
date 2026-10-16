@@ -1,0 +1,59 @@
+<!-- 工具步骤展开后的内容：完整参数；有 diff 时显示着色 diff，否则显示输出（命令的实时输出 / 子 Agent 的当前动作）。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:controls="using:TCode.Desktop.Controls"
+             x:Class="TCode.Desktop.Views.ToolCallDetailView"
+             x:DataType="vm:ToolCallBlockViewModel">
+    <StackPanel Margin="38,2,8,10" Spacing="8">
+        <StackPanel.Styles>
+            <Style Selector="SelectableTextBlock.output.failed">
+                <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
+            </Style>
+            <Style Selector="TextBlock.diff">
+                <Setter Property="FontFamily" Value="{StaticResource TCode.MonoFont}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="LineHeight" Value="18" />
+                <Setter Property="TextWrapping" Value="NoWrap" />
+                <Setter Property="Foreground" Value="{DynamicResource TCode.TextSecondary}" />
+            </Style>
+            <Style Selector="TextBlock.diff.added">
+                <Setter Property="Foreground" Value="{DynamicResource TCode.Success}" />
+            </Style>
+            <Style Selector="TextBlock.diff.removed">
+                <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
+            </Style>
+            <Style Selector="TextBlock.diff.hunk">
+                <Setter Property="Foreground" Value="{DynamicResource TCode.TextTertiary}" />
+            </Style>
+        </StackPanel.Styles>
+        <SelectableTextBlock Text="{Binding Detail}" FontFamily="{StaticResource TCode.MonoFont}" FontSize="12"
+                             LineHeight="19" TextWrapping="Wrap" Foreground="{DynamicResource TCode.TextSecondary}" />
+        <!-- 子 Agent：名字、工具调用次数与 tokens -->
+        <TextBlock Classes="tertiary" FontSize="12" Text="{Binding SubagentStats}" IsVisible="{Binding HasSubagent}" />
+        <!-- 文件改动：+3 −1 与着色 diff -->
+        <Border IsVisible="{Binding HasDiff}" Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8">
+            <StackPanel Spacing="6">
+                <TextBlock Classes="tertiary" FontSize="12" Text="{Binding DiffStats}" />
+                <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding DiffLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DiffLineViewModel">
+                                <TextBlock Classes="diff" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
+                                           Classes.hunk="{Binding IsHunk}" Text="{Binding Text}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+        <Border IsVisible="{Binding ShowResult}" Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8">
+            <ScrollViewer MaxHeight="240" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled"
+                          controls:FollowTail.IsEnabled="{Binding IsBusy}">
+                <SelectableTextBlock Classes="output" Classes.failed="{Binding IsFailed}" Text="{Binding Result}"
+                                     FontFamily="{StaticResource TCode.MonoFont}" FontSize="12" TextWrapping="Wrap" />
+            </ScrollViewer>
+        </Border>
+    </StackPanel>
+</UserControl>

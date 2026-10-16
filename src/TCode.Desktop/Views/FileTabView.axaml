@@ -1,0 +1,114 @@
+<!-- 文件标签：面包屑 + 查看方式切换（预览 / 源码……）+ 预览器内容（每种 FilePreviewViewModel 一个模板）。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:smv="using:StreamMark.Avalonia"
+             xmlns:smx="using:StreamMark.Avalonia.Extensions"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:previews="using:TCode.Desktop.Previews"
+             xmlns:icons="using:TCode.Desktop.Icons"
+             xmlns:controls="using:TCode.Desktop.Controls"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             x:Class="TCode.Desktop.Views.FileTabView"
+             x:DataType="vm:FileTabViewModel">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource TCode.Divider}" BorderThickness="0,0,0,1" Padding="12,0,8,0" Height="34">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <icons:FileTypeIcon Kind="{Binding FileIcon}" ColorKey="{Binding FileColor}" Width="13" Height="13" VerticalAlignment="Center" />
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding Breadcrumbs}" Margin="8,0" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:BreadcrumbItem">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="tertiary" Text="›" IsVisible="{Binding ShowSeparator}" />
+                                <TextBlock Classes="secondary" Text="{Binding Text}" FontSize="12" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <!-- 查看方式切换（预览 / 源码……），只有一种时隐藏 -->
+                    <ItemsControl ItemsSource="{Binding Views}" IsVisible="{Binding HasViewSwitch}" Margin="0,0,6,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FileViewOption">
+                                <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                                        Classes.selected="{Binding IsSelected}" ToolTip.Tip="{Binding Title}"
+                                        Command="{Binding $parent[ItemsControl].((vm:FileTabViewModel)DataContext).SelectViewCommand}"
+                                        CommandParameter="{Binding}">
+                                    <icons:LucideIcon Kind="{Binding Icon}" Width="13" Height="13" />
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                            Click="OnRevealInExplorerClick" ToolTip.Tip="{loc:TCodeLangResource RevealInExplorer}">
+                        <icons:LucideIcon Kind="Crosshair" Width="13" Height="13" />
+                    </Button>
+                    <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                            Click="OnCopyPathClick" ToolTip.Tip="{loc:TCodeLangResource CopyPath}">
+                        <icons:LucideIcon Kind="Copy" Width="13" Height="13" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Panel>
+            <TextBlock Classes="secondary" Text="{Binding Notice}" Margin="24" TextWrapping="Wrap" IsVisible="{Binding HasNotice}" />
+            <!-- 内容由预览器决定：每种 FilePreviewViewModel 一个模板 -->
+            <ContentControl Content="{Binding Preview}" IsVisible="{Binding !HasNotice}">
+                <ContentControl.DataTemplates>
+                    <DataTemplate DataType="previews:CodePreviewViewModel">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" atom:ScrollViewer.IsLiteMode="True">
+                            <controls:CodeView Text="{Binding Text}" Language="{Binding Language}"
+                                               FontFamily="{StaticResource TCode.MonoFont}" FontSize="12.5" LineHeight="20"
+                                               Foreground="{DynamicResource TCode.TextPrimary}"
+                                               LineNumberForeground="{DynamicResource TCode.LineNumber}"
+                                               GutterBackground="{DynamicResource TCode.WindowBg}"
+                                               SelectionBrush="{DynamicResource TCode.AccentSoftBg}" />
+                        </ScrollViewer>
+                    </DataTemplate>
+                    <DataTemplate DataType="previews:MarkdownPreviewViewModel">
+                        <ScrollViewer atom:ScrollViewer.IsLiteMode="True">
+                            <smv:MarkdownView Markdown="{Binding Markdown}" MaxWidth="760" Margin="24,16,24,32" HorizontalAlignment="Left"
+                                              smx:MarkdownServices.ImageBaseUri="{Binding Directory}" />
+                        </ScrollViewer>
+                    </DataTemplate>
+                    <DataTemplate DataType="previews:ImagePreviewViewModel">
+                        <DockPanel>
+                            <!-- 信息栏：尺寸 · 大小 · 格式，右侧缩放控制 -->
+                            <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource TCode.Divider}" BorderThickness="0,1,0,0" Padding="12,0,8,0" Height="30">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="secondary" Text="{Binding Info}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                        <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                                                Command="{Binding ZoomOutCommand}" ToolTip.Tip="{loc:TCodeLangResource ImageZoomOut}">
+                                            <icons:LucideIcon Kind="ZoomOut" Width="13" Height="13" />
+                                        </Button>
+                                        <TextBlock Classes="secondary" Text="{Binding ZoomText}" FontSize="12" MinWidth="40" TextAlignment="Center" VerticalAlignment="Center" />
+                                        <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                                                Command="{Binding ZoomInCommand}" ToolTip.Tip="{loc:TCodeLangResource ImageZoomIn}">
+                                            <icons:LucideIcon Kind="ZoomIn" Width="13" Height="13" />
+                                        </Button>
+                                        <Button Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0" HorizontalContentAlignment="Center"
+                                                Classes.selected="{Binding IsFit}" Command="{Binding FitCommand}" ToolTip.Tip="{loc:TCodeLangResource ImageFit}">
+                                            <icons:LucideIcon Kind="Scan" Width="13" Height="13" />
+                                        </Button>
+                                        <Button Theme="{StaticResource TCode.RowButton}" MinHeight="24" Padding="6,0" HorizontalContentAlignment="Center"
+                                                Command="{Binding ActualSizeCommand}" ToolTip.Tip="{loc:TCodeLangResource ImageActualSize}">
+                                            <TextBlock Text="1:1" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <controls:ZoomImageView Image="{Binding}" />
+                        </DockPanel>
+                    </DataTemplate>
+                </ContentControl.DataTemplates>
+            </ContentControl>
+        </Panel>
+    </DockPanel>
+</UserControl>

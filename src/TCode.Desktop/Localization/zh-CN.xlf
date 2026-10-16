@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 tools/gen_strings.py 从 strings.tsv 生成，请勿手改。 -->
+<xliff version="2.1" srcLang="en-US" trgLang="zh-CN" xmlns="urn:oasis:names:tc:xliff:document:2.0">
+  <file id="TCode.Desktop.Localization.TCodeLangResourceKind">
+    <unit id="ComposerPlaceholder"><segment><source>Do anything…</source><target state="translated">描述任务，输入 / 使用命令</target></segment></unit>
+    <unit id="AttachFiles"><segment><source>Add files</source><target state="translated">添加附件</target></segment></unit>
+    <unit id="Send"><segment><source>Send (Enter)</source><target state="translated">发送（Enter）</target></segment></unit>
+    <unit id="Stop"><segment><source>Stop</source><target state="translated">停止</target></segment></unit>
+    <unit id="SelectModel"><segment><source>Select model</source><target state="translated">选择模型</target></segment></unit>
+    <unit id="SearchModels"><segment><source>Search models…</source><target state="translated">搜索模型…</target></segment></unit>
+    <unit id="Favorites"><segment><source>Favorites</source><target state="translated">收藏</target></segment></unit>
+    <unit id="AllModels"><segment><source>All models</source><target state="translated">全部模型</target></segment></unit>
+    <unit id="NoFavorites"><segment><source>Star a model to pin it here</source><target state="translated">点击 ☆ 把常用模型收藏到这里</target></segment></unit>
+    <unit id="NoModels"><segment><source>No matching models</source><target state="translated">没有匹配的模型</target></segment></unit>
+    <unit id="Reasoning"><segment><source>Reasoning</source><target state="translated">推理强度</target></segment></unit>
+    <unit id="ContextWindow"><segment><source>Context Window</source><target state="translated">上下文窗口</target></segment></unit>
+    <unit id="FastMode"><segment><source>Fast Mode</source><target state="translated">快速模式</target></segment></unit>
+    <unit id="Default"><segment><source>Default</source><target state="translated">默认</target></segment></unit>
+    <unit id="On"><segment><source>On</source><target state="translated">开</target></segment></unit>
+    <unit id="Off"><segment><source>Off</source><target state="translated">关</target></segment></unit>
+    <unit id="ThinkingOff"><segment><source>Off</source><target state="translated">关闭</target></segment></unit>
+    <unit id="ThinkingMinimal"><segment><source>Minimal</source><target state="translated">极低</target></segment></unit>
+    <unit id="ThinkingLow"><segment><source>Low</source><target state="translated">低</target></segment></unit>
+    <unit id="ThinkingMedium"><segment><source>Medium</source><target state="translated">中</target></segment></unit>
+    <unit id="ThinkingHigh"><segment><source>High</source><target state="translated">高</target></segment></unit>
+    <unit id="ThinkingXHigh"><segment><source>X-High</source><target state="translated">超高</target></segment></unit>
+    <unit id="ThinkingMax"><segment><source>Max</source><target state="translated">最高</target></segment></unit>
+    <unit id="AddFavorite"><segment><source>Add to favorites</source><target state="translated">收藏</target></segment></unit>
+    <unit id="RemoveFavorite"><segment><source>Remove from favorites</source><target state="translated">取消收藏</target></segment></unit>
+    <unit id="NotSupported"><segment><source>Not supported by this model</source><target state="translated">当前模型不支持</target></segment></unit>
+    <unit id="ContextUsageFormat"><segment><source>{0} / {1} tokens used</source><target state="translated">已使用 {0} / {1} tokens</target></segment></unit>
+    <unit id="StatusSendFailedFormat"><segment><source>Failed to send: {0}</source><target state="translated">发送失败：{0}</target></segment></unit>
+    <unit id="StatusHostDisconnectedFormat"><segment><source>Agent process disconnected: {0}</source><target state="translated">Agent 进程已断开：{0}</target></segment></unit>
+    <unit id="StatusHostStartFailedFormat"><segment><source>Could not start the agent process: {0}</source><target state="translated">无法启动 Agent 进程：{0}</target></segment></unit>
+    <unit id="Aborted"><segment><source>Aborted</source><target state="translated">已中止</target></segment></unit>
+    <unit id="RequestFailed"><segment><source>Request failed</source><target state="translated">请求失败</target></segment></unit>
+    <unit id="SwitchLanguage"><segment><source>Switch language</source><target state="translated">切换语言</target></segment></unit>
+    <unit id="AllProjects"><segment><source>All projects</source><target state="translated">全部项目</target></segment></unit>
+    <unit id="SearchProjects"><segment><source>Search projects…</source><target state="translated">搜索项目…</target></segment></unit>
+    <unit id="NewProject"><segment><source>New project…</source><target state="translated">新建项目…</target></segment></unit>
+    <unit id="NoProject"><segment><source>Don't work in a project</source><target state="translated">不使用项目</target></segment></unit>
+    <unit id="NoProjectName"><segment><source>No project</source><target state="translated">无项目</target></segment></unit>
+    <unit id="Sessions"><segment><source>Sessions</source><target state="translated">会话</target></segment></unit>
+    <unit id="NoSessions"><segment><source>No sessions yet</source><target state="translated">还没有会话</target></segment></unit>
+    <unit id="NewSession"><segment><source>New session</source><target state="translated">新会话</target></segment></unit>
+    <unit id="ToggleSidebar"><segment><source>Toggle sidebar</source><target state="translated">切换侧栏</target></segment></unit>
+    <unit id="Back"><segment><source>Back</source><target state="translated">后退</target></segment></unit>
+    <unit id="Forward"><segment><source>Forward</source><target state="translated">前进</target></segment></unit>
+    <unit id="ToggleTheme"><segment><source>Toggle theme</source><target state="translated">切换主题</target></segment></unit>
+    <unit id="Settings"><segment><source>Settings (coming soon)</source><target state="translated">设置（即将推出）</target></segment></unit>
+    <unit id="More"><segment><source>More</source><target state="translated">更多</target></segment></unit>
+    <unit id="TimeNow"><segment><source>now</source><target state="translated">刚刚</target></segment></unit>
+    <unit id="MinutesAgoFormat"><segment><source>{0}m</source><target state="translated">{0} 分钟</target></segment></unit>
+    <unit id="HoursAgoFormat"><segment><source>{0}h</source><target state="translated">{0} 小时</target></segment></unit>
+    <unit id="DaysAgoFormat"><segment><source>{0}d</source><target state="translated">{0} 天</target></segment></unit>
+    <unit id="LocalCheckout"><segment><source>Local checkout</source><target state="translated">本地检出</target></segment></unit>
+    <unit id="CurrentCheckout"><segment><source>Current checkout</source><target state="translated">当前检出</target></segment></unit>
+    <unit id="NoBranch"><segment><source>No branch</source><target state="translated">无分支</target></segment></unit>
+    <unit id="SearchRefs"><segment><source>Search refs…</source><target state="translated">搜索分支…</target></segment></unit>
+    <unit id="CurrentRef"><segment><source>current</source><target state="translated">当前</target></segment></unit>
+    <unit id="Online"><segment><source>Online</source><target state="translated">在线</target></segment></unit>
+    <unit id="SessionSubtitleFormat"><segment><source>{0} @ {1}</source><target state="translated">{0} @ {1}</target></segment></unit>
+    <unit id="ToggleWorkbench"><segment><source>Toggle workbench</source><target state="translated">切换工作台</target></segment></unit>
+    <unit id="Pondering"><segment><source>Pondering…</source><target state="translated">思考中…</target></segment></unit>
+    <unit id="ThoughtProcess"><segment><source>Thought process</source><target state="translated">思考过程</target></segment></unit>
+    <unit id="Thinking"><segment><source>Thinking…</source><target state="translated">正在思考…</target></segment></unit>
+    <unit id="CopyMessage"><segment><source>Copy</source><target state="translated">复制</target></segment></unit>
+    <unit id="ToolPreparing"><segment><source>Preparing</source><target state="translated">准备中</target></segment></unit>
+    <unit id="ToolRunning"><segment><source>Running</source><target state="translated">执行中</target></segment></unit>
+    <unit id="ToolDone"><segment><source>Done</source><target state="translated">完成</target></segment></unit>
+    <unit id="ToolFailed"><segment><source>Failed</source><target state="translated">失败</target></segment></unit>
+    <unit id="SelectFolderTitle"><segment><source>Select a project folder</source><target state="translated">选择项目文件夹</target></segment></unit>
+    <unit id="SearchCommands"><segment><source>Search commands and chats…</source><target state="translated">搜索命令和会话…</target></segment></unit>
+    <unit id="NewTab"><segment><source>New tab</source><target state="translated">新标签页</target></segment></unit>
+    <unit id="CloseWorkbench"><segment><source>Close workbench</source><target state="translated">关闭工作台</target></segment></unit>
+    <unit id="ComingSoon"><segment><source>Coming soon</source><target state="translated">即将推出</target></segment></unit>
+    <unit id="TabFiles"><segment><source>Files</source><target state="translated">文件</target></segment></unit>
+    <unit id="TabChanges"><segment><source>Diffs</source><target state="translated">变更</target></segment></unit>
+    <unit id="TabBrowser"><segment><source>Browser</source><target state="translated">浏览器</target></segment></unit>
+    <unit id="TabTerminal"><segment><source>Terminal</source><target state="translated">终端</target></segment></unit>
+    <unit id="TerminalDescription"><segment><source>The terminal will be built on Iciclecreek.Avalonia.Terminal (XTerm.NET + Porta.Pty) and share its session with the agent's bash tool.</source><target state="translated">终端将基于 Iciclecreek.Avalonia.Terminal（XTerm.NET + Porta.Pty）实现，并与 Agent 的 bash 工具共享会话。</target></segment></unit>
+    <unit id="BrowserDescription"><segment><source>The browser will be built on Avalonia.Controls.WebView (WebView2 / WKWebView) to preview local dev servers.</source><target state="translated">浏览器将基于 Avalonia.Controls.WebView（WebView2 / WKWebView）实现，用于预览本地开发服务。</target></segment></unit>
+    <unit id="ChangesDescription"><segment><source>The changes panel will show the agent's edits with DiffPlex + AvaloniaEdit, with per-hunk accept and revert.</source><target state="translated">变更面板将用 DiffPlex + AvaloniaEdit 展示 Agent 对工作区的修改，并支持逐块接受或回滚。</target></segment></unit>
+    <unit id="Minimize"><segment><source>Minimize</source><target state="translated">最小化</target></segment></unit>
+    <unit id="Maximize"><segment><source>Maximize</source><target state="translated">最大化</target></segment></unit>
+    <unit id="Close"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
+    <unit id="NewChat"><segment><source>New chat</source><target state="translated">新对话</target></segment></unit>
+    <unit id="NewProjectCommand"><segment><source>New project</source><target state="translated">新建项目</target></segment></unit>
+    <unit id="SwitchToLight"><segment><source>Switch to light theme</source><target state="translated">切换到亮色主题</target></segment></unit>
+    <unit id="SwitchToDark"><segment><source>Switch to dark theme</source><target state="translated">切换到暗色主题</target></segment></unit>
+    <unit id="SwitchToEnglish"><segment><source>Switch to English</source><target state="translated">切换到英文</target></segment></unit>
+    <unit id="SwitchToChinese"><segment><source>Switch to Chinese</source><target state="translated">切换到中文</target></segment></unit>
+    <unit id="HintNavigate"><segment><source>Navigate</source><target state="translated">导航</target></segment></unit>
+    <unit id="HintSelect"><segment><source>Select</source><target state="translated">选择</target></segment></unit>
+    <unit id="HintOpen"><segment><source>Open</source><target state="translated">打开</target></segment></unit>
+    <unit id="HintClose"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
+    <unit id="SearchDevices"><segment><source>Search devices…</source><target state="translated">搜索设备…</target></segment></unit>
+    <unit id="NoResults"><segment><source>No results</source><target state="translated">没有结果</target></segment></unit>
+    <unit id="SwitchBranchConfirmFormat"><segment><source>Switch to {0}?</source><target state="translated">切换到 {0}？</target></segment></unit>
+    <unit id="SwitchBranchHint"><segment><source>Uncommitted changes are carried over; git refuses if they would be overwritten.</source><target state="translated">未提交的修改会带到新分支；如果会被覆盖，git 会拒绝切换。</target></segment></unit>
+    <unit id="Cancel"><segment><source>Cancel</source><target state="translated">取消</target></segment></unit>
+    <unit id="SwitchBranch"><segment><source>Switch</source><target state="translated">切换</target></segment></unit>
+    <unit id="SwitchBranchFailedFormat"><segment><source>Failed to switch branch: {0}</source><target state="translated">切换分支失败：{0}</target></segment></unit>
+    <unit id="BranchBusy"><segment><source>Can't switch branches while the agent is running</source><target state="translated">Agent 运行中，暂不能切换分支</target></segment></unit>
+    <unit id="CommandPalette"><segment><source>Command palette</source><target state="translated">命令面板</target></segment></unit>
+    <unit id="OpenSettings"><segment><source>Open settings</source><target state="translated">打开设置</target></segment></unit>
+    <unit id="SettingsTitle"><segment><source>Settings</source><target state="translated">设置</target></segment></unit>
+    <unit id="SettingsGeneral"><segment><source>General</source><target state="translated">通用</target></segment></unit>
+    <unit id="SettingsProviders"><segment><source>Models &amp; Providers</source><target state="translated">模型与厂商</target></segment></unit>
+    <unit id="SettingsAbout"><segment><source>About</source><target state="translated">关于</target></segment></unit>
+    <unit id="BackToApp"><segment><source>Back to app</source><target state="translated">返回</target></segment></unit>
+    <unit id="LanguageLabel"><segment><source>Language</source><target state="translated">语言</target></segment></unit>
+    <unit id="LanguageChinese"><segment><source>简体中文</source><target state="translated">简体中文</target></segment></unit>
+    <unit id="LanguageEnglish"><segment><source>English</source><target state="translated">English</target></segment></unit>
+    <unit id="ThemeLabel"><segment><source>Theme</source><target state="translated">主题</target></segment></unit>
+    <unit id="ThemeSystem"><segment><source>System</source><target state="translated">跟随系统</target></segment></unit>
+    <unit id="ThemeDark"><segment><source>Dark</source><target state="translated">暗色</target></segment></unit>
+    <unit id="ThemeLight"><segment><source>Light</source><target state="translated">亮色</target></segment></unit>
+    <unit id="DefaultModelLabel"><segment><source>Default model</source><target state="translated">默认模型</target></segment></unit>
+    <unit id="DefaultModelHint"><segment><source>Used for new sessions when you haven't picked a model yet.</source><target state="translated">新会话在你还没选择模型时使用。</target></segment></unit>
+    <unit id="FirstAvailableModel"><segment><source>First available model</source><target state="translated">第一个可用模型</target></segment></unit>
+    <unit id="SettingsFileLabel"><segment><source>Settings file</source><target state="translated">配置文件</target></segment></unit>
+    <unit id="SettingsFileHint"><segment><source>Edits here are written to settings.json; changes made in an editor apply automatically. Comments in the file are not preserved when saving from here.</source><target state="translated">这里的修改会写入 settings.json；在编辑器里修改也会自动生效。从这里保存时，文件中的注释不会保留。</target></segment></unit>
+    <unit id="OpenInEditor"><segment><source>Open in editor</source><target state="translated">在编辑器中打开</target></segment></unit>
+    <unit id="RevealInFolder"><segment><source>Show in folder</source><target state="translated">在文件夹中显示</target></segment></unit>
+    <unit id="SettingsErrorsTitle"><segment><source>settings.json has errors — the last valid configuration is still in use</source><target state="translated">settings.json 有错误，目前仍使用上一次正确的配置</target></segment></unit>
+    <unit id="ProvidersHint"><segment><source>Add an API key to a provider to use its models. Built-in providers come with model metadata from models.dev.</source><target state="translated">为厂商填写 API Key 即可使用它的模型。内置厂商的模型信息来自 models.dev。</target></segment></unit>
+    <unit id="StatusConnected"><segment><source>Connected</source><target state="translated">已连接</target></segment></unit>
+    <unit id="StatusMissingKey"><segment><source>Missing API key</source><target state="translated">缺少 API Key</target></segment></unit>
+    <unit id="StatusDisabled"><segment><source>Disabled</source><target state="translated">已停用</target></segment></unit>
+    <unit id="StatusError"><segment><source>Configuration error</source><target state="translated">配置错误</target></segment></unit>
+    <unit id="StatusLocal"><segment><source>Local</source><target state="translated">本地</target></segment></unit>
+    <unit id="ApiKeyLabel"><segment><source>API key</source><target state="translated">API Key</target></segment></unit>
+    <unit id="ApiKeyPlaceholder"><segment><source>Paste an API key</source><target state="translated">粘贴 API Key</target></segment></unit>
+    <unit id="KeyFromEnvFormat"><segment><source>Read from environment variable {0}</source><target state="translated">读取自环境变量 {0}</target></segment></unit>
+    <unit id="KeyFromSettings"><segment><source>Saved in settings.json</source><target state="translated">保存在 settings.json</target></segment></unit>
+    <unit id="KeyMissingFormat"><segment><source>Set {0} or paste a key below</source><target state="translated">设置环境变量 {0}，或在下方粘贴 Key</target></segment></unit>
+    <unit id="KeyNotRequired"><segment><source>No key required</source><target state="translated">无需 Key</target></segment></unit>
+    <unit id="Save"><segment><source>Save</source><target state="translated">保存</target></segment></unit>
+    <unit id="Remove"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="ClearKey"><segment><source>Clear key</source><target state="translated">清除 Key</target></segment></unit>
+    <unit id="BaseUrlLabel"><segment><source>Base URL</source><target state="translated">Base URL</target></segment></unit>
+    <unit id="ProtocolLabel"><segment><source>Protocol</source><target state="translated">协议</target></segment></unit>
+    <unit id="ProtocolChat"><segment><source>OpenAI Chat Completions</source><target state="translated">OpenAI Chat Completions</target></segment></unit>
+    <unit id="ProtocolResponses"><segment><source>OpenAI Responses</source><target state="translated">OpenAI Responses</target></segment></unit>
+    <unit id="ProtocolMessages"><segment><source>Anthropic Messages</source><target state="translated">Anthropic Messages</target></segment></unit>
+    <unit id="ModelsLabel"><segment><source>Models</source><target state="translated">模型</target></segment></unit>
+    <unit id="ModelsEnabledFormat"><segment><source>{0} of {1} enabled</source><target state="translated">已启用 {0} / {1}</target></segment></unit>
+    <unit id="SearchModelsInProvider"><segment><source>Filter models…</source><target state="translated">筛选模型…</target></segment></unit>
+    <unit id="AddModelPlaceholder"><segment><source>Model id, e.g. qwen3-coder</source><target state="translated">模型 id，例如 qwen3-coder</target></segment></unit>
+    <unit id="AddModel"><segment><source>Add model</source><target state="translated">添加模型</target></segment></unit>
+    <unit id="EnableProvider"><segment><source>Enabled</source><target state="translated">启用</target></segment></unit>
+    <unit id="AddProvider"><segment><source>Add provider</source><target state="translated">添加厂商</target></segment></unit>
+    <unit id="AddCustomProvider"><segment><source>Custom provider</source><target state="translated">自定义厂商</target></segment></unit>
+    <unit id="SearchCatalogProviders"><segment><source>Search built-in providers…</source><target state="translated">搜索内置厂商…</target></segment></unit>
+    <unit id="ProviderIdLabel"><segment><source>Provider id</source><target state="translated">厂商 id</target></segment></unit>
+    <unit id="ProviderNameLabel"><segment><source>Display name</source><target state="translated">显示名称</target></segment></unit>
+    <unit id="Add"><segment><source>Add</source><target state="translated">添加</target></segment></unit>
+    <unit id="CustomProviderHint"><segment><source>Any OpenAI- or Anthropic-compatible endpoint. Model metadata defaults to 128K context unless the model is in the catalog.</source><target state="translated">任何 OpenAI 或 Anthropic 兼容的端点。模型不在目录中时，默认按 128K 上下文处理。</target></segment></unit>
+    <unit id="ProviderIdInvalid"><segment><source>Use letters, digits, '-' or '_' and don't reuse an existing id</source><target state="translated">只能使用字母、数字、- 或 _，且不能与已有 id 重复</target></segment></unit>
+    <unit id="ModelCountFormat"><segment><source>{0} models</source><target state="translated">{0} 个模型</target></segment></unit>
+    <unit id="AboutVersionFormat"><segment><source>Version {0}</source><target state="translated">版本 {0}</target></segment></unit>
+    <unit id="AboutDataDir"><segment><source>Data directory</source><target state="translated">数据目录</target></segment></unit>
+    <unit id="AboutCatalogFormat"><segment><source>Model catalog: models.dev snapshot from {0}</source><target state="translated">模型目录：models.dev 快照（{0}）</target></segment></unit>
+    <unit id="AboutIcons"><segment><source>Provider icons: LobeHub lobe-icons (MIT). Logos are trademarks of their owners.</source><target state="translated">厂商图标：LobeHub lobe-icons（MIT），各商标归其所有者。</target></segment></unit>
+    <unit id="AboutUi"><segment><source>UI: Avalonia + AtomUI</source><target state="translated">界面：Avalonia + AtomUI</target></segment></unit>
+    <unit id="InCatalogTip"><segment><source>Metadata from the catalog</source><target state="translated">元数据来自目录</target></segment></unit>
+    <unit id="CustomModelTip"><segment><source>Not in the catalog — default metadata</source><target state="translated">不在目录中，使用默认元数据</target></segment></unit>
+    <unit id="ShowAllModelsFormat"><segment><source>Show all {0} models</source><target state="translated">显示全部 {0} 个模型</target></segment></unit>
+    <unit id="SearchProviders"><segment><source>Search providers…</source><target state="translated">搜索厂商…</target></segment></unit>
+    <unit id="ProvidersConfigured"><segment><source>In use</source><target state="translated">已启用</target></segment></unit>
+    <unit id="ProvidersAvailable"><segment><source>Available</source><target state="translated">可添加</target></segment></unit>
+    <unit id="StatusNotConfigured"><segment><source>Not set up</source><target state="translated">未配置</target></segment></unit>
+    <unit id="StatusNoModels"><segment><source>No models enabled</source><target state="translated">未启用模型</target></segment></unit>
+    <unit id="ConnectionLabel"><segment><source>Connection</source><target state="translated">连接</target></segment></unit>
+    <unit id="TestConnection"><segment><source>Test connection</source><target state="translated">测试连接</target></segment></unit>
+    <unit id="Testing"><segment><source>Testing…</source><target state="translated">测试中…</target></segment></unit>
+    <unit id="TestOkFormat"><segment><source>Connected · {0} · {1} ms</source><target state="translated">已连接 · {0} · {1} ms</target></segment></unit>
+    <unit id="TestFailedFormat"><segment><source>Failed: {0}</source><target state="translated">失败：{0}</target></segment></unit>
+    <unit id="ShowKey"><segment><source>Show</source><target state="translated">显示</target></segment></unit>
+    <unit id="HideKey"><segment><source>Hide</source><target state="translated">隐藏</target></segment></unit>
+    <unit id="KeyKeepHint"><segment><source>Leave empty to keep the saved key</source><target state="translated">留空表示保留已保存的 Key</target></segment></unit>
+    <unit id="EnableAll"><segment><source>Enable all</source><target state="translated">全部启用</target></segment></unit>
+    <unit id="DisableAll"><segment><source>Disable all</source><target state="translated">全部停用</target></segment></unit>
+    <unit id="RefreshModels"><segment><source>Refresh from /models</source><target state="translated">从 /models 刷新</target></segment></unit>
+    <unit id="DiscoveryFailedFormat"><segment><source>Couldn't fetch models: {0}</source><target state="translated">获取模型列表失败：{0}</target></segment></unit>
+    <unit id="DiscoveredTip"><segment><source>Fetched from the provider's /models endpoint</source><target state="translated">来自厂商的 /models 接口</target></segment></unit>
+    <unit id="ReasoningTip"><segment><source>Reasoning</source><target state="translated">推理</target></segment></unit>
+    <unit id="VisionTip"><segment><source>Image input</source><target state="translated">图片输入</target></segment></unit>
+    <unit id="FastTip"><segment><source>Fast mode</source><target state="translated">快速模式</target></segment></unit>
+    <unit id="OutputFormat"><segment><source>out {0}</source><target state="translated">输出 {0}</target></segment></unit>
+    <unit id="PriceFormat"><segment><source>${0} / ${1}</source><target state="translated">${0} / ${1}</target></segment></unit>
+    <unit id="EditModel"><segment><source>Edit model</source><target state="translated">编辑模型</target></segment></unit>
+    <unit id="ResetOverride"><segment><source>Reset to defaults</source><target state="translated">恢复默认</target></segment></unit>
+    <unit id="ContextWindowField"><segment><source>Context window</source><target state="translated">上下文窗口</target></segment></unit>
+    <unit id="MaxTokensField"><segment><source>Max output tokens</source><target state="translated">最大输出 tokens</target></segment></unit>
+    <unit id="DisplayNameField"><segment><source>Display name</source><target state="translated">显示名称</target></segment></unit>
+    <unit id="ModelOverrideHint"><segment><source>Overrides are written to providers.{0}.models in settings.json.</source><target state="translated">覆盖值写入 settings.json 的 providers.{0}.models。</target></segment></unit>
+    <unit id="CreateProvider"><segment><source>Create</source><target state="translated">创建</target></segment></unit>
+    <unit id="CustomProviderTitle"><segment><source>Custom provider</source><target state="translated">自定义厂商</target></segment></unit>
+    <unit id="SelectProviderHint"><segment><source>Select a provider on the left</source><target state="translated">在左侧选择一个厂商</target></segment></unit>
+    <unit id="ModelsAfterKey"><segment><source>Save an API key to choose models</source><target state="translated">保存 API Key 后即可选择模型</target></segment></unit>
+    <unit id="Unsaved"><segment><source>Unsaved changes</source><target state="translated">有未保存的修改</target></segment></unit>
+    <unit id="PriceTip"><segment><source>Input / output price per million tokens</source><target state="translated">输入 / 输出价格（每百万 tokens）</target></segment></unit>
+    <unit id="PriceFree"><segment><source>Free</source><target state="translated">免费</target></segment></unit>
+    <unit id="TemplatePickerTitle"><segment><source>Add a provider</source><target state="translated">添加厂商</target></segment></unit>
+    <unit id="SearchTemplates"><segment><source>Search providers and templates…</source><target state="translated">搜索厂商或模板…</target></segment></unit>
+    <unit id="TemplatePopular"><segment><source>Popular</source><target state="translated">常用</target></segment></unit>
+    <unit id="TemplateLocal"><segment><source>Local</source><target state="translated">本地</target></segment></unit>
+    <unit id="TemplateCustom"><segment><source>Custom</source><target state="translated">自定义</target></segment></unit>
+    <unit id="TemplateAll"><segment><source>All built-in providers</source><target state="translated">全部内置厂商</target></segment></unit>
+    <unit id="TemplateChat"><segment><source>OpenAI compatible</source><target state="translated">OpenAI 兼容</target></segment></unit>
+    <unit id="TemplateChatHint"><segment><source>Chat Completions · most gateways and vendors</source><target state="translated">Chat Completions · 大多数网关与厂商</target></segment></unit>
+    <unit id="TemplateResponses"><segment><source>OpenAI Responses compatible</source><target state="translated">OpenAI Responses 兼容</target></segment></unit>
+    <unit id="TemplateResponsesHint"><segment><source>Responses API endpoints</source><target state="translated">Responses API 端点</target></segment></unit>
+    <unit id="TemplateMessages"><segment><source>Anthropic compatible</source><target state="translated">Anthropic 兼容</target></segment></unit>
+    <unit id="TemplateMessagesHint"><segment><source>Messages API · e.g. Claude proxies, MiniMax, GLM</source><target state="translated">Messages API · 例如 Claude 代理、MiniMax、GLM</target></segment></unit>
+    <unit id="DraftHint"><segment><source>Not added yet — save to add this provider</source><target state="translated">尚未添加，保存后即添加该厂商</target></segment></unit>
+    <unit id="AddThisProvider"><segment><source>Add provider</source><target state="translated">添加</target></segment></unit>
+    <unit id="NoConfiguredProviders"><segment><source>No providers yet. Click “Add provider” to start.</source><target state="translated">还没有厂商，点击“添加厂商”开始。</target></segment></unit>
+    <unit id="CatalogTitle"><segment><source>Model catalog</source><target state="translated">模型目录</target></segment></unit>
+    <unit id="CatalogSyncedFormat"><segment><source>Synced from models.dev · {0}</source><target state="translated">已从 models.dev 同步 · {0}</target></segment></unit>
+    <unit id="CatalogEmbeddedFormat"><segment><source>Built-in snapshot · {0}</source><target state="translated">内置快照 · {0}</target></segment></unit>
+    <unit id="CatalogCountsFormat"><segment><source>{0} providers · {1} models</source><target state="translated">{0} 个厂商 · {1} 个模型</target></segment></unit>
+    <unit id="SyncFailedFormat"><segment><source>Sync failed: {0}</source><target state="translated">同步失败：{0}</target></segment></unit>
+    <unit id="CatalogHint"><segment><source>Context limits, capabilities and prices come from models.dev. Updates are never applied automatically — check, review the differences, then apply. Overrides in settings.json always take precedence.</source><target state="translated">上下文、能力与价格等基本信息来自 models.dev。更新不会自动应用：先检查并查看差异，确认后再应用。settings.json 中的覆盖值始终优先。</target></segment></unit>
+    <unit id="CheckForUpdates"><segment><source>Check for updates</source><target state="translated">检查更新</target></segment></unit>
+    <unit id="CatalogUpToDate"><segment><source>The catalog is up to date</source><target state="translated">目录已是最新</target></segment></unit>
+    <unit id="CatalogUpdateSummaryFormat"><segment><source>{0} added · {1} removed · {2} changed</source><target state="translated">新增 {0} · 移除 {1} · 变更 {2}</target></segment></unit>
+    <unit id="CatalogUpdateTitle"><segment><source>Update available from models.dev</source><target state="translated">models.dev 有可用更新</target></segment></unit>
+    <unit id="ApplyUpdate"><segment><source>Apply update</source><target state="translated">应用更新</target></segment></unit>
+    <unit id="Discard"><segment><source>Discard</source><target state="translated">放弃</target></segment></unit>
+    <unit id="OnlyConfiguredProviders"><segment><source>Only providers I added</source><target state="translated">仅显示我添加的厂商</target></segment></unit>
+    <unit id="ChangeAdded"><segment><source>Added</source><target state="translated">新增</target></segment></unit>
+    <unit id="ChangeRemoved"><segment><source>Removed</source><target state="translated">移除</target></segment></unit>
+    <unit id="ChangeChanged"><segment><source>Changed</source><target state="translated">变更</target></segment></unit>
+    <unit id="FieldName"><segment><source>Name</source><target state="translated">名称</target></segment></unit>
+    <unit id="FieldContext"><segment><source>Context</source><target state="translated">上下文</target></segment></unit>
+    <unit id="FieldMaxTokens"><segment><source>Max output</source><target state="translated">输出上限</target></segment></unit>
+    <unit id="FieldReasoning"><segment><source>Reasoning</source><target state="translated">推理</target></segment></unit>
+    <unit id="FieldImages"><segment><source>Image input</source><target state="translated">图片输入</target></segment></unit>
+    <unit id="FieldEfforts"><segment><source>Effort levels</source><target state="translated">推理档位</target></segment></unit>
+    <unit id="FieldThinkingToggle"><segment><source>Can disable thinking</source><target state="translated">可关闭思考</target></segment></unit>
+    <unit id="FieldInputPrice"><segment><source>Input price</source><target state="translated">输入价格</target></segment></unit>
+    <unit id="FieldOutputPrice"><segment><source>Output price</source><target state="translated">输出价格</target></segment></unit>
+    <unit id="FieldBaseUrl"><segment><source>Base URL</source><target state="translated">Base URL</target></segment></unit>
+    <unit id="FieldApi"><segment><source>Protocol</source><target state="translated">协议</target></segment></unit>
+    <unit id="Yes"><segment><source>Yes</source><target state="translated">是</target></segment></unit>
+    <unit id="No"><segment><source>No</source><target state="translated">否</target></segment></unit>
+    <unit id="MoreChangesFormat"><segment><source>… and {0} more</source><target state="translated">… 另有 {0} 项</target></segment></unit>
+    <unit id="NoRelevantChanges"><segment><source>No changes to providers you added</source><target state="translated">你添加的厂商没有变化</target></segment></unit>
+    <unit id="ToggleExplorer"><segment><source>Toggle file tree</source><target state="translated">切换文件树</target></segment></unit>
+    <unit id="SearchFiles"><segment><source>Search files</source><target state="translated">搜索文件</target></segment></unit>
+    <unit id="ShowHiddenFiles"><segment><source>Show hidden files</source><target state="translated">显示隐藏文件</target></segment></unit>
+    <unit id="NoFilesFound"><segment><source>No matching files</source><target state="translated">没有匹配的文件</target></segment></unit>
+    <unit id="NoWorkspaceFiles"><segment><source>Open a project to browse its files</source><target state="translated">打开项目后即可浏览文件</target></segment></unit>
+    <unit id="MaximizeEditor"><segment><source>Maximize</source><target state="translated">最大化</target></segment></unit>
+    <unit id="RestoreEditor"><segment><source>Restore</source><target state="translated">还原</target></segment></unit>
+    <unit id="RevealInExplorer"><segment><source>Reveal in file tree</source><target state="translated">在文件树中定位</target></segment></unit>
+    <unit id="CopyPath"><segment><source>Copy path</source><target state="translated">复制路径</target></segment></unit>
+    <unit id="FileTooLargeFormat"><segment><source>This file is too large to preview ({0})</source><target state="translated">文件过大，无法预览（{0}）</target></segment></unit>
+    <unit id="BinaryFile"><segment><source>Binary file — no preview</source><target state="translated">二进制文件，无法预览</target></segment></unit>
+    <unit id="WorkbenchEmpty"><segment><source>Open a file from the file tree, or add a panel</source><target state="translated">从文件树打开文件，或添加一个面板</target></segment></unit>
+    <unit id="AddPanel"><segment><source>Add panel</source><target state="translated">添加面板</target></segment></unit>
+    <unit id="TabHistory"><segment><source>History</source><target state="translated">历史</target></segment></unit>
+    <unit id="HistoryDescription"><segment><source>History will show this project's commits and let you inspect each change.</source><target state="translated">历史面板将展示项目的提交记录，并可查看每次改动。</target></segment></unit>
+    <unit id="AgentsGroup"><segment><source>Agents</source><target state="translated">智能体</target></segment></unit>
+    <unit id="ApprovalTitle"><segment><source>Approval needed</source><target state="translated">需要你的批准</target></segment></unit>
+    <unit id="ApprovalCommand"><segment><source>Run command</source><target state="translated">执行命令</target></segment></unit>
+    <unit id="ApprovalFileChange"><segment><source>Edit files</source><target state="translated">修改文件</target></segment></unit>
+    <unit id="ApprovalTool"><segment><source>Use tool</source><target state="translated">使用工具</target></segment></unit>
+    <unit id="AllowOnce"><segment><source>Allow once</source><target state="translated">允许一次</target></segment></unit>
+    <unit id="AllowForSession"><segment><source>Allow for this session</source><target state="translated">本会话内允许</target></segment></unit>
+    <unit id="Deny"><segment><source>Deny</source><target state="translated">拒绝</target></segment></unit>
+    <unit id="ApprovalPendingFormat"><segment><source>{0} more waiting</source><target state="translated">另有 {0} 项等待批准</target></segment></unit>
+    <unit id="PermissionTitle"><segment><source>Permissions</source><target state="translated">权限</target></segment></unit>
+    <unit id="PermissionAsk"><segment><source>Ask</source><target state="translated">询问</target></segment></unit>
+    <unit id="PermissionAskDesc"><segment><source>Ask before editing files or running commands</source><target state="translated">修改文件或执行命令前询问</target></segment></unit>
+    <unit id="PermissionAuto"><segment><source>Auto-approve</source><target state="translated">自动放行</target></segment></unit>
+    <unit id="PermissionAutoDesc"><segment><source>Approve automatically, stay in the workspace sandbox</source><target state="translated">自动批准，仍限制在工作区沙箱内</target></segment></unit>
+    <unit id="PermissionFull"><segment><source>Full access</source><target state="translated">完全授权</target></segment></unit>
+    <unit id="PermissionFullDesc"><segment><source>No approvals and no sandbox</source><target state="translated">不询问、不限沙箱</target></segment></unit>
+    <unit id="PermissionFullConfirmTitle"><segment><source>Enable full access?</source><target state="translated">确定开启完全授权？</target></segment></unit>
+    <unit id="PermissionFullConfirmText"><segment><source>The agent can run any command and change any file on this computer without asking. Use it only in trusted projects. New sessions don't keep this setting.</source><target state="translated">Agent 将不经询问执行任意命令、修改本机任意文件。仅在可信的项目中使用。新会话不会沿用此设置。</target></segment></unit>
+    <unit id="PermissionFullConfirm"><segment><source>Enable full access</source><target state="translated">开启完全授权</target></segment></unit>
+    <unit id="SettingsAgents"><segment><source>Agents</source><target state="translated">智能体</target></segment></unit>
+    <unit id="AgentsHint"><segment><source>External agents are detected automatically from their CLIs. No configuration is needed — install and sign in with the vendor's CLI.</source><target state="translated">外部智能体会通过其命令行工具自动检测，无需配置：用厂商的 CLI 安装并登录即可。</target></segment></unit>
+    <unit id="RuntimeReady"><segment><source>Ready</source><target state="translated">就绪</target></segment></unit>
+    <unit id="RuntimeNotInstalled"><segment><source>Not installed</source><target state="translated">未安装</target></segment></unit>
+    <unit id="RuntimeError"><segment><source>Error</source><target state="translated">出错</target></segment></unit>
+    <unit id="RuntimeUnknown"><segment><source>Checking…</source><target state="translated">检测中…</target></segment></unit>
+    <unit id="RuntimeVersionFormat"><segment><source>Version {0}</source><target state="translated">版本 {0}</target></segment></unit>
+    <unit id="RuntimeAuthFormat"><segment><source>Signed in via {0}</source><target state="translated">登录方式：{0}</target></segment></unit>
+    <unit id="NotInstalledGroupFormat"><segment><source>Not installed ({0})</source><target state="translated">未安装（{0}）</target></segment></unit>
+    <unit id="NoRuntimes"><segment><source>No external agents detected yet</source><target state="translated">尚未检测到外部智能体</target></segment></unit>
+    <unit id="RuntimeBadgeTip"><segment><source>Runs on {0}</source><target state="translated">由 {0} 运行</target></segment></unit>
+    <unit id="ProtocolFollowProvider"><segment><source>Provider default</source><target state="translated">跟随厂商</target></segment></unit>
+    <unit id="ProtocolShortChat"><segment><source>Chat</source><target state="translated">Chat</target></segment></unit>
+    <unit id="ProtocolShortResponses"><segment><source>Responses</source><target state="translated">Responses</target></segment></unit>
+    <unit id="ProtocolShortMessages"><segment><source>Messages</source><target state="translated">Messages</target></segment></unit>
+    <unit id="ModelProtocolTip"><segment><source>This model uses its own protocol</source><target state="translated">该模型单独指定了协议</target></segment></unit>
+    <unit id="StepRun"><segment><source>Run</source><target state="translated">运行</target></segment></unit>
+    <unit id="StepRead"><segment><source>Read</source><target state="translated">读取</target></segment></unit>
+    <unit id="StepEdit"><segment><source>Edit</source><target state="translated">编辑</target></segment></unit>
+    <unit id="StepSearch"><segment><source>Search</source><target state="translated">搜索</target></segment></unit>
+    <unit id="StepFetch"><segment><source>Fetch</source><target state="translated">获取</target></segment></unit>
+    <unit id="StepTask"><segment><source>Task</source><target state="translated">子任务</target></segment></unit>
+    <unit id="ActivityThoughtMany"><segment><source>Thought {0} times</source><target state="translated">思考 {0} 次</target></segment></unit>
+    <unit id="ActivityCommandOne"><segment><source>Ran 1 command</source><target state="translated">运行 1 条命令</target></segment></unit>
+    <unit id="ActivityCommandMany"><segment><source>Ran {0} commands</source><target state="translated">运行 {0} 条命令</target></segment></unit>
+    <unit id="ActivityReadOne"><segment><source>Read 1 file</source><target state="translated">读取 1 个文件</target></segment></unit>
+    <unit id="ActivityReadMany"><segment><source>Read {0} files</source><target state="translated">读取 {0} 个文件</target></segment></unit>
+    <unit id="ActivityEditOne"><segment><source>Edited 1 file</source><target state="translated">编辑 1 个文件</target></segment></unit>
+    <unit id="ActivityEditMany"><segment><source>Edited {0} files</source><target state="translated">编辑 {0} 个文件</target></segment></unit>
+    <unit id="ActivitySearchOne"><segment><source>Searched once</source><target state="translated">搜索 1 次</target></segment></unit>
+    <unit id="ActivitySearchMany"><segment><source>Searched {0} times</source><target state="translated">搜索 {0} 次</target></segment></unit>
+    <unit id="ActivityFetchOne"><segment><source>Fetched 1 page</source><target state="translated">获取 1 个网页</target></segment></unit>
+    <unit id="ActivityFetchMany"><segment><source>Fetched {0} pages</source><target state="translated">获取 {0} 个网页</target></segment></unit>
+    <unit id="ActivityTaskOne"><segment><source>Ran 1 task</source><target state="translated">运行 1 个子任务</target></segment></unit>
+    <unit id="ActivityTaskMany"><segment><source>Ran {0} tasks</source><target state="translated">运行 {0} 个子任务</target></segment></unit>
+    <unit id="ActivityToolOne"><segment><source>Used 1 tool</source><target state="translated">调用 1 个工具</target></segment></unit>
+    <unit id="ActivityToolMany"><segment><source>Used {0} tools</source><target state="translated">调用 {0} 个工具</target></segment></unit>
+    <unit id="ScrollToBottom"><segment><source>Scroll to bottom</source><target state="translated">回到底部</target></segment></unit>
+    <unit id="PonderVerbs"><segment><source>Noodling…|Puzzling…|Pondering…|Brewing…|Mulling…|Tinkering…|Percolating…|Untangling…|Musing…|Cooking…</source><target state="translated">琢磨中…|推敲中…|思索中…|酝酿中…|盘算中…|捣鼓中…|梳理中…|斟酌中…|构思中…|鼓捣中…</target></segment></unit>
+    <unit id="SessionRename"><segment><source>Rename</source><target state="translated">重命名</target></segment></unit>
+    <unit id="SessionPin"><segment><source>Pin</source><target state="translated">置顶</target></segment></unit>
+    <unit id="SessionUnpin"><segment><source>Unpin</source><target state="translated">取消置顶</target></segment></unit>
+    <unit id="SessionRevealFinder"><segment><source>Show in Finder</source><target state="translated">在 Finder 中显示</target></segment></unit>
+    <unit id="SessionRevealExplorer"><segment><source>Show in Explorer</source><target state="translated">在资源管理器中显示</target></segment></unit>
+    <unit id="SessionRevealFolder"><segment><source>Open containing folder</source><target state="translated">打开所在文件夹</target></segment></unit>
+    <unit id="SessionCopyId"><segment><source>Copy session ID</source><target state="translated">复制会话 ID</target></segment></unit>
+    <unit id="SessionFork"><segment><source>Continue in new session</source><target state="translated">在新会话中继续</target></segment></unit>
+    <unit id="SessionDelete"><segment><source>Delete</source><target state="translated">删除</target></segment></unit>
+    <unit id="SessionDeleteConfirmTitle"><segment><source>Delete this session?</source><target state="translated">删除这个会话？</target></segment></unit>
+    <unit id="SessionDeleteConfirmText"><segment><source>“{0}” will be permanently deleted. This can't be undone.</source><target state="translated">“{0}”将被永久删除，无法恢复。</target></segment></unit>
+    <unit id="SessionPinned"><segment><source>Pinned</source><target state="translated">已置顶</target></segment></unit>
+    <unit id="StatusSessionActionFailedFormat"><segment><source>Session action failed: {0}</source><target state="translated">会话操作失败：{0}</target></segment></unit>
+    <unit id="EarlierMessages"><segment><source>Earlier messages</source><target state="translated">更早的消息</target></segment></unit>
+    <unit id="QueueTitleFormat"><segment><source>Queued ({0})</source><target state="translated">排队中（{0}）</target></segment></unit>
+    <unit id="QueuePaused"><segment><source>Paused because the last run was stopped or failed</source><target state="translated">上一轮已停止或出错，队列已暂停</target></segment></unit>
+    <unit id="QueueResume"><segment><source>Resume</source><target state="translated">继续</target></segment></unit>
+    <unit id="QueueSendNow"><segment><source>Send now</source><target state="translated">立即发送</target></segment></unit>
+    <unit id="QueueSendNowTip"><segment><source>Insert into the current run; takes effect at the next step</source><target state="translated">插入当前轮，在下一步生效</target></segment></unit>
+    <unit id="QueueEdit"><segment><source>Edit</source><target state="translated">编辑</target></segment></unit>
+    <unit id="QueueRemove"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="ImagePlaceholderFormat"><segment><source>[Image #{0}]</source><target state="translated">[图片 #{0}]</target></segment></unit>
+    <unit id="ImagesUnsupportedHint"><segment><source>This model does not accept images; only the image paths will be sent</source><target state="translated">当前模型不支持图片，只会发送图片路径</target></segment></unit>
+    <unit id="AttachmentRemove"><segment><source>Remove image</source><target state="translated">移除图片</target></segment></unit>
+    <unit id="ImageMissing"><segment><source>Image file was deleted</source><target state="translated">图片文件已删除</target></segment></unit>
+    <unit id="ImageFileTypeName"><segment><source>Images</source><target state="translated">图片</target></segment></unit>
+    <unit id="CodeExpandFormat"><segment><source>Show all {0} lines</source><target state="translated">展开全部 {0} 行</target></segment></unit>
+    <unit id="CodeCollapse"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
+    <unit id="LinkConfirmTitle"><segment><source>Open this link?</source><target state="translated">打开这个链接？</target></segment></unit>
+    <unit id="LinkConfirmMessageFormat"><segment><source>The link text points somewhere else. It will actually open {0}</source><target state="translated">链接文字和实际地址不一致，实际将打开 {0}</target></segment></unit>
+    <unit id="LinkOpen"><segment><source>Open</source><target state="translated">打开</target></segment></unit>
+    <unit id="DiffSplitView"><segment><source>Side-by-side view</source><target state="translated">并排视图</target></segment></unit>
+    <unit id="DiffUnifiedView"><segment><source>Unified view</source><target state="translated">统一视图</target></segment></unit>
+    <unit id="DiffInlineView"><segment><source>Inline view</source><target state="translated">行内视图</target></segment></unit>
+    <unit id="PreviewSource"><segment><source>Source</source><target state="translated">源码</target></segment></unit>
+    <unit id="PreviewRendered"><segment><source>Preview</source><target state="translated">预览</target></segment></unit>
+    <unit id="PreviewImage"><segment><source>Image</source><target state="translated">图片</target></segment></unit>
+    <unit id="ImageDecodeFailed"><segment><source>Could not decode the image</source><target state="translated">无法解码该图片</target></segment></unit>
+    <unit id="ImageFramesFormat"><segment><source>{0} frames</source><target state="translated">{0} 帧</target></segment></unit>
+    <unit id="ImageFit"><segment><source>Fit to window</source><target state="translated">适应窗口</target></segment></unit>
+    <unit id="ImageActualSize"><segment><source>Actual size (100%)</source><target state="translated">实际大小（100%）</target></segment></unit>
+    <unit id="ImageZoomIn"><segment><source>Zoom in</source><target state="translated">放大</target></segment></unit>
+    <unit id="ImageZoomOut"><segment><source>Zoom out</source><target state="translated">缩小</target></segment></unit>
+    <unit id="ReduceMotionLabel"><segment><source>Reduce motion</source><target state="translated">减少动态效果</target></segment></unit>
+    <unit id="ReduceMotionHint"><segment><source>Turn off interface animations. The system Reduce Motion setting is honored too.</source><target state="translated">关闭界面动画；系统的“减少动态效果”同样生效。</target></segment></unit>
+    <unit id="SplashLoading"><segment><source>Warming up the agent…</source><target state="translated">正在唤醒智能体…</target></segment></unit>
+    <unit id="SplashQuip1"><segment><source>Fixing one bug — three more come to say hi</source><target state="translated">程序员修 bug——越修越多</target></segment></unit>
+    <unit id="SplashQuip2"><segment><source>A programmer counting sheep — 0, 1, 10, 11, 100…</source><target state="translated">程序员数羊——0、1、10、11、100……</target></segment></unit>
+    <unit id="SplashQuip3"><segment><source>Sesame in bloom — every commit a notch higher</source><target state="translated">芝麻开花——节节高</target></segment></unit>
+    <unit id="SplashQuip4"><segment><source>Ask until you hit the bottom of the pot — the agent never gets tired</source><target state="translated">打破砂锅——问到底</target></segment></unit>
+    <unit id="SplashQuip5"><segment><source>Eight immortals crossing the sea — pick your model, show your magic</source><target state="translated">八仙过海——各显神通</target></segment></unit>
+    <unit id="SplashQuip6"><segment><source>Code without comments — a mystery even to its author</source><target state="translated">写代码不写注释——自己都看不懂</target></segment></unit>
+    <unit id="SplashQuip7"><segment><source>Shipping on a Friday evening — brave, very brave</source><target state="translated">周五晚上上线——胆子不小</target></segment></unit>
+    <unit id="SplashQuip8"><segment><source>Dumplings in a teapot — the ideas are in there, let the agent pour them out</source><target state="translated">茶壶里煮饺子——有货倒不出</target></segment></unit>
+    <unit id="SplashQuip9"><segment><source>Scallions with tofu — clean and clear, like a good diff</source><target state="translated">小葱拌豆腐——一清二白</target></segment></unit>
+    <unit id="SplashQuip10"><segment><source>A rubber duck on the desk — listens to everything, judges nothing</source><target state="translated">桌上的小黄鸭——光听不说</target></segment></unit>
+    <unit id="MarkdownMenuCopy"><segment><source>Copy</source><target state="translated">复制</target></segment></unit>
+    <unit id="MarkdownMenuCopyAsMarkdown"><segment><source>Copy as Markdown</source><target state="translated">复制为 Markdown</target></segment></unit>
+    <unit id="MarkdownMenuSelectAll"><segment><source>Select All</source><target state="translated">全选</target></segment></unit>
+    <unit id="MarkdownMenuFind"><segment><source>Find…</source><target state="translated">查找…</target></segment></unit>
+    <unit id="StepPlan"><segment><source>Tasks</source><target state="translated">任务清单</target></segment></unit>
+    <unit id="TasksHeaderFormat"><segment><source>Tasks {0}/{1}</source><target state="translated">任务 {0}/{1}</target></segment></unit>
+    <unit id="SessionMessageFromFormat"><segment><source>Message from {0}</source><target state="translated">来自 {0} 的消息</target></segment></unit>
+    <unit id="TaskNotificationFormat"><segment><source>Background task {0}: {1}</source><target state="translated">后台任务 {0}：{1}</target></segment></unit>
+    <unit id="SubagentStatsFormat"><segment><source>{0} · {1} tool uses · {2} tokens</source><target state="translated">{0} · {1} 次工具调用 · {2} tokens</target></segment></unit>
+    <unit id="ApprovalRead"><segment><source>Read outside workspace</source><target state="translated">读取工作区外的文件</target></segment></unit>
+    <unit id="ApprovalNetwork"><segment><source>Network access</source><target state="translated">访问网络</target></segment></unit>
+  </file>
+</xliff>

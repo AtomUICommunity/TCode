@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TCode.Config</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="settings.schema.json" LogicalName="TCode.Config.settings.schema.json" />
+    </ItemGroup>
+</Project>
