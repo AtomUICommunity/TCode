@@ -77,10 +77,12 @@ public sealed class LocalPtyTests
     public async Task SigpipeIsDefault()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix only");
-        await using var pty = LocalPty.Start(Shell("trap -p PIPE; echo end"));
+        // yes 必须被 SIGPIPE 终止（128 + 13 = 141）；继承了 SIG_IGN 时 yes 收到 EPIPE 后以 1 退出。
+        // 用 bash：/bin/sh 在 Ubuntu 上是 dash，没有 PIPESTATUS。
+        await using var pty = LocalPty.Start(new PtyLaunch("/bin/bash", ["-c", "yes | head -1 >/dev/null; echo status:${PIPESTATUS[0]}"],
+            "bash", null, Environment(), Size));
         var output = await ReadAllAsync(pty.Output, Timeout);
-        Assert.DoesNotContain("PIPE", output);
-        Assert.Contains("end", output);
+        Assert.Contains("status:141", output);
     }
 
     [Fact]
