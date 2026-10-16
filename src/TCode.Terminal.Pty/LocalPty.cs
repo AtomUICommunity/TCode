@@ -24,4 +24,10 @@ public static class LocalPty
         }
         return UnixPtyConnection.Start(launch, options.HelperPath ?? Path.Combine(AppContext.BaseDirectory, "tcode-pty-spawn"));
     }
+
+    /// <summary>Windows：首个会话启动后实际使用的 ConPTY 实现（诊断与自检）；其他平台或尚未加载时为 null。</summary>
+    public static ConPtyImplementation? ConPtyImplementation => OperatingSystem.IsWindows() && ConPtyApi.IsLoaded ? ConPtyApi.Implementation : null;
+
+    /// <summary>Windows：没用上随包 ConPTY 的原因（为空表示用的是随包实现）。</summary>
+    public static string? ConPtyDegradedReason => OperatingSystem.IsWindows() ? ConPtyApi.DegradedReason : null;
 }

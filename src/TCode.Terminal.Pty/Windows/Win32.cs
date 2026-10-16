@@ -99,6 +99,42 @@ internal static unsafe partial class Win32
     [LibraryImport(Kernel32, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool IsWow64Process2(nint process, ushort* processMachine, ushort* nativeMachine);
+
+    public const uint Th32csSnapProcess = 0x00000002;
+    public const uint ProcessQueryLimitedInformation = 0x1000;
+
+    /// <summary>PROCESSENTRY32W（tlhelp32.h）。</summary>
+    public struct ProcessEntry32W
+    {
+        public uint Size;
+        public uint Usage;
+        public uint ProcessId;
+        public nuint DefaultHeapId;
+        public uint ModuleId;
+        public uint Threads;
+        public uint ParentProcessId;
+        public int PriorityClassBase;
+        public uint Flags;
+        public fixed char ExeFile[260];
+    }
+
+    [LibraryImport(Kernel32, SetLastError = true)]
+    public static partial nint CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [LibraryImport(Kernel32, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool Process32FirstW(nint snapshot, ProcessEntry32W* entry);
+
+    [LibraryImport(Kernel32, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool Process32NextW(nint snapshot, ProcessEntry32W* entry);
+
+    [LibraryImport(Kernel32, SetLastError = true)]
+    public static partial nint OpenProcess(uint access, int inheritHandle, uint processId);
+
+    [LibraryImport(Kernel32, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetProcessTimes(nint process, long* creation, long* exit, long* kernel, long* user);
 }
 
 [StructLayout(LayoutKind.Sequential)]

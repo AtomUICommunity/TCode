@@ -32,6 +32,8 @@ internal static unsafe class ConPtyApi
 
     public static ConPtyImplementation Implementation { get; private set; }
 
+    public static bool IsLoaded => Volatile.Read(ref _loaded);
+
     /// <summary>降级原因（为空表示使用随包实现）。</summary>
     public static string? DegradedReason { get; private set; }
 

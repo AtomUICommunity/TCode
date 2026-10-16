@@ -47,7 +47,7 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
 
     public string Kind => "local-pty";
 
-    public unsafe ConnectionCapabilities Capabilities => ConnectionCapabilities.Resize | ConnectionCapabilities.Signals |
+    public unsafe ConnectionCapabilities Capabilities => ConnectionCapabilities.Resize | ConnectionCapabilities.Signals | ConnectionCapabilities.ForegroundProcess |
         (ConPtyApi.Clear != null ? ConnectionCapabilities.ClearBuffer : ConnectionCapabilities.None);
 
     public PipeReader Output => _output.Reader;
@@ -247,8 +247,9 @@ internal sealed class WindowsPtyConnection : ITerminalConnection
         }
     }
 
-    // Windows 没有 tcgetpgrp；进程树判断（Toolhelp32）在 M3 实现，cwd 只来自 OSC 7 / 9;9（W11）
-    public ValueTask<ForegroundInfo?> GetForegroundAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<ForegroundInfo?>(null);
+    // Windows 没有 tcgetpgrp：Toolhelp32 进程树启发式（§8.2）；cwd 只来自 OSC 7 / 9;9（W11）
+    public ValueTask<ForegroundInfo?> GetForegroundAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(ProcessId == 0 || _closed != 0 ? null : ProcessTree.Foreground(ProcessId));
 
     public ValueTask<string?> GetWorkingDirectoryAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(null);
 

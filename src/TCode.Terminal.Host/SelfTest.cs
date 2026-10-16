@@ -2,6 +2,7 @@ using System.IO.Pipelines;
 using System.Text;
 using TCode.Terminal.Core;
 using TCode.Terminal.Pty;
+using TCode.Terminal.Pty.Windows;
 
 namespace TCode.Terminal.Host;
 
@@ -60,6 +61,12 @@ internal static class SelfTest
             var exit = await pty.Exited.WaitAsync(TimeSpan.FromSeconds(10));
             Check(mirror.FormatPlainText().Contains("self-test"), "pty output reaches the core");
             Check(exit.ExitCode == 7, $"pty exit code (got {exit.ExitCode?.ToString() ?? exit.Signal ?? "unknown"})");
+            if (OperatingSystem.IsWindows())
+            {
+                // 找不到随包 conpty.dll / OpenConsole.exe 时会静默退回系统 conhost（12 §9 故障排查）
+                Check(LocalPty.ConPtyImplementation == ConPtyImplementation.Bundled,
+                    $"bundled ConPTY (got {LocalPty.ConPtyImplementation}: {LocalPty.ConPtyDegradedReason})");
+            }
         }
         catch (Exception ex)
         {

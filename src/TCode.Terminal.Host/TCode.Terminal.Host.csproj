@@ -10,4 +10,6 @@
     <ItemGroup>
         <ProjectReference Include="..\TCode.Terminal.Pty\TCode.Terminal.Pty.csproj" />
     </ItemGroup>
+    <!-- 随包 ConPTY：只能由可执行项目引用（库项目经 ProjectReference 构建时拿不到 RuntimeIdentifier） -->
+    <Import Project="..\..\native\ConPty.targets" />
 </Project>

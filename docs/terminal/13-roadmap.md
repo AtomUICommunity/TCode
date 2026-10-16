@@ -81,13 +81,19 @@ M0 中发现、需要后续处理的：
 | B | **完成** | `ITerminalEffects`（剪贴板、通知、进度、标题、cwd…）；核心应答的查询（DA1/DA2/XTVERSION/尺寸/配色）；OSC 133/633 `CommandTracker` |
 | C | **完成** | `InputModes`；按键 / 鼠标 / 焦点编码；粘贴安全检查与 bracketed paste |
 | D | **完成** | 选区（范围、矩形、词、行、全部、命令输出）与选区文本；视口滚动（顶 / 底 / 行 / 指定行 / 按提示符）；搜索（`TerminalSearch`，视口高亮在捕获时换算）；OSC 8 超链接解析进帧（`FrameSnapshot.Links` + `ResolvedStyle.HyperlinkId`，同一地址跨帧 id 不变，上限 65535）。帧新增 `Selection` / `Search` / `Links`，仅选区或搜索变化也会产生新帧 |
-| E | 待做 | 随包 ConPTY（conpty.dll + OpenConsole.exe）；Toolhelp32 前台进程；PTY 压力测试 |
+| E | **完成** | 随包 ConPTY：`native/ConPty.targets`（不用包自带 targets，见 12 §5.5），CI 检查布局、自检断言 Bundled；Windows 前台进程：`ProcessTree`（Toolhelp32 + `GetProcessTimes` 防 pid 复用，排除 conhost / OpenConsole），纯函数部分跨平台测试；PTY 压力测试 T10–T14（`PtyStressTests`，默认 CI 规模，`TCODE_PTY_STRESS=1` 按文档规模，每晚运行） |
 | F | 待做 | esctest2 驱动与黄金样本回放进 CI |
 
 阶段 D 的实测：
 - 行选区（`select_line`）止于最后一个非空格列，不是整行宽度；视图按选区区间绘制即可，不要自行补齐。
 - 选区与搜索匹配都是未跟踪的 grid ref，只在下一次终端变更前有效，所以视口区间在 `CaptureFrame` 内换算，不跨线程传递 grid ref。
 - 超链接 id 是捕获器内部编号：两个捕获器（例如差分测试的增量 / 全量）对同一地址可能给出不同 id，比较时按地址比较。
+
+阶段 E 的实测：
+- macOS 内核在输出队列满、写端阻塞时会重复输出 ONLCR 插入的 `\r`（`y\r\r\n`），不经本库的 Python 慢读者同样复现；显示上无差别。T10 单独计数这类字节，其余任何偏差都算失败。
+- 背压：消费方暂停 2 s 后积压约 263–266 KiB（上限 256 KiB + 一次 64 KiB 读取）。
+- 吞吐：1 GiB 约 23–34 MiB/s（macOS arm64），与 Python 直接读 PTY 相同，见 03 §14 T11。
+- fd 基线要在首个会话之后取：退出监视器、线程池等进程级单例在首次使用时创建，不算泄漏。
 
 ### M2 pty host（约 3–4 周）
 

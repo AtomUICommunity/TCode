@@ -9,6 +9,9 @@ on:
   pull_request:
     paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
   workflow_dispatch:
+  # 每晚：PTY 压力测试按文档规模（03 §14 T10–T14），差分测试扫 200 个种子
+  schedule:
+    - cron: "17 19 * * *"
 
 permissions:
   contents: read
@@ -101,8 +104,12 @@ jobs:
         run: sudo apt-get install -y -q vim
       - name: Test core
         run: dotnet test tests/TCode.Terminal.Core.Tests
+        env:
+          TCODE_DIFF_SEEDS: ${{ github.event_name == 'schedule' && '200' || '' }}
       - name: Test PTY
-        run: dotnet test tests/TCode.Terminal.Pty.Tests
+        run: dotnet test tests/TCode.Terminal.Pty.Tests --logger "console;verbosity=normal"
+        env:
+          TCODE_PTY_STRESS: ${{ github.event_name == 'schedule' && '1' || '' }}
       - name: Test view (headless snapshots)
         run: dotnet test tests/TCode.Terminal.Avalonia.Tests
       - uses: actions/upload-artifact@v4
@@ -116,6 +123,14 @@ jobs:
         run: |
           dotnet publish src/TCode.Terminal.Host -c Release -r ${{ matrix.rid }} -o artifacts/publish/ptyhost 2>&1 | tee publish.log
           if grep -E 'warning IL[0-9]{4}' publish.log; then echo "::error::AOT/trim warnings"; exit 1; fi
+      - name: Check ConPTY publish layout (03 §14 W-T6)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          d=artifacts/publish/ptyhost
+          need="conpty.dll arm64/OpenConsole.exe"
+          [ "${{ matrix.rid }}" = win-x64 ] && need="$need x64/OpenConsole.exe"
+          for f in $need; do [ -f "$d/$f" ] || { echo "::error::missing $f"; exit 1; }; done
       - name: Run AOT self-test
         shell: bash
         run: artifacts/publish/ptyhost/tcode-ptyhost --self-test

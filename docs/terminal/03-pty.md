@@ -1123,7 +1123,7 @@ info.ArgumentList.Add(command);
 | T8 | 退出排空：`printf 'last-line'; exit 0` | 全部 | Output 中 `last-line` 出现在 `Exited` 完成之前 |
 | T9 | 后台进程持有 slave：`sleep 5 & exit` | Unix | `Exited` 在 ≤ 1.2 s 内完成（不等 5 s） |
 | T10 | `yes \| head -c 100M` 与慢消费方 | 全部 | 消费方暂停 2 s 期间，Pipe 积压 ≤ 256 KiB + 64 KiB；子进程被阻塞（随后吞吐恢复） |
-| T11 | `cat` 1 GB（`head -c 1G /dev/zero \| tr '\0' a`） | 全部 | 记录 MB/s（基准：macOS ≥ 300 MB/s [推]）；host 的 RSS 增量 < 50 MB |
+| T11 | `cat` 1 GB（`head -c 1G /dev/zero \| tr '\0' a`） | 全部 | 记录 MB/s；host 的 RSS 增量 < 50 MB。实测（M1，macOS arm64）：约 23–34 MiB/s，与不经本库的 Python `pty.fork` 读者相同，瓶颈在内核 PTY + `tr`，原先"≥ 300 MB/s"的推测不成立 |
 | T12 | 50 个并发会话：同时启动，各自往返，再全部关闭 | 全部 | 全部成功；之后 fd 数量回到基线（`/proc/self/fd` 或 `lsof -p`），线程数回到基线，没有僵尸进程（`ps -o stat`） |
 | T13 | 快速开关：500 次 Start → 立即 Close | 全部 | 没有异常、没有泄漏；macOS 不出现 ENXIO（锁 + 重试）；Windows 不出现 0xC0000142 |
 | T14 | TUI resize 风暴：测试程序在 SIGWINCH 时打印尺寸；1 s 内 resize 1000 次（随机尺寸），最后一次固定 | 全部 | 最后一次打印的尺寸等于最终尺寸；不崩溃、不挂起；`vim -u NONE` 能正常退出 |
