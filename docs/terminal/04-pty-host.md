@@ -1,6 +1,6 @@
 # TCode 终端：pty host 进程与 IPC 协议
 
-> 状态：设计稿 v1（2026-10-16）。范围：`TCode.Terminal.Protocol`（帧格式、控制消息、流控、`PtyHostClient`、启动与发现）和 `TCode.Terminal.Host`（`tcode-ptyhost` 可执行文件：会话管理、镜像核心、输出日志、持久化）。
+> 状态：设计稿 v1（2026-10-16）；M2 已按本文实现（2026-10-17），实现中的调整与未做项见 [13](13-roadmap.md) "M2 实施状态"。范围：`TCode.Terminal.Protocol`（帧格式、控制消息、流控、`PtyHostClient`、启动与发现）和 `TCode.Terminal.Host`（`tcode-ptyhost` 可执行文件：会话管理、镜像核心、输出日志、持久化）。
 > 上位文档：[01-architecture.md](01-architecture.md) §3（进程划分、一致性规则、生命周期）、§5（线程模型）、§6.4（IPC 要点）、§8（安全）、决策 D3。本文细化这些约定；与 01 不一致的地方列在 §19。
 > 相关：[02-core-ghostty.md](02-core-ghostty.md)（快照、formatter、回滚压缩）、[07-shell-profiles-config.md](07-shell-profiles-config.md)（profile、环境变量、`terminal` 配置节）、[09-agent-integration.md](09-agent-integration.md)（`command/*` 细节、审批）、[10-protocol-compat.md](10-protocol-compat.md)（OSC 52、查询应答）、[11-testing-benchmarks.md](11-testing-benchmarks.md)。
 
@@ -253,7 +253,8 @@ sequenceDiagram
     H-->>C: Response {scope: "full" | "agent", sessionLimit, connectionId}
 ```
 
-- `K` 是令牌的原始 32 字节。签发的受限令牌（§13.2）各自也是 32 字节。host 逐个尝试验证，令牌数量很少（≤ 16），开销可以忽略。
+- `K` 是令牌的原始 32 字节。签发的受限令牌（§13.2）各自也是 32 字节。
+- **M2 调整**：使用受限令牌的客户端在 `hello` 中带上 `tokenId`（`auth/mintToken` 返回的非秘密标识），host 用该令牌计算 `serverProof`，`auth` 时也只验证这一个令牌；不带 `tokenId` 时按完整令牌处理。原方案"host 逐个尝试"无法让持受限令牌的客户端验证 host。未知 `tokenId` 用随机密钥作答（认证必然失败），不暴露哪些 id 存在。
 - **`ghosttyBuildId`** = `ghostty_build_info(VERSION_STRING)` + `"+sha256:"` + 原生库文件 SHA-256 的前 16 位十六进制。libghostty 的 `build_info` 只提供版本、SIMD、Kitty、优化级别等字段，**没有构建哈希** [实 `include/ghostty/vt/build_info.h:53-126`]。所以由 CI 在打包时计算文件哈希，写入 `ghostty-build.txt`，Desktop 和 host 运行时都读这个文件；`--self-test` 会核对文件哈希与它是否一致。
 - 协议协商：主版本必须相同，否则返回 `VersionMismatch`（附带双方版本），客户端转入 §1.5 的流程。次版本取两者中较小的那个，按它启用功能。
 - `ghosttyBuildId` 不同不算错误：`hello` 应答返回双方的值，客户端由此决定 attach 时使用的快照格式（§1.5）。

@@ -277,6 +277,7 @@ public sealed partial class PtyHostServer
         }
         c.Kind = p.ClientKind;
         c.Pid = p.Pid;
+        c.ForeignBuild = p.GhosttyBuildId is { } clientBuild && _options.GhosttyBuildId is { } hostBuild && clientBuild != hostBuild;
         c.ClientNonce = p.ClientNonce;
         c.ServerNonce = Handshake.NewNonce();
         var proofKey = _options.Token;
@@ -298,6 +299,7 @@ public sealed partial class PtyHostServer
             ServerProof = Handshake.ServerProof(proofKey, p.ClientNonce, c.ServerNonce),
             JobBound = _options.JobBound,
             Capabilities = ["revive"],
+            Draining = Draining || c.ForeignBuild,
         }, J.HelloResult);
     }
 
@@ -363,6 +365,11 @@ public sealed partial class PtyHostServer
         if (_stopping.IsCancellationRequested)
         {
             throw new PtyHostException(PtyErrors.HostShuttingDown, "host is shutting down");
+        }
+        if (c.ForeignBuild)
+        {
+            // 新构建的 Desktop 连上了旧 host：这个 host 从此只排空（§1.5），新会话建在当前构建的 host 里
+            Draining = true;
         }
         if (Draining)
         {
@@ -468,6 +475,10 @@ public sealed partial class PtyHostServer
     private Task<AttachResultDto> AttachAsync(ClientConnection c, Session session, AttachParams p, uint? respondTo = null)
     {
         var mode = p.Mode == "agent" || c.Kind == ClientKind.Agent ? SubscriptionMode.Agent : SubscriptionMode.View;
+        if (c.ForeignBuild && p.Snapshot == "ghostty")
+        {
+            p = p with { Snapshot = "vt" };  // 二进制快照只在同一 libghostty 构建之间有效（01 §3.2 规则 3）
+        }
         var subscription = new Subscription(session, c, mode, Interlocked.Increment(ref _nextAttach));
         if (!c.TryAddSubscription(subscription))
         {

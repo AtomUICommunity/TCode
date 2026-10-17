@@ -73,6 +73,11 @@ internal sealed class HostLifetime
         lock (_lock)
         {
             var now = AwakeClock.Now;
+            if (_server.Draining && _server.SessionCount == 0)
+            {
+                Stop("draining");  // 遗留 host 的最后一个会话关闭后立即退出（§1.5）
+                return;
+            }
             if (_server.UiConnections > 0)
             {
                 _orphanedAt = null;

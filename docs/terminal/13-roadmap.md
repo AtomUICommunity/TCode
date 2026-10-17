@@ -108,6 +108,32 @@ M0 中发现、需要后续处理的：
 
 验收：Desktop 被杀后重启，标签和内容完全恢复；host 崩溃后 Desktop 显示"会话已丢失"并能在原目录重开。
 
+#### M2 实施状态（2026-10-17）
+
+| 步骤 | 状态 | 内容 |
+|---|---|---|
+| 1 协议与客户端 | **完成** | `TCode.Terminal.Protocol`：12 字节帧头、`Envelope`（`Utf8JsonReader` 扫描，不建 JsonDocument）、源生成 `PtyHostJsonContext`、HMAC 握手、`PtyConnection`（读 / 写线程、控制优先 + 数据轮转、Ping）、`PtyHostClient` / `PtySessionHandle` / `IPtySessionSink` |
+| 2 host 核心 | **完成** | `PtyHostServer`（监听、对端 uid 校验、认证超时、按方法分派）、会话 actor（命令与输出块同一队列）、`OutputLog`（64 KiB 记录的环、二分查找）、流控（256 / 64 KiB，4 块在途，慢订阅者 10 s 后 resync） |
+| 3 attach | **完成** | 原子 attach（取 S、编码快照、登记游标）、`resumeFrom`、VT 格式、多客户端、尺寸所有者（最近获得焦点者） |
+| 4 发现与启动 | **完成** | `PtyHostPaths` / `PtyHostLocator`（生命周期锁判活、start.lock 串行化、READY 行）、Unix 经 `tcode-pty-spawn --detach`、Windows `CreateProcessW` + breakaway（含 Job 回退）、`HostLifetime`（宽限期只计清醒时间、到期保留有程序在运行的会话、空 host 60 s 退出）、SIGTERM / SIGHUP、`HostLog` |
+| 5 持久化 | **完成** | `PersistenceStore`（0700 / 0600、原子写入、meta 最后写）、裁剪快照 + `tail.vt` 回退、定时保存只写有变化的会话、`onQuit` 三种模式、SIGTERM 1.5 s 内保存、revive 推入回滚 + 分隔文字 + 干净屏幕 |
+| 6 受限令牌 | **部分** | `auth/mintToken` / `revoke`、按权限列拒绝、agent 只能访问 agent 会话与共享会话、shell 环境去掉 `TCODE_PTYHOST_*`。`command/*` 的语义属于 09，随 M5 实现；AgentHost 的环境变量注入属于 Desktop 集成（M4） |
+| 7 升级并存 | **完成（基础）** | 客户端的 ghosttyBuildId 与 host 不同 → 连接标为外来构建：attach 强制 VT 格式、create 返回 `HostDraining` 并使 host 进入排空、最后一个会话关闭后退出。主版本不同时的引导子集流程由 Desktop 实现（M4） |
+
+验证：`TCode.Terminal.Protocol.Tests` 11 个、`TCode.Terminal.Host.Tests` 28 个（进程内 host + 真实客户端 + 真实 PTY；发现类用例启动真实 host 进程，CI 中另用 AOT 发布的 host 跑一遍）；AOT 发布 0 个 IL 警告。
+
+尚未做（列入 M3 / M4 或待验证）：
+- Windows 命名管道仍用 .NET 的 `CurrentUserOnly`，04 §2.1 要求的 `PIPE_REJECT_REMOTE_CLIENTS` 与 `FILE_FLAG_FIRST_PIPE_INSTANCE`（自己调 `CreateNamedPipeW`）未做；客户端侧的服务端 SID 校验依赖 `CurrentUserOnly`。
+- Windows 关机时的隐藏窗口（`WM_ENDSESSION`，§12.3）未做；当前只靠定时保存兜底。
+- `session/foregroundChanged` 轮询、`session/inputOverflow`（8 MiB 输入上限）、环在空闲 60 s 后缩小、按回滚大小预估编码耗时（18.1 第 10 条）未做。
+- profile 探测与 shell 集成注入（`profiles/list`、`shellIntegration`）属于 `TCode.Terminal.Shell`（M4）；当前 `session/create` 只支持显式命令与系统默认 shell。
+
+M2 中的实测与设计调整：
+- **受限令牌的握手**：serverProof 原本只用完整令牌计算，持受限令牌的 AgentHost 无法验证 host。改为 hello 带上非秘密的 `tokenId`，host 用对应令牌计算 serverProof、认证时只验证这一个令牌；未知 tokenId 用随机密钥作答，不泄露哪些 id 存在（04 §2.4 已同步）。
+- **create 带 attach 的顺序**：会话 id 在应答前未知，客户端在读线程上收到应答时（`IPtyConnectionHandler.OnResponse`）同步登记 sink 并调用 `OnAttached`；host 在应答排队之后才把订阅挂到写线程上，所以快照块不会先于应答。
+- **裁剪粒度**：libghostty 的回滚上限按页生效，`scrollbackLines = 100` 实际保留约 330 行（≥ N，符合 §10.3）。
+- **宽限期到期后**：保留下来的会话在程序结束后才关闭，host 每 2 s 复查一次；全部关闭后以 `orphanTimeout` 退出。
+
 ### M3 视图（约 4–5 周）
 
 | 任务 | 文档 |

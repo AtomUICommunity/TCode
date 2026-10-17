@@ -29,6 +29,9 @@ internal sealed class ClientConnection : IPtyConnectionHandler
 
     /// <summary>hello 中声明的受限令牌 id：认证只用这个令牌验证。</summary>
     public string? ClaimedTokenId { get; set; }
+
+    /// <summary>客户端的 libghostty 构建与 host 不同（升级后的新 Desktop 连到旧 host，§1.5）：只能用 VT 格式 attach，不能建会话。</summary>
+    public bool ForeignBuild { get; set; }
     public byte[]? ClientNonce { get; set; }
     public byte[]? ServerNonce { get; set; }
     public bool Hello => ServerNonce is not null;

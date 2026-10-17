@@ -260,3 +260,60 @@ internal static class ClientTestExtensions
     public static Task Connection_Detach(this PtyHostClient client, uint sessionId) =>
         client.RequestAsync(PtyMethods.SessionDetach, new SessionIdParams(sessionId), PtyHostJsonContext.Default.SessionIdParams, PtyHostJsonContext.Default.EmptyDto);
 }
+
+/// <summary>安全回归与升级并存（04 §16 的"安全回归""升级并存"）。</summary>
+public sealed class HostSecurityAndUpgradeTests
+{
+    [Fact]
+    public async Task ShellEnvironmentHasNoHostSecretsAndLogsHaveNoContent()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix shell syntax");
+        await using var host = TestHost.Start();
+        await using var client = await host.ConnectAsync();
+        await client.ConfigureAsync(new HostSettingsDto
+        {
+            BaseEnvironment = new Dictionary<string, string>
+            {
+                ["PATH"] = Environment.GetEnvironmentVariable("PATH")!, ["TCODE_PTYHOST_TOKEN"] = "secret", ["TCODE_PTYHOST_ENDPOINT"] = "x", ["KEEP_ME"] = "1",
+            },
+        });
+        using var sink = new ReplicaSink();
+        await client.CreateSessionAsync(Script("env | sort; echo SENTINEL-7f3a", "") with
+        {
+            Env = new Dictionary<string, string?> { ["TCODE_PTYHOST_INSTANCE"] = "y" },
+        }, sink);
+        await Wait.UntilAsync(() => sink.Text().Contains("SENTINEL-7f3a"), "env output");
+        var text = sink.Text();
+        Assert.DoesNotContain("TCODE_PTYHOST_", text);
+        Assert.Contains("KEEP_ME=1", text);
+        Assert.Contains("TERM=xterm-256color", text);
+        lock (host.LogLines)
+        {
+            Assert.DoesNotContain(host.LogLines, l => l.Contains("SENTINEL-7f3a") || l.Contains("secret"));
+        }
+    }
+
+    [Fact]
+    public async Task ForeignBuildClientDrainsTheHost()
+    {
+        await using var host = TestHost.Start();
+        await using var current = await host.ConnectAsync();
+        var (created, _) = await current.CreateSessionAsync(Script("echo old-build-session; sleep 30", "echo old-build-session& ping -n 30 127.0.0.1 >nul"), null);
+        await Wait.UntilAsync(async () => (await current.ReadAsync(new ReadParams { SessionId = created.SessionId })).Text.Contains("old-build-session"), "output");
+
+        // 升级后的 Desktop（不同的 ghosttyBuildId）连上旧 host
+        await using var upgraded = await PtyHostClient.ConnectAsync(host.Endpoint(), new PtyHostClientOptions { GhosttyBuildId = "newer-build" });
+        Assert.True(upgraded.Host.Draining);
+        var e = await Assert.ThrowsAsync<PtyHostException>(() => upgraded.CreateSessionAsync(Interactive(), null));
+        Assert.Equal(PtyErrors.HostDraining, e.Code);
+        using var sink = new ReplicaSink();
+        var handle = await upgraded.AttachAsync(new AttachParams { SessionId = created.SessionId }, sink);
+        Assert.Equal("vt", handle.Attach.SnapshotFormat);
+        await Wait.UntilAsync(() => sink.Text().Contains("old-build-session"), "vt attach");
+
+        // 最后一个会话关闭后，遗留 host 立即退出
+        var lifetime = new HostLifetime(host.Server);
+        await upgraded.CloseSessionAsync(created.SessionId, force: true);
+        Assert.Equal("draining", await host.Server.Stopped.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+}
