@@ -7,6 +7,9 @@
         <PackageReference Include="Avalonia" />
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="TCode.Terminal.Avalonia.Tests" />
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\TCode.Terminal.Core\TCode.Terminal.Core.csproj" />
     </ItemGroup>
 </Project>

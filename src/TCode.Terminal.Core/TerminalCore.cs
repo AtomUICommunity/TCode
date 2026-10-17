@@ -412,7 +412,8 @@ public sealed unsafe class TerminalCore : IDisposable
         }
     }
 
-    internal TerminalSearch? ActiveSearch => _search;
+    /// <summary>当前活动的搜索（没有时为 null）。帧里的高亮来自它。</summary>
+    public TerminalSearch? ActiveSearch => _search;
 
     /// <summary>编码输入所需的模式（02 §13.1）。视图 actor 每处理完一批 Write 调用一次，变化才发布。</summary>
     public InputModes ReadInputModes()

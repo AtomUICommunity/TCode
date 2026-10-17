@@ -91,12 +91,14 @@ public sealed partial class PtyHostServer
                 {
                     try
                     {
-                        var created = await CreateSessionAsync(c, create).ConfigureAwait(false);
+                        var (created, session) = await CreateSessionAsync(c, create).ConfigureAwait(false);
                         c.Connection.Respond(id, created, J.SessionCreatedDto);
                         if (created.Attach is not null && c.GetSubscription(created.SessionId) is { } sub)
                         {
                             c.Connection.AddProducer(sub);  // 应答已排队：快照块不会先于它
                         }
+                        // 输出泵最后启动：会话可能在应答排队之前就已输出或退出，它的通知必须排在应答之后（客户端据此登记 handle）
+                        session.StartPump();
                     }
                     catch (PtyHostException ex)
                     {
@@ -360,7 +362,7 @@ public sealed partial class PtyHostServer
 
     // ---- 会话 ----
 
-    private async Task<SessionCreatedDto> CreateSessionAsync(ClientConnection c, SessionCreateParams p)
+    private async Task<(SessionCreatedDto Dto, Session Session)> CreateSessionAsync(ClientConnection c, SessionCreateParams p)
     {
         if (_stopping.IsCancellationRequested)
         {
@@ -435,10 +437,9 @@ public sealed partial class PtyHostServer
             {
                 attach = await AttachAsync(c, session, a with { SessionId = sessionId }).ConfigureAwait(false);
             }
-            session.StartPump();
             BroadcastFull(PtyMethods.HostSessionAdded, session.Info(), J.SessionInfoDto, except: c);
             Log.Info($"session {sessionId} created ({actual.File}, pid {session.Pid}, {size.Columns}x{size.Rows})");
-            return new SessionCreatedDto
+            var dto = new SessionCreatedDto
             {
                 SessionId = sessionId,
                 PersistentId = persistentId,
@@ -447,6 +448,7 @@ public sealed partial class PtyHostServer
                 Revived = session.Revived,
                 Attach = attach,
             };
+            return (dto, session);
         }
         catch
         {

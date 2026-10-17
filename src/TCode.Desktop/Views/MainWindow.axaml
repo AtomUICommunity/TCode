@@ -703,6 +703,10 @@
                                 <DataTemplate DataType="vm:FileTabViewModel">
                                     <views:FileTabView />
                                 </DataTemplate>
+                                <!-- 终端：pty host 中的会话（06 §2） -->
+                                <DataTemplate DataType="vm:TerminalTabViewModel">
+                                    <views:TerminalTabView />
+                                </DataTemplate>
                                 <DataTemplate DataType="vm:PlaceholderTabViewModel">
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="320" Spacing="10">
                                         <icons:LucideIcon Kind="{Binding Icon}" Width="28" Height="28" HorizontalAlignment="Center" />

@@ -17,5 +17,7 @@
         <ProjectReference Include="..\..\src\TCode.AgentHost\TCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
         <!-- MCP 设置页测试连接的 stdio 测试服务器 -->
         <ProjectReference Include="..\TCode.Mcp.TestServer\TCode.Mcp.TestServer.csproj" ReferenceOutputAssembly="false" />
+        <!-- 终端会话测试在进程内运行 pty host（PtyHostServer），真实 PTY -->
+        <ProjectReference Include="..\..\src\TCode.Terminal.Host\TCode.Terminal.Host.csproj" />
     </ItemGroup>
 </Project>

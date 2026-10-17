@@ -145,6 +145,38 @@ M2 中的实测与设计调整：
 
 验收：截图测试通过；基准 S1、S3、S4、S5 达标；输入延迟自动测量部分达标。
 
+#### M3 实施状态（2026-10-17，首轮对接）
+
+本轮把终端接进了桌面端的工作台标签（"终端"工具每次新建一个会话，在项目目录启动）。
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| 桌面端接入 | **完成** | `TCode.Desktop` 引用 `TCode.Terminal.Avalonia` / `Protocol`；pty host 按 AgentHost 的方式复制到 `ptyhost/`（开发构建）并 AOT 发布到 `ptyhost/`（`PublishPtyHost`）。`PtyHostService` 负责发现 / 启动 / 配置当前构建的 host |
+| 会话管道 | **完成** | `TerminalSession`：UI 侧核心只在一个工作线程上使用（写入、记录、选区、滚动、捕获帧都经同一队列）；帧在 UI 线程上合并为最新一帧；每批处理完 Ack；resize 只在 Record 到达后生效（01 §3.2） |
+| 标签与生命周期 | **完成** | `TerminalTabViewModel`：启动、退出后按 Enter 重开、host 断开后在相同目录重开、关闭时有程序运行则保留标签并提示。`Workbench` 的终端标签不再是占位 |
+| 键盘 | **完成（基础）** | `TerminalView` 获得焦点并转发 KeyDown / KeyUp / TextInput；物理键映射（`TerminalKeys`，有单测）；编码交给 `InputEncoder`，模式取自工作线程的缓存。⌘C / Ctrl+Shift+C 复制（有选区时），⌘V / Ctrl+Shift+V 粘贴，⌘K 清屏（macOS） |
+| 粘贴 | **完成** | bracketed paste 编码（2004）；包含换行等不安全内容先进入确认栏（[TerminalTabView](../../src/TCode.Desktop/Views/TerminalTabView.axaml)），确认后以 allowUnsafe 发送，取消则丢弃 |
+| 指针 | **完成（基础）** | 单击清除选区，拖动选区，双击选词，三击选行；程序开启鼠标模式时编码鼠标报告（Shift 绕过）；滚轮：鼠标模式上报、备用屏转方向键（1007）、否则滚动回滚 |
+| 链接 | **完成（基础）** | ⌘/Ctrl+点击打开 OSC 8 链接，仅 http / https / mailto |
+| 剪贴板写入 | **完成** | OSC 52 写入转到系统剪贴板（按 `oscWrite` 策略） |
+| 剪贴板读取 | **未做** | `ui/clipboardRead` 直接拒绝（需要询问界面） |
+| 输入法（IME） | **完成（基础）** | `TerminalView` 提供 `TextInputMethodClient`：光标矩形（候选窗口位置）、preedit 支持；平台推送的组合文字画在光标处、带下划线，提交后经 TextInput 发送，失去焦点时中止组合。验证：组合文字的绘制与清除、宽字符对齐的 headless 快照；真实系统输入法未在本机验证 |
+| 搜索栏 | **完成** | ⌘F（macOS）/ Ctrl+Shift+F 打开，浮在终端右上角；搜索词变化即时搜索（UI 侧核心，不经 host）；"当前/总数"；Enter / Shift+Enter 或箭头切换；Esc 关闭并清除高亮。高亮来自帧里的 `SearchHighlights`。验证：计数与切换的集成测试（真实会话）、关闭后高亮清除、headless 截图 |
+| 关闭运行中的会话 | **完成** | 有程序在运行时 host 不关闭，标签显示确认栏，确认后强制关闭并移除标签 |
+| 验证 | **完成（部分）** | 键映射单测（23 项）；会话管道集成测试 6 项（真实 host + 真实 PTY）；视图 headless 快照（状态层、颜色、宽字符、反色）；AOT 发布 0 个 IL 警告，冒烟 `TCode --smoke` 在发布二进制中启动终端并看到 shell 输出 |
+
+本轮发现并修掉的问题：
+- **helper 拒绝只有 argv0 的启动**（`tcode-pty-spawn` 的参数个数检查为 `argc < 5`，默认 shell 不带参数时被拒，errno 22）。冒烟在 AOT 二进制中发现，已修并加回归测试。
+- **host 的应答与事件竞态**：会话瞬间退出时，退出通知会排在 create 的应答之前发出，客户端丢弃了它。host 改为应答排队之后才启动输出泵，协议上保证"应答先于该会话的任何数据 / 事件"。
+
+尚未做（M3 剩余，按优先级）：
+- 剪贴板读取确认（OSC 52 read，需要询问界面）；
+- 可访问性（AutomationPeer）；
+- 通知、铃声、进度的界面呈现（事件已到达，未显示）；
+- 装饰（下划线样式、超链接悬停）、彩色 emoji、box drawing 的 sprite、字形行缓存；
+- 27 个截图用例中目前只有 2 个（05 §13）；
+- 外观设置（字体、字号、调色板随明暗切换）与 `terminal` 设置节（M4）。
+
 ### M4 集成（约 3 周）
 
 | 任务 | 文档 |

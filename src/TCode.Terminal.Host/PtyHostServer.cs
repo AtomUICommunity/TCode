@@ -259,6 +259,7 @@ public sealed partial class PtyHostServer : IAsyncDisposable
         _stopping.Cancel();
         Log.Info($"shutting down: {reason}");
         BroadcastFull(PtyMethods.HostGoodbye, new GoodbyeDto(reason), PtyHostJsonContext.Default.GoodbyeDto);
+        await Task.WhenAll(_clients.Values.Select(c => c.Connection.DrainAsync(TimeSpan.FromSeconds(1)))).ConfigureAwait(false);
         await Task.WhenAll(_sessions.Values.Select(s => RemoveSessionAsync(s, "closed"))).ConfigureAwait(false);
         await Task.WhenAll(_clients.Values.Select(c => c.Connection.DisposeAsync().AsTask())).ConfigureAwait(false);
         _listener.Dispose();

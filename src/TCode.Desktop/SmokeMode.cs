@@ -13,6 +13,7 @@ using TCode.Desktop.Previews;
 using TCode.Desktop.Services;
 using TCode.Desktop.ViewModels;
 using TCode.Desktop.Views;
+using TCode.Terminal.Core;
 
 namespace TCode.Desktop;
 
@@ -128,6 +129,7 @@ internal static class SmokeMode
             Check("role.plan", planApplied, vm.Conversation.Active?.Options.Role);
             Check("files.search", WaitUntil(() => search.IsCompleted) && search.Result.Items.FirstOrDefault()?.Path == "README.md",
                 search.IsCompletedSuccessfully ? string.Join(", ", search.Result.Items.Select(i => i.Path)) : search.Exception?.GetBaseException().Message);
+            CheckTerminal(Check, vm, project);
 
             using var frame = window.CaptureRenderedFrame();
             Check("ui.frame", frame is not null, null);
@@ -199,6 +201,31 @@ internal static class SmokeMode
         var json = Open("data.json") as CodePreviewViewModel;
         var highlighted = WaitUntil(() => window.GetVisualDescendants().OfType<CodeView>().FirstOrDefault() is { IsHighlighted: true });
         check("preview.code", json is { Language: "json" } && highlighted, vm.Workbench.ActiveFile?.Notice);
+    }
+
+    // 终端：发布的 pty host（ptyhost/）以 AOT 运行，经 READY 握手、建会话，shell 的输出进入 UI 侧核心并发布为帧。
+    // 不发送任何输入：只等 shell 自己输出（提示符）。
+    private static void CheckTerminal(Action<string, bool, string?> check, MainWindowViewModel vm, string project)
+    {
+        vm.Workbench.Root = project;
+        var tool = vm.Workbench.Tools.First(t => t.Kind == WorkbenchTabKind.Terminal);
+        vm.Workbench.AddToolCommand.Execute(tool);
+        var tab = vm.Workbench.ActiveTab as TerminalTabViewModel;
+        var produced = WaitUntil(() => tab?.Frame is { } frame && frame.Rows.Any(r => r.Cells.Any(c => TCell.Codepoint(c) is not (0 or ' '))), 30_000);
+        check("terminal.output", tab is not null && produced, tab?.Status);
+        if (tab is not null)
+        {
+            // 关闭会话：冒烟结束后不留下孤儿进程。必须在 UI 线程上发起（关闭会移除标签，改动 UI 绑定的属性）
+            var closed = false;
+            var done = false;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                closed = await tab.CloseAsync(force: true);
+                done = true;
+            });
+            WaitUntil(() => done);
+            check("terminal.close", closed, tab.Status);
+        }
     }
 
     private static bool WaitUntil(Func<bool> condition, int timeoutMs = 30_000)

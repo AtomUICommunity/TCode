@@ -56,6 +56,9 @@ public sealed class PtyConnection : IAsyncDisposable
     private uint _nextId;
     private int _producerCursor;
     private int _closed;
+
+    /// <summary>已排入控制 / 紧急队列但尚未写出的帧数（写线程取出之后、写完之前仍计入，用于 <see cref="DrainAsync"/>）。</summary>
+    private int _pendingControl;
     private long _lastReceive = Stopwatch.GetTimestamp();
     private long _lastSend = Stopwatch.GetTimestamp();
 
@@ -94,6 +97,7 @@ public sealed class PtyConnection : IAsyncDisposable
         var frame = new byte[FrameLimits.HeaderSize + payload.Length];
         new FrameHeader(payload.Length, type, FrameFlags.None, sessionId).Write(frame);
         payload.CopyTo(frame.AsSpan(FrameLimits.HeaderSize));
+        Interlocked.Increment(ref _pendingControl);
         (urgent ? _urgent : _control).Enqueue(frame);
         _wake.Release();
     }
@@ -287,6 +291,7 @@ public sealed class PtyConnection : IAsyncDisposable
                 while (_urgent.TryDequeue(out var u) || _control.TryDequeue(out u))
                 {
                     Send(u);
+                    Interlocked.Decrement(ref _pendingControl);
                     wrote = true;
                 }
                 // 数据：轮转，每个生产者一帧，之后回到控制队列
@@ -369,14 +374,19 @@ public sealed class PtyConnection : IAsyncDisposable
         }
     }
 
+    /// <summary>等待已排队的控制帧全部写出（或超时，或连接已关闭）。例如 host/goodbye 必须在关闭连接之前发出去。</summary>
+    public async Task DrainAsync(TimeSpan timeout)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+        while (!IsClosed && Volatile.Read(ref _pendingControl) > 0 && Stopwatch.GetTimestamp() < deadline)
+        {
+            await Task.Delay(2).ConfigureAwait(false);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        // 先让写线程把已排队的帧发出去（最多 1 s），再关闭
-        var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
-        while (!IsClosed && (!_control.IsEmpty || !_urgent.IsEmpty) && Stopwatch.GetTimestamp() < deadline)
-        {
-            await Task.Delay(5).ConfigureAwait(false);
-        }
+        await DrainAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
         Close();
         await _completion.Task.ConfigureAwait(false);
     }

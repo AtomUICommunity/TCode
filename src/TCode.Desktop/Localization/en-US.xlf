@@ -543,5 +543,22 @@
     <unit id="AssetsGlobalDirectory"><segment><source>Global</source></segment></unit>
     <unit id="AssetsProjectDirectory"><segment><source>Project</source></segment></unit>
     <unit id="AssetsNoProject"><segment><source>Open a project to create project items.</source></segment></unit>
+    <unit id="TerminalStarting"><segment><source>Starting terminal…</source></segment></unit>
+    <unit id="TerminalExitedFormat"><segment><source>Process exited with code {0}</source></segment></unit>
+    <unit id="TerminalExited"><segment><source>Process exited</source></segment></unit>
+    <unit id="TerminalPressEnterToRestart"><segment><source>Press Enter to start a new shell.</source></segment></unit>
+    <unit id="TerminalLost"><segment><source>The terminal service stopped. Press Enter to reopen the terminal in the same folder.</source></segment></unit>
+    <unit id="TerminalStartFailedFormat"><segment><source>Could not start the terminal: {0}</source></segment></unit>
+    <unit id="TerminalRunningProgram"><segment><source>A program is running in this terminal.</source></segment></unit>
+    <unit id="TerminalPasteNeedsConfirm"><segment><source>The paste contains line breaks, so it was not sent.</source></segment></unit>
+    <unit id="TerminalResyncing"><segment><source>Resynchronizing the terminal…</source></segment></unit>
+    <unit id="TerminalPasteConfirm"><segment><source>The text contains line breaks, which can run commands as you paste. Paste it anyway?</source></segment></unit>
+    <unit id="TerminalPasteAction"><segment><source>Paste</source></segment></unit>
+    <unit id="TerminalCloseRunning"><segment><source>A program is still running in this terminal. Close it anyway?</source></segment></unit>
+    <unit id="TerminalCloseAction"><segment><source>Close terminal</source></segment></unit>
+    <unit id="TerminalSearchPlaceholder"><segment><source>Find in terminal</source></segment></unit>
+    <unit id="TerminalSearchNext"><segment><source>Next match (Enter)</source></segment></unit>
+    <unit id="TerminalSearchPrevious"><segment><source>Previous match (Shift+Enter)</source></segment></unit>
+    <unit id="TerminalSearchClose"><segment><source>Close (Esc)</source></segment></unit>
   </file>
 </xliff>

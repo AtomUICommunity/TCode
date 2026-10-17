@@ -55,6 +55,7 @@ internal static class Program
         services.AddSingleton<ThemeService>();
         services.AddSingleton<AgentHostConnection>();
         services.AddSingleton<WorkspaceService>();
+        services.AddSingleton<PtyHostService>();
 
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<SidebarViewModel>();

@@ -90,14 +90,21 @@ async Task<(string Tally, SortedSet<string> Failing)> RunAsync(string[] extra, s
         var result = await pty.Output.ReadAsync();
         foreach (var segment in result.Buffer)
         {
-            core.Write(segment.Span);
-            // CSI 8 t：回调里不能改动终端，写完这一块再执行（与 xterm 一样，0 表示保持该维度）
-            if (effects.TakeResize() is { } r)
+            // 逐字节喂入：CSI 8 t 之后的字节必须在新尺寸上解析。整块写入时，尺寸变化只能在整块之后生效，
+            // 结果就取决于 PTY 读取的块边界（esctest 的 DECSET_DECAWM 用例因此不稳定）。输出量小，逐字节的开销可以接受。
+            var one = new byte[1];
+            foreach (var b in segment.ToArray())
             {
-                var current = core.Size;
-                var next = current with { Columns = r.Columns == 0 ? current.Columns : r.Columns, Rows = r.Rows == 0 ? current.Rows : r.Rows };
-                core.Resize(next);
-                await pty.ResizeAsync(next);
+                one[0] = b;
+                core.Write(one);
+                // CSI 8 t：回调里不能改动终端，这里在字节写完之后执行（与 xterm 一样，0 表示保持该维度）
+                if (effects.TakeResize() is { } r)
+                {
+                    var current = core.Size;
+                    var next = current with { Columns = r.Columns == 0 ? current.Columns : r.Columns, Rows = r.Rows == 0 ? current.Rows : r.Rows };
+                    core.Resize(next);
+                    await pty.ResizeAsync(next);
+                }
             }
         }
         pty.Output.AdvanceTo(result.Buffer.End);

@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
         die(127, "exec");
     }
     if (fcntl(3, F_SETFD, FD_CLOEXEC) == -1) _exit(127);              /* 没有状态管道就无法报告 */
-    if (argc < 5) report(101, EINVAL);
+    if (argc < 4) report(101, EINVAL);                              /* [self, cwd, file, argv0]：argv0 必有，参数可以为空 */
     if (ioctl(STDIN_FILENO, TIOCSCTTY, 0) == -1) report(102, errno);  /* Linux 与 macOS 都需要（adddup2 不会取得控制终端） */
     close_from(4);
     const char *cwd = argv[1];

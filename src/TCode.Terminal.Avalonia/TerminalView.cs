@@ -11,7 +11,7 @@ namespace TCode.Terminal.Avalonia;
 /// 字形 x 坐标强制对齐网格；逐码点回退字体（M0 同步查询，M3 移到后台线程，§6.3）。
 /// 尚未实现：行缓存、sprite（box drawing 等程序化字形）、下划线样式、选区、输入、IME。
 /// </summary>
-public sealed class TerminalView : Control
+public sealed partial class TerminalView : Control
 {
     public static readonly StyledProperty<FrameSnapshot?> SnapshotProperty =
         AvaloniaProperty.Register<TerminalView, FrameSnapshot?>(nameof(Snapshot));
@@ -81,6 +81,10 @@ public sealed class TerminalView : Control
             _face = null;
             _metrics = null;
             _fallback.Clear();
+        }
+        if (change.Property == SnapshotProperty)
+        {
+            NotifyCursorMoved();
         }
     }
 
@@ -177,6 +181,7 @@ public sealed class TerminalView : Control
                     break;
             }
         }
+        DrawPreedit(context, palette.Foreground, palette.Background);
     }
 
     private static TerminalRgb ForegroundOf(in ResolvedStyle style, TerminalPalette palette)

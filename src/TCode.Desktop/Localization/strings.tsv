@@ -540,3 +540,20 @@ AssetsDirectories	Directories	目录
 AssetsGlobalDirectory	Global	全局
 AssetsProjectDirectory	Project	项目
 AssetsNoProject	Open a project to create project items.	打开一个项目后才能新建项目项。
+TerminalStarting	Starting terminal…	正在启动终端…
+TerminalExitedFormat	Process exited with code {0}	进程已退出（退出码 {0}）
+TerminalExited	Process exited	进程已退出
+TerminalPressEnterToRestart	Press Enter to start a new shell.	按 Enter 启动新的 shell。
+TerminalLost	The terminal service stopped. Press Enter to reopen the terminal in the same folder.	终端服务已停止。按 Enter 在相同目录重新打开终端。
+TerminalStartFailedFormat	Could not start the terminal: {0}	无法启动终端：{0}
+TerminalRunningProgram	A program is running in this terminal.	此终端中有程序在运行。
+TerminalPasteNeedsConfirm	The paste contains line breaks, so it was not sent.	粘贴内容包含换行，已取消发送。
+TerminalResyncing	Resynchronizing the terminal…	正在重新同步终端…
+TerminalPasteConfirm	The text contains line breaks, which can run commands as you paste. Paste it anyway?	内容包含换行，粘贴时可能直接执行命令。仍然粘贴吗？
+TerminalPasteAction	Paste	粘贴
+TerminalCloseRunning	A program is still running in this terminal. Close it anyway?	此终端中仍有程序在运行。仍然关闭吗？
+TerminalCloseAction	Close terminal	关闭终端
+TerminalSearchPlaceholder	Find in terminal	在终端中查找
+TerminalSearchNext	Next match (Enter)	下一个 (Enter)
+TerminalSearchPrevious	Previous match (Shift+Enter)	上一个 (Shift+Enter)
+TerminalSearchClose	Close (Esc)	关闭 (Esc)

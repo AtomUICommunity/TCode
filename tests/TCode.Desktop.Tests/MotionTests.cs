@@ -319,7 +319,7 @@ public sealed partial class MotionTests
         File.WriteAllText(Path.Combine(root, "src", "b.cs"), "");
         await HeadlessApp.Session.Dispatch(async () =>
         {
-            var explorer = new TCode.Desktop.ViewModels.FileExplorerViewModel(new TCode.Desktop.ViewModels.WorkbenchViewModel());
+            var explorer = new TCode.Desktop.ViewModels.FileExplorerViewModel(new TCode.Desktop.ViewModels.WorkbenchViewModel(new TCode.Desktop.Services.PtyHostService(Microsoft.Extensions.Logging.Abstractions.NullLogger<TCode.Desktop.Services.PtyHostService>.Instance)));
             explorer.SetRoot(root);
             for (var i = 0; i < 50 && explorer.VisibleNodes.Count == 0; i++)
             {
