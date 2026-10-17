@@ -78,6 +78,7 @@ internal sealed class ReplicaSink : IPtySessionSink, IDisposable
     private readonly MemoryStream _snapshot = new();
     private readonly Lock _lock = new();
     private ulong _lastAck;
+    private bool _disposed;
 
     public PtySessionHandle? Handle { get; set; }
     public TerminalCore? Core { get; private set; }
@@ -113,6 +114,10 @@ internal sealed class ReplicaSink : IPtySessionSink, IDisposable
     {
         lock (_lock)
         {
+            if (_disposed)
+            {
+                return;
+            }
             Assert.Equal((long)offset, _snapshot.Length);
             _snapshot.Write(chunk);
             if (last)
@@ -137,6 +142,10 @@ internal sealed class ReplicaSink : IPtySessionSink, IDisposable
     {
         lock (_lock)
         {
+            if (_disposed)
+            {
+                return;
+            }
             Assert.True(position == Position, $"output at {position}, expected {Position}");
             Core!.Write(data);
             Position += (ulong)data.Length;
@@ -152,6 +161,10 @@ internal sealed class ReplicaSink : IPtySessionSink, IDisposable
     {
         lock (_lock)
         {
+            if (_disposed)
+            {
+                return;
+            }
             Assert.True(position == Position, $"record at {position}, expected {Position}");
             switch (record.Kind)
             {
@@ -211,7 +224,16 @@ internal sealed class ReplicaSink : IPtySessionSink, IDisposable
 
     public void OnDetached(string reason) => Detached.TrySetResult(reason);
 
-    public void Dispose() => Core?.Dispose();
+    /// <summary>释放核心。之后到达的回调直接忽略：读线程可能仍在投递（释放顺序不保证先于客户端关闭）。</summary>
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            _disposed = true;
+            Core?.Dispose();
+            Core = null;
+        }
+    }
 }
 
 internal static class Wait

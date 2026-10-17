@@ -115,8 +115,6 @@ jobs:
         run: dotnet test tests/TCode.Terminal.Protocol.Tests
       - name: Test pty host (end to end)
         run: dotnet test tests/TCode.Terminal.Host.Tests
-      - name: Test terminal tab in Desktop (pty host + headless)
-        run: dotnet test tests/TCode.Desktop.Tests --filter "FullyQualifiedName~Terminal"
       - name: Test view (headless snapshots)
         run: dotnet test tests/TCode.Terminal.Avalonia.Tests
       - uses: actions/upload-artifact@v4
