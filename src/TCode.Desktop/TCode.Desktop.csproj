@@ -31,6 +31,10 @@
         <ProjectReference Include="..\TCode.Config\TCode.Config.csproj" />
         <!-- Agent Host 作为独立进程运行；引用它只为保证先构建并把产物复制到 agenthost/ 目录 -->
         <ProjectReference Include="..\TCode.AgentHost\TCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
+        <!-- 终端：视图与协议库；pty host 作为独立进程（04 §1.1），同样只为先构建并复制产物到 ptyhost/ 目录 -->
+        <ProjectReference Include="..\TCode.Terminal.Avalonia\TCode.Terminal.Avalonia.csproj" />
+        <ProjectReference Include="..\TCode.Terminal.Protocol\TCode.Terminal.Protocol.csproj" />
+        <ProjectReference Include="..\TCode.Terminal.Host\TCode.Terminal.Host.csproj" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <!-- 把 Agent Host 的构建产物复制到桌面端输出的 agenthost/ 子目录，运行时由 AgentHostConnection 启动 -->
@@ -45,6 +49,26 @@
             <_AgentHostFiles Include="$(_AgentHostDir)**\*" />
         </ItemGroup>
         <Copy SourceFiles="@(_AgentHostFiles)" DestinationFiles="@(_AgentHostFiles->'$(OutDir)agenthost\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    </Target>
+
+    <!-- 把 pty host（含 libghostty-vt、tcode-pty-spawn、Windows 的 ConPTY）复制到桌面端输出的 ptyhost/ 子目录（04 §1.1） -->
+    <Target Name="CopyPtyHost" AfterTargets="Build">
+        <MSBuild Projects="..\TCode.Terminal.Host\TCode.Terminal.Host.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+            <Output TaskParameter="TargetOutputs" ItemName="_PtyHostTargetPath" />
+        </MSBuild>
+        <PropertyGroup>
+            <_PtyHostDir>@(_PtyHostTargetPath->'%(RootDir)%(Directory)')</_PtyHostDir>
+        </PropertyGroup>
+        <ItemGroup>
+            <_PtyHostFiles Include="$(_PtyHostDir)**\*" />
+        </ItemGroup>
+        <Copy SourceFiles="@(_PtyHostFiles)" DestinationFiles="@(_PtyHostFiles->'$(OutDir)ptyhost\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    </Target>
+
+    <!-- 发布桌面端时，用相同的运行时标识把 pty host 也 AOT 发布到 ptyhost/ 子目录 -->
+    <Target Name="PublishPtyHost" AfterTargets="Publish">
+        <MSBuild Projects="..\TCode.Terminal.Host\TCode.Terminal.Host.csproj" Targets="Publish"
+                 Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);PublishAot=$(PublishAot);PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)ptyhost'))/" />
     </Target>
 
     <!-- 发布桌面端时，用相同的运行时标识把 Agent Host 也 AOT 发布到 agenthost/ 子目录 -->

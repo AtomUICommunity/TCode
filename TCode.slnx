@@ -8,6 +8,11 @@
     <Project Path="src/TCode.Config/TCode.Config.csproj" />
     <Project Path="src/TCode.Runtimes/TCode.Runtimes.csproj" />
     <Project Path="src/TCode.Desktop/TCode.Desktop.csproj" />
+    <Project Path="src/TCode.Terminal.Core/TCode.Terminal.Core.csproj" />
+    <Project Path="src/TCode.Terminal.Pty/TCode.Terminal.Pty.csproj" />
+    <Project Path="src/TCode.Terminal.Protocol/TCode.Terminal.Protocol.csproj" />
+    <Project Path="src/TCode.Terminal.Host/TCode.Terminal.Host.csproj" />
+    <Project Path="src/TCode.Terminal.Avalonia/TCode.Terminal.Avalonia.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TCode.Agent.Tests/TCode.Agent.Tests.csproj" />
@@ -15,5 +20,10 @@
     <Project Path="tests/TCode.Ai.Tests/TCode.Ai.Tests.csproj" />
     <Project Path="tests/TCode.Runtimes.Tests/TCode.Runtimes.Tests.csproj" />
     <Project Path="tests/TCode.Desktop.Tests/TCode.Desktop.Tests.csproj" />
+    <Project Path="tests/TCode.Terminal.Core.Tests/TCode.Terminal.Core.Tests.csproj" />
+    <Project Path="tests/TCode.Terminal.Pty.Tests/TCode.Terminal.Pty.Tests.csproj" />
+    <Project Path="tests/TCode.Terminal.Avalonia.Tests/TCode.Terminal.Avalonia.Tests.csproj" />
+    <Project Path="tests/TCode.Terminal.Protocol.Tests/TCode.Terminal.Protocol.Tests.csproj" />
+    <Project Path="tests/TCode.Terminal.Host.Tests/TCode.Terminal.Host.Tests.csproj" />
   </Folder>
 </Solution>

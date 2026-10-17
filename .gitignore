@@ -4,3 +4,9 @@ obj/
 .idea/
 *.user
 .DS_Store
+
+# 终端原生构建与上游源码（tools/terminal/*.sh）
+artifacts/
+
+# StreamMark 本地包（tools/streammark/pack.sh 生成）
+packages/streammark/*.nupkg

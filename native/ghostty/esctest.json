@@ -1,0 +1,6 @@
+{
+  "comment": "esctest2（GPL-2.0，只在 CI 中下载并运行 Python 脚本，不入库、不分发）。与 Ghostty test/esctest/build.zig.zon 同一提交（2026-09-13）。docs/terminal/11-testing-benchmarks.md §1.1.4",
+  "url": "https://github.com/ThomasDickey/esctest2/archive/2798f12149a19c3295e9b4853ab2da4b2eff1b2b.tar.gz",
+  "commit": "2798f12149a19c3295e9b4853ab2da4b2eff1b2b",
+  "sha256": "04b01a8343045a6801ea9a2a849b339e1b41179197102363a43fab13b25a2e1e"
+}

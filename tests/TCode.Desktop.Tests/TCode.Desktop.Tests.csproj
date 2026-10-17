@@ -15,5 +15,7 @@
         <ProjectReference Include="..\..\src\TCode.Desktop\TCode.Desktop.csproj" />
         <!-- 端到端界面测试通过 TCODE_AGENTHOST_DIR 直接启动 Host 的构建输出 -->
         <ProjectReference Include="..\..\src\TCode.AgentHost\TCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
+        <!-- 终端会话测试在进程内运行 pty host（PtyHostServer），真实 PTY -->
+        <ProjectReference Include="..\..\src\TCode.Terminal.Host\TCode.Terminal.Host.csproj" />
     </ItemGroup>
 </Project>

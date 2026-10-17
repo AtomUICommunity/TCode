@@ -22,6 +22,8 @@
         <PackageVersion Include="StreamMark.Theme.AtomUI" Version="$(StreamMarkVersion)" />
         <!-- 网页工具：HTML 解析（web_fetch 的正文提取与 Markdown 转换为自写代码，见 docs/design/builtin-agent-tools.md §8） -->
         <PackageVersion Include="AngleSharp" Version="1.8.4" />
+        <!-- 终端：随包 ConPTY（conpty.dll + OpenConsole.exe 成对升级，见 docs/terminal/12-build-and-ci.md §8.2） -->
+        <PackageVersion Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" />
         <!-- 宿主 / 进程通信 -->
         <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
         <!-- 测试 -->
