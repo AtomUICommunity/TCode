@@ -407,4 +407,8 @@ public enum TCodeLangResourceKind
     TerminalPasteAction,
     TerminalCloseRunning,
     TerminalCloseAction,
+    TerminalSearchPlaceholder,
+    TerminalSearchNext,
+    TerminalSearchPrevious,
+    TerminalSearchClose,
 }

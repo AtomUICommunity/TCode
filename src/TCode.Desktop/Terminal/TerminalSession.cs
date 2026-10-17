@@ -192,6 +192,54 @@ public sealed class TerminalSession : IPtySessionSink, IAsyncDisposable
         }
     });
 
+    /// <summary>
+    /// 搜索（UI 侧核心，不经过 host）：设置搜索词并完成搜索，之后的帧带上高亮。搜索词为空时结束搜索。
+    /// 在工作线程上执行，所以搜索对象与核心的其他操作串行。
+    /// </summary>
+    public void SetSearch(string needle, bool next)
+    {
+        Enqueue(() =>
+        {
+            if (_core is null)
+            {
+                return;
+            }
+            if (needle.Length == 0)
+            {
+                _core.EndSearch();
+                return;
+            }
+            var search = _core.ActiveSearch ?? _core.CreateSearch();
+            search.Needle = needle;
+            search.Update();
+            if (next && search.TotalMatches > 0)
+            {
+                search.Next();
+            }
+        });
+    }
+
+    /// <summary>选中下一个（next）或上一个匹配，并滚动视口到它。</summary>
+    public void StepSearch(bool next) => Enqueue(() =>
+    {
+        var search = _core?.ActiveSearch;
+        if (search is null || search.TotalMatches == 0)
+        {
+            return;
+        }
+        if (next)
+        {
+            search.Next();
+        }
+        else
+        {
+            search.Previous();
+        }
+    });
+
+    /// <summary>结束搜索（关闭搜索栏）。</summary>
+    public void CloseSearch() => Enqueue(() => _core?.EndSearch());
+
     /// <summary>请求调整尺寸（只有尺寸所有者会生效，结果通过 Record(Resize) 回到 UI 侧核心）。</summary>
     public Task<ResizeResult?> RequestResizeAsync(TerminalSize size, CancellationToken ct = default) =>
         _handle is { } handle

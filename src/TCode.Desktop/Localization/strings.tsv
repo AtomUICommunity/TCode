@@ -399,3 +399,7 @@ TerminalPasteConfirm	The text contains line breaks, which can run commands as yo
 TerminalPasteAction	Paste	粘贴
 TerminalCloseRunning	A program is still running in this terminal. Close it anyway?	此终端中仍有程序在运行。仍然关闭吗？
 TerminalCloseAction	Close terminal	关闭终端
+TerminalSearchPlaceholder	Find in terminal	在终端中查找
+TerminalSearchNext	Next match (Enter)	下一个 (Enter)
+TerminalSearchPrevious	Previous match (Shift+Enter)	上一个 (Shift+Enter)
+TerminalSearchClose	Close (Esc)	关闭 (Esc)

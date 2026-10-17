@@ -84,6 +84,95 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         ? Strings.Get(TCodeLangResourceKind.TerminalPasteAction)
         : PendingClose ? Strings.Get(TCodeLangResourceKind.TerminalCloseAction) : null;
 
+    // ---- 搜索栏 ----
+
+    /// <summary>搜索栏是否打开。</summary>
+    [ObservableProperty]
+    public partial bool IsSearchOpen { get; set; }
+
+    /// <summary>搜索词（输入框的内容）。</summary>
+    [ObservableProperty]
+    public partial string SearchText { get; set; } = string.Empty;
+
+    /// <summary>匹配总数（没有搜索词或没有匹配时为 0）。</summary>
+    [ObservableProperty]
+    public partial long SearchTotal { get; set; }
+
+    /// <summary>当前匹配的序号，从 1 开始；没有选中时为 0。</summary>
+    [ObservableProperty]
+    public partial long SearchCurrent { get; set; }
+
+    /// <summary>"当前 / 总数"的显示文字。</summary>
+    public string SearchCountText => SearchTotal == 0 ? (SearchText.Length == 0 ? string.Empty : "0/0") : $"{SearchCurrent}/{SearchTotal}";
+
+    partial void OnSearchTextChanged(string value) => UpdateSearch(next: false);
+
+    /// <summary>打开搜索栏（⌘F）。已打开时只重新获得焦点。</summary>
+    public void OpenSearch() => IsSearchOpen = true;
+
+    /// <summary>关闭搜索栏（Esc）：清除高亮，焦点交还终端。</summary>
+    public void CloseSearch()
+    {
+        IsSearchOpen = false;
+        SearchText = string.Empty;
+        SearchTotal = 0;
+        SearchCurrent = 0;
+        _session?.CloseSearch();
+    }
+
+    [RelayCommand]
+    private void StepSearchNext() => StepSearch(next: true);
+
+    [RelayCommand]
+    private void StepSearchPrevious() => StepSearch(next: false);
+
+    [RelayCommand]
+    private void CloseSearchBar() => CloseSearch();
+
+    /// <summary>下一个匹配（Enter）/ 上一个匹配（Shift+Enter）。</summary>
+    public void StepSearch(bool next)
+    {
+        if (_session is { } session && SearchText.Length > 0)
+        {
+            session.StepSearch(next);
+            RefreshSearchCount();
+        }
+    }
+
+    private void UpdateSearch(bool next)
+    {
+        if (_session is not { } session)
+        {
+            return;
+        }
+        session.SetSearch(SearchText, next);
+        RefreshSearchCount();
+    }
+
+    /// <summary>从工作线程读取匹配数量（结果切回 UI 线程）。</summary>
+    private void RefreshSearchCount()
+    {
+        if (_session is not { } session)
+        {
+            return;
+        }
+        _ = session.Invoke(core => core.ActiveSearch is { } search ? (search.TotalMatches, search.SelectedIndex) : (0L, (long?)null))
+            .ContinueWith(t =>
+            {
+                if (t.IsCompletedSuccessfully)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var (total, index) = t.Result;
+                        SearchTotal = total;
+                        // SelectedIndex 从最新的匹配（最下面）开始计数，0 = 最新。界面的"当前"与之相同，从 1 开始（实测：Next 的第一个为 1/N）
+                        SearchCurrent = index is { } i ? i + 1 : 0;
+                        OnPropertyChanged(nameof(SearchCountText));
+                    });
+                }
+            }, TaskScheduler.Default);
+    }
+
     /// <summary>标签被关闭（会话已结束并已从 host 移除）。工作台据此移除标签。</summary>
     public event Action? Closed;
 
@@ -370,6 +459,23 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
                     return true;
                 case TerminalKey.K when mac:
                     ClearScreen();
+                    return true;
+                case TerminalKey.F:
+                    OpenSearch();
+                    return true;
+            }
+        }
+
+        // 搜索栏打开时：Esc 关闭，Enter / Shift+Enter 切换匹配（焦点仍在终端；输入字符由搜索框接收）
+        if (IsSearchOpen && input.Action == KeyAction.Press)
+        {
+            switch (input.Key)
+            {
+                case TerminalKey.Escape:
+                    CloseSearch();
+                    return true;
+                case TerminalKey.Enter or TerminalKey.NumpadEnter:
+                    StepSearch(next: !mods.HasFlag(KeyMods.Shift));
                     return true;
             }
         }

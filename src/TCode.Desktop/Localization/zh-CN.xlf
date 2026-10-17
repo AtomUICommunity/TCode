@@ -402,5 +402,9 @@
     <unit id="TerminalPasteAction"><segment><source>Paste</source><target state="translated">粘贴</target></segment></unit>
     <unit id="TerminalCloseRunning"><segment><source>A program is still running in this terminal. Close it anyway?</source><target state="translated">此终端中仍有程序在运行。仍然关闭吗？</target></segment></unit>
     <unit id="TerminalCloseAction"><segment><source>Close terminal</source><target state="translated">关闭终端</target></segment></unit>
+    <unit id="TerminalSearchPlaceholder"><segment><source>Find in terminal</source><target state="translated">在终端中查找</target></segment></unit>
+    <unit id="TerminalSearchNext"><segment><source>Next match (Enter)</source><target state="translated">下一个 (Enter)</target></segment></unit>
+    <unit id="TerminalSearchPrevious"><segment><source>Previous match (Shift+Enter)</source><target state="translated">上一个 (Shift+Enter)</target></segment></unit>
+    <unit id="TerminalSearchClose"><segment><source>Close (Esc)</source><target state="translated">关闭 (Esc)</target></segment></unit>
   </file>
 </xliff>

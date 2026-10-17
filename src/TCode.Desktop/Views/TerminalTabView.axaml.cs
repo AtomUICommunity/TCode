@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Threading;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
 using TCode.Desktop.ViewModels;
@@ -22,6 +23,35 @@ public partial class TerminalTabView : UserControl
         Terminal.SizeChanged += OnSizeChanged;
         Loaded += (_, _) => Terminal.Focus();
         DataContextChanged += OnDataContextChanged;
+        SearchBox.KeyDown += OnSearchKeyDown;
+    }
+
+    /// <summary>搜索框内：Esc 关闭，Enter / Shift+Enter 切换；其余按键（输入搜索词）照常进入搜索框。</summary>
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_attached is not { IsSearchOpen: true } vm)
+        {
+            return;
+        }
+        switch (e.Key)
+        {
+            case Key.Escape:
+                vm.CloseSearch();
+                Terminal.Focus();
+                e.Handled = true;
+                break;
+            case Key.Enter:
+                vm.StepSearch(next: !e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+                e.Handled = true;
+                break;
+        }
+    }
+
+    /// <summary>打开搜索栏时把焦点交给搜索框；关闭后交还终端。</summary>
+    public void FocusSearch()
+    {
+        SearchBox.Focus();
+        SearchBox.SelectAll();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -57,9 +87,20 @@ public partial class TerminalTabView : UserControl
 
     private void OnKeyPressed(object? sender, TerminalKeyEventArgs e)
     {
-        if (_attached is { } vm)
+        if (_attached is not { } vm)
         {
-            e.Handled = vm.HandleKey(e);
+            return;
+        }
+        var wasOpen = vm.IsSearchOpen;
+        e.Handled = vm.HandleKey(e);
+        // ⌘F 打开搜索栏：焦点立即交给搜索框（之后的字符进入搜索词）
+        if (!wasOpen && vm.IsSearchOpen)
+        {
+            Dispatcher.UIThread.Post(FocusSearch);
+        }
+        else if (wasOpen && !vm.IsSearchOpen)
+        {
+            Terminal.Focus();
         }
     }
 

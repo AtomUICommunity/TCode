@@ -28,6 +28,29 @@ public sealed class TerminalTabSnapshotTests
     }
 
     [Fact]
+    public async Task RendersTheSearchBarOverTheTerminal()
+    {
+        await HeadlessApp.Session.Dispatch(() =>
+        {
+            var hosts = new PtyHostService(NullLogger<PtyHostService>.Instance);
+            var tab = new TerminalTabViewModel(hosts, cwd: null);
+            var view = new TerminalTabView { DataContext = tab };
+            var window = new Window { Width = 640, Height = 260, Content = view, Background = Brushes.Black };
+            window.Show();
+            tab.Display(Frame("\x1b[1;32mtcode\x1b[0m ~/code $ grep foo\r\nfoo one\r\nbar\r\nfoo two\r\n$ "));
+            window.UpdateLayout();
+
+            tab.OpenSearch();
+            tab.SearchText = "foo";
+            window.UpdateLayout();
+            HeadlessApp.Save(window, "terminal-tab-search");
+            Assert.True(tab.IsSearchOpen);
+            Assert.Equal("foo", tab.SearchText);  // 计数由 TerminalSearchTests 验证，这里只确认绑定与截图
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task RendersAShellFrameWithStatusOverlay()
     {
         await HeadlessApp.Session.Dispatch(() =>

@@ -402,5 +402,9 @@
     <unit id="TerminalPasteAction"><segment><source>Paste</source></segment></unit>
     <unit id="TerminalCloseRunning"><segment><source>A program is still running in this terminal. Close it anyway?</source></segment></unit>
     <unit id="TerminalCloseAction"><segment><source>Close terminal</source></segment></unit>
+    <unit id="TerminalSearchPlaceholder"><segment><source>Find in terminal</source></segment></unit>
+    <unit id="TerminalSearchNext"><segment><source>Next match (Enter)</source></segment></unit>
+    <unit id="TerminalSearchPrevious"><segment><source>Previous match (Shift+Enter)</source></segment></unit>
+    <unit id="TerminalSearchClose"><segment><source>Close (Esc)</source></segment></unit>
   </file>
 </xliff>
