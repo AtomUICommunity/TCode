@@ -100,10 +100,136 @@ public sealed partial class SessionViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentElicitation));
         OnPropertyChanged(nameof(HasPendingElicitation));
     }
+
+    /// <summary>
+    /// Agent 的提问（input/request，按到达顺序，一次回答一个）。待回答时问答面板替换输入框（docs/design/ask-user.md §7）。
+    /// 与审批分开存放：切换权限档位只会自动处理审批，从不回答提问。
+    /// </summary>
+    public ObservableCollection<QuestionRequestViewModel> PendingQuestions { get; } = [];
+
+    public QuestionRequestViewModel? CurrentQuestion => PendingQuestions.FirstOrDefault();
+    public bool HasPendingQuestion => PendingQuestions.Count > 0;
+
+    public void AddQuestion(QuestionRequestViewModel question)
+    {
+        question.Decided += q =>
+        {
+            PendingQuestions.Remove(q);
+            SyncQuestions();
+        };
+        PendingQuestions.Add(question);
+        SyncQuestions();
+    }
+
+    private void SyncQuestions()
+    {
+        if (CurrentQuestion is { } current)
+        {
+            current.MoreCount = PendingQuestions.Count - 1;
+        }
+        OnPropertyChanged(nameof(CurrentQuestion));
+        OnPropertyChanged(nameof(HasPendingQuestion));
+        OnPropertyChanged(nameof(IsWaitingForUser));
+    }
+
+    /// <summary>有等待用户处理的审批、表单或提问（侧边栏橙点）。</summary>
+    public bool IsWaitingForUser => HasPendingApproval || HasPendingElicitation || HasPendingQuestion;
+
+    /// <summary>会话被删除或关闭：撤回所有待处理的请求，Host 不会一直等待。</summary>
+    public void CancelPendingRequests()
+    {
+        foreach (var approval in PendingApprovals.ToList())
+        {
+            approval.Cancel();
+        }
+        foreach (var elicitation in PendingElicitations.ToList())
+        {
+            elicitation.Cancel();
+        }
+        foreach (var question in PendingQuestions.ToList())
+        {
+            question.Cancel();
+        }
+    }
     public bool IsEmpty => Items.Count == 0;
 
     /// <summary>任务清单（task_* 工具的最新快照）。</summary>
     public TaskListViewModel TaskList { get; } = new();
+
+    /// <summary>任务球：后台 shell。</summary>
+    public ObservableCollection<BackgroundTaskItemViewModel> Shells { get; } = [];
+
+    /// <summary>任务球：Agent（后台子 Agent 来自后台任务事件，前台子 Agent 来自正在执行的工具调用）。</summary>
+    public ObservableCollection<BackgroundTaskItemViewModel> Agents { get; } = [];
+
+    public int RunningTaskCount => Shells.Count(s => s.IsRunning) + Agents.Count(a => a.IsRunning);
+
+    public bool HasRunningTasks => RunningTaskCount > 0;
+    public bool HasShells => Shells.Count > 0;
+    public bool HasAgents => Agents.Count > 0;
+
+    /// <summary>任务球是否可见：有后台任务、Agent、任务清单或本会话的改动。</summary>
+    public bool HasTaskOrb => Shells.Count > 0 || Agents.Count > 0 || TaskList.IsVisible || HasChanges;
+
+    private void NotifyTasks()
+    {
+        OnPropertyChanged(nameof(RunningTaskCount));
+        OnPropertyChanged(nameof(HasRunningTasks));
+        OnPropertyChanged(nameof(HasShells));
+        OnPropertyChanged(nameof(HasAgents));
+        OnPropertyChanged(nameof(HasTaskOrb));
+    }
+
+    /// <summary>后台任务是快照（主机只推送运行中的和最近结束的），按 id 更新，快照里没有的后台项移除。</summary>
+    private void SyncBackgroundTasks(IReadOnlyList<BackgroundTaskDto> tasks)
+    {
+        SyncBackground(Shells, tasks.Where(t => t.Type != "agent"), isAgent: false);
+        SyncBackground(Agents, tasks.Where(t => t.Type == "agent"), isAgent: true);
+        NotifyTasks();
+    }
+
+    private static void SyncBackground(ObservableCollection<BackgroundTaskItemViewModel> list, IEnumerable<BackgroundTaskDto> tasks, bool isAgent)
+    {
+        var snapshot = tasks.ToList();
+        for (var i = list.Count - 1; i >= 0; i--)
+        {
+            if (list[i].IsBackground && snapshot.All(t => t.Id != list[i].Id))
+            {
+                list.RemoveAt(i);
+            }
+        }
+        foreach (var task in snapshot)
+        {
+            var item = list.FirstOrDefault(i => i.IsBackground && i.Id == task.Id);
+            if (item is null)
+            {
+                item = new BackgroundTaskItemViewModel(task.Id, task.Description, isAgent, isBackground: true);
+                list.Add(item);
+            }
+            item.Update(task.Description, task.Status);
+        }
+    }
+
+    /// <summary>前台子 Agent 正在执行：在任务球里显示，结束后移除。</summary>
+    private void UpsertForegroundAgent(ToolCallBlockViewModel call)
+    {
+        var item = Agents.FirstOrDefault(a => !a.IsBackground && a.Id == call.ToolCallId);
+        if (item is null)
+        {
+            Agents.Add(new BackgroundTaskItemViewModel(call.ToolCallId, call.Parsed?.SubagentName ?? call.ToolName, isAgent: true, isBackground: false));
+        }
+        NotifyTasks();
+    }
+
+    private void RemoveForegroundAgent(string toolCallId)
+    {
+        var item = Agents.FirstOrDefault(a => !a.IsBackground && a.Id == toolCallId);
+        if (item is not null)
+        {
+            Agents.Remove(item);
+            NotifyTasks();
+        }
+    }
 
     /// <summary>工具结果带任务清单快照时刷新输入框上方的清单。</summary>
     private void ApplyDetails(ToolCallBlockViewModel call, string? detailsJson)
@@ -116,6 +242,11 @@ public sealed partial class SessionViewModel : ObservableObject
         if (call.Parsed is { Kind: "tasks", Tasks: { } tasks })
         {
             TaskList.Update(tasks);
+            NotifyTasks();
+        }
+        if (call.Parsed is { Kind: "subagent" } && call.IsBusy)
+        {
+            UpsertForegroundAgent(call);
         }
     }
 
@@ -152,6 +283,40 @@ public sealed partial class SessionViewModel : ObservableObject
 
     partial void OnModelIdChanged(string value) => OnPropertyChanged(nameof(ModelIconKey));
 
+    /// <summary>撤销文件改动的宿主调用（由会话所属的连接提供）。</summary>
+    public Func<RevertFileRequest, Task<RevertFileResult>>? RevertFile { get; set; }
+
+    /// <summary>文件改动有变化（一轮结束、载入历史）时发出，变更面板据此刷新。</summary>
+    public event Action? ChangesChanged;
+
+    /// <summary>转录中的“审查”：请求在变更面板中打开该文件。</summary>
+    public event Action<string>? ReviewRequested;
+
+    /// <summary>转录中的“打开”：请求在文件标签页中打开该文件。</summary>
+    public event Action<string>? OpenRequested;
+
+    internal Task<RevertFileResult> RevertAsync(RevertFileRequest request) =>
+        RevertFile is { } revert ? revert(request) : Task.FromResult(new RevertFileResult(Strings.Get(TCodeLangResourceKind.ChangesRevertFailedNoHost)));
+
+    /// <summary>整个会话的文件改动，按文件合并（最早的快照、最后的指纹）。</summary>
+    public IReadOnlyList<FileChangeViewModel> FileChanges() => FileChangeSet.Group(EditsIn(Items), RevertAsync);
+
+    /// <summary>会话的改动总计（转录上方的“更改 +X −Y”）。</summary>
+    [ObservableProperty]
+    public partial string ChangesStats { get; private set; } = "";
+
+    [ObservableProperty]
+    public partial bool HasChanges { get; private set; }
+
+    private void NotifyChanges()
+    {
+        var files = FileChanges();
+        HasChanges = files.Count > 0;
+        NotifyTasks();
+        ChangesStats = HasChanges ? $"+{files.Sum(f => f.Added)} −{files.Sum(f => f.Removed)}" : "";
+        ChangesChanged?.Invoke();
+    }
+
     /// <summary>载入最近的历史（<paramref name="start"/> 为其在完整历史中的位置，大于 0 表示还有更早的消息）。</summary>
     public void LoadHistory(IReadOnlyList<HistoryMessageDto> history, int start = 0)
     {
@@ -162,6 +327,7 @@ public sealed partial class SessionViewModel : ObservableObject
             Items.Add(item);
         }
         HistoryStart = start;
+        NotifyChanges();
     }
 
     /// <summary>在顶部插入更早的一页历史。</summary>
@@ -173,6 +339,7 @@ public sealed partial class SessionViewModel : ObservableObject
             Items.Insert(i, items[i]);
         }
         HistoryStart = start;
+        NotifyChanges();
     }
 
     private int _historyKey;
@@ -219,6 +386,7 @@ public sealed partial class SessionViewModel : ObservableObject
     private List<TranscriptItemViewModel> BuildItems(IReadOnlyList<HistoryMessageDto> history, bool latest)
     {
         var items = new List<TranscriptItemViewModel>();
+        var turnStart = 0;
         AssistantMessageItemViewModel? current = null;
         foreach (var message in history)
         {
@@ -227,17 +395,33 @@ public sealed partial class SessionViewModel : ObservableObject
                 case "user":
                     current = null;
                     var text = string.Concat(message.Blocks.OfType<HistoryText>().Select(t => t.Text));
+                    if (message.Source is CompactSummarySource)
+                    {
+                        items.Add(CompactionItemViewModel.FromSummary(text));
+                        if (latest)
+                        {
+                            // 压缩前的用量已不代表当前上下文；等压缩后的第一次回复再显示
+                            LastUsageTokens = 0;
+                        }
+                        break;
+                    }
+                    if (message.Source is CompactContextSource)
+                    {
+                        break;
+                    }
                     if (message.Source is { } source)
                     {
                         items.Add(new NotificationItemViewModel(source, text));
                         break;
                     }
+                    AppendTurnChanges(items, turnStart);
                     if (latest)
                     {
                         Title ??= ImagePrompt.Title(TitleText(text, message.Segments));
                     }
                     var images = message.Blocks.OfType<HistoryImage>().Select(i => i.Path).ToArray();
                     items.Add(new UserMessageItemViewModel(text, images, message.Segments));
+                    turnStart = items.Count;
                     break;
                 case "assistant":
                     // 同一轮的多条助手消息（工具调用前后）合并显示为一条。
@@ -255,14 +439,14 @@ public sealed partial class SessionViewModel : ObservableObject
                                 current.GetOrAdd(key, () => TextBlockViewModel.FromHistory(t.Text));
                                 break;
                             case HistoryThinking t when t.Text.Length > 0:
-                                current.GetOrAdd(key, () => new ThinkingBlockViewModel { Text = t.Text });
+                                current.GetOrAdd(key, () => new ThinkingBlockViewModel(t.DurationMs) { Text = t.Text });
                                 break;
                             case HistoryToolCall c:
-                                _toolCalls[c.ToolCallId] = current.GetOrAdd(key, () => new ToolCallBlockViewModel(c.ToolCallId, c.ToolName)
+                                _toolCalls[c.ToolCallId] = current.GetOrAdd(key, () => BindTool(new ToolCallBlockViewModel(c.ToolCallId, c.ToolName)
                                 {
                                     Arguments = c.ArgumentsJson,
                                     Status = ToolCallStatus.Running,
-                                });
+                                }));
                                 break;
                         }
                     }
@@ -274,7 +458,7 @@ public sealed partial class SessionViewModel : ObservableObject
                     {
                         LastUsageTokens = usage.Input + usage.CacheRead + usage.CacheWrite + usage.Output;
                     }
-                    current.Complete();
+                    current.Complete(message.Timestamp);
                     break;
                 case "toolResult":
                     foreach (var result in message.Blocks.OfType<HistoryToolResult>())
@@ -290,12 +474,58 @@ public sealed partial class SessionViewModel : ObservableObject
                     break;
             }
         }
+        AppendTurnChanges(items, turnStart);
         if (latest && history.Count > 0)
         {
             LastActivity = history[^1].Timestamp.ToLocalTime();
         }
         return items;
     }
+
+    /// <summary>工具块交给会话：read 的“打开文件”请求在这里把相对路径解析到工作目录下。</summary>
+    private ToolCallBlockViewModel BindTool(ToolCallBlockViewModel call)
+    {
+        call.OpenFileRequested = path => OpenRequested?.Invoke(System.IO.Path.IsPathRooted(path) ? path : System.IO.Path.Combine(Cwd, path));
+        return call;
+    }
+
+    /// <summary>从 <paramref name="from"/> 起的这一轮的改动汇总成一张卡片；同一位置的旧卡片先移除。</summary>
+    private void AppendTurnChanges(IList<TranscriptItemViewModel> items, int from)
+    {
+        if (items.Count > 0 && items[^1] is TurnChangesItemViewModel)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
+        var edits = EditsIn(items.Skip(from)).ToArray();
+        if (edits.Length == 0)
+        {
+            return;
+        }
+        items.Add(new TurnChangesItemViewModel(FileChangeSet.Group(edits, RevertAsync),
+            path => ReviewRequested?.Invoke(path),
+            path => OpenRequested?.Invoke(path)));
+    }
+
+    /// <summary>最后一条用户消息之后的位置（轮次的起点）。</summary>
+    private static int TurnStart(IList<TranscriptItemViewModel> items)
+    {
+        for (var i = items.Count - 1; i >= 0; i--)
+        {
+            if (items[i] is UserMessageItemViewModel)
+            {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>工具调用中的 diff 结果（按出现顺序）。</summary>
+    private static IEnumerable<ParsedToolDetails> EditsIn(IEnumerable<TranscriptItemViewModel> items) =>
+        items.OfType<AssistantMessageItemViewModel>()
+            .SelectMany(m => m.Blocks.OfType<ToolCallBlockViewModel>())
+            .Select(t => t.Parsed)
+            .OfType<ParsedToolDetails>()
+            .Where(p => p.Kind == "diff" && p.Path is not null);
 
     public void SetRunning(bool running)
     {
@@ -318,10 +548,39 @@ public sealed partial class SessionViewModel : ObservableObject
                 break;
             case AgentEnded:
                 SetRunning(false);
+                AppendTurnChanges(Items, TurnStart(Items));
+                NotifyChanges();
                 // 本轮被停止或出错：排队的消息暂停，不自动发出
                 var completed = _lastStopReason is not ("Error" or "Aborted");
                 IsQueuePaused = !completed && QueuedPrompts.Count > 0;
                 RunEnded?.Invoke(completed);
+                break;
+            case CompactionStarted c:
+                Items.Add(CompactionItemViewModel.Running(c.PreTokens));
+                break;
+            case CompactionEnded c:
+                if (Items.LastOrDefault(i => i is CompactionItemViewModel { IsRunning: true }) is CompactionItemViewModel running)
+                {
+                    running.Complete(c.PreTokens, c.PostTokens, c.Error);
+                }
+                if (c.Error is null && c.PostTokens is { } post)
+                {
+                    LastUsageTokens = post;
+                }
+                break;
+            case BackgroundTasksChanged tasks:
+                SyncBackgroundTasks(tasks.Tasks);
+                break;
+            case CompactionSuspended c:
+                Items.Add(CompactionItemViewModel.SuspendedNotice(c.Reason));
+                break;
+            case MessageStarted { Role: "user", Source: CompactSummarySource } m:
+                if (Items.LastOrDefault(i => i is CompactionItemViewModel) is CompactionItemViewModel compacted)
+                {
+                    compacted.SetSummary(m.Text ?? "");
+                }
+                break;
+            case MessageStarted { Role: "user", Source: CompactContextSource }:
                 break;
             case MessageStarted { Role: "user", Source: { } source } m:
                 Items.Add(new NotificationItemViewModel(source, m.Text ?? ""));
@@ -353,10 +612,10 @@ public sealed partial class SessionViewModel : ObservableObject
                 break;
             case ToolCallStarted s when Current is { } msg:
                 SetPondering(false);
-                _toolCalls[s.ToolCallId] = msg.GetOrAdd(_blockOffset + s.ContentIndex, () => new ToolCallBlockViewModel(s.ToolCallId, s.ToolName));
+                _toolCalls[s.ToolCallId] = msg.GetOrAdd(_blockOffset + s.ContentIndex, () => BindTool(new ToolCallBlockViewModel(s.ToolCallId, s.ToolName)));
                 break;
             case ToolCallDelta d when Current is { } msg:
-                msg.GetOrAdd(_blockOffset + d.ContentIndex, () => new ToolCallBlockViewModel("", "tool")).AppendArguments(d.JsonFragment);
+                msg.GetOrAdd(_blockOffset + d.ContentIndex, () => BindTool(new ToolCallBlockViewModel("", "tool"))).AppendArguments(d.JsonFragment);
                 break;
             case ToolCallEnded e2 when _toolCalls.TryGetValue(e2.ToolCallId, out var call):
                 call.Arguments = e2.ArgumentsJson;
@@ -389,6 +648,7 @@ public sealed partial class SessionViewModel : ObservableObject
                 call.Status = end.IsError ? ToolCallStatus.Failed : ToolCallStatus.Succeeded;
                 call.Result = end.ResultText.TrimEnd();
                 ApplyDetails(call, end.DetailsJson);
+                RemoveForegroundAgent(call.ToolCallId);
                 call.Duration = end.DurationMs < 1000 ? $"{end.DurationMs:0} ms" : $"{end.DurationMs / 1000:0.0} s";
                 // 工具执行完后到下一次模型输出之间同样处于“思考中”。
                 SetPondering(IsRunning);
@@ -408,11 +668,19 @@ public sealed partial class SessionViewModel : ObservableObject
         {
             item.RefreshLanguage();
         }
+        foreach (var item in Items.OfType<CompactionItemViewModel>())
+        {
+            item.RefreshLanguage();
+        }
         TaskList.RefreshLanguage();
     }
 
     private string? _currentMessageId;
     private int _blockOffset;
+
+    /// <summary>压缩后的摘要消息与重新附加的上下文（Host 的 CompactionPrompts.SummarySource / ContextSource）。</summary>
+    private const string CompactSummarySource = "compact-summary";
+    private const string CompactContextSource = "compact-context";
 
     private AssistantMessageItemViewModel? Current =>
         _currentMessageId is null ? null : Items.LastOrDefault() as AssistantMessageItemViewModel;

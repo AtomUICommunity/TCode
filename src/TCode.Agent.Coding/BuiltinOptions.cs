@@ -18,6 +18,9 @@ public sealed record BuiltinOptions
     public IReadOnlyList<PromptSection>? ExtraPromptSections { get; init; }
 
     public ToolServices Services { get; init; } = ToolServices.None;
+
+    /// <summary>自动压缩上下文（settings.json 的 autoCompact，docs/design/compaction.md §4）；手动 /compact 不受影响。</summary>
+    public bool AutoCompact { get; init; } = true;
 }
 
 public enum ToolSet

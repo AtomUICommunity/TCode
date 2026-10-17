@@ -1,4 +1,5 @@
 using TCode.Agent;
+using TCode.Agent.Questions;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
 
@@ -45,6 +46,12 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
 
     /// <summary>审批交给 UI；未设置、异常或断连时一律拒绝。</summary>
     public Func<RuntimeApprovalRequest, CancellationToken, ValueTask<ApprovalDecision>>? ApprovalHandler { get; set; }
+
+    /// <summary>提问交给 UI 的问答面板；未设置、异常或断连时视为拒绝回答。</summary>
+    public Func<RuntimeInputRequest, CancellationToken, Task<UserInputResult>>? InputHandler { get; set; }
+
+    /// <summary>结构化信息请求（ACP elicitation）交给 UI 的表单卡片；未设置、异常或断连时 cancel。</summary>
+    public Func<RuntimeElicitationRequest, CancellationToken, Task<RuntimeElicitationResult>>? ElicitationHandler { get; set; }
 
     /// <summary>启动 CLI 时注入的 TCode MCP 桥接（返回 null 表示不注入）。</summary>
     public Func<McpBridgeLaunch?>? McpBridge { get; set; }
@@ -377,6 +384,56 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
         {
             // 安全规则：UI 无响应、断连或出错时一律拒绝，绝不默认放行。
             return ApprovalDecision.Deny($"Approval failed: {ex.Message}");
+        }
+    }
+
+    async ValueTask<UserInputResult> IRuntimeHost.RequestInputAsync(RuntimeInputRequest request, CancellationToken cancellationToken)
+    {
+        // 提问从不自动回答，与权限档位无关
+        if (InputHandler is not { } handler)
+        {
+            return UserInputResult.Declined;
+        }
+        CancellationToken runToken;
+        lock (_gate)
+        {
+            runToken = _runCts?.Token ?? CancellationToken.None;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, runToken);
+        try
+        {
+            return await handler(request, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return UserInputResult.Aborted;
+        }
+        catch (Exception)
+        {
+            return UserInputResult.Declined;
+        }
+    }
+
+    async ValueTask<RuntimeElicitationResult> IRuntimeHost.RequestElicitationAsync(RuntimeElicitationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (ElicitationHandler is not { } handler)
+        {
+            return RuntimeElicitationResult.Cancel;
+        }
+        CancellationToken runToken;
+        lock (_gate)
+        {
+            runToken = _runCts?.Token ?? CancellationToken.None;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, runToken);
+        try
+        {
+            return await handler(request, linked.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return RuntimeElicitationResult.Cancel;
         }
     }
 

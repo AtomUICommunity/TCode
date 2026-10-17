@@ -1,4 +1,5 @@
 using TCode.Agent.Coding;
+using TCode.Agent.Coding.Assets;
 using TCode.Agent.Coding.Sessions;
 using Microsoft.Extensions.Logging;
 using TCode.Ai.Messages;
@@ -187,7 +188,7 @@ public sealed class AgentHostServer(
     public async Task<OpenSessionResult> ForkSessionAsync(string filePath, CancellationToken cancellationToken = default)
     {
         var snapshot = SessionStore.Read(RequireSessionFile(filePath));
-        if (RuntimeOf(snapshot) is not null)
+        if (sessions.RuntimeOf(snapshot) is not null)
         {
             throw new InvalidOperationException("Sessions of external agents cannot be continued in a new session.");
         }
@@ -205,6 +206,16 @@ public sealed class AgentHostServer(
         if (snapshot.CustomTitle is { } title)
         {
             await store.AppendMetaAsync(title, null, cancellationToken);
+        }
+        foreach (var message in snapshot.EarlierMessages)
+        {
+            await store.AppendMessageAsync(message, cancellationToken);
+        }
+        if (snapshot.Compaction is { } c)
+        {
+            // 压缩过的会话：新会话从同一份摘要继续（系统提示在打开时按当前环境重建）
+            await store.AppendCompactionAsync(c.Trigger, c.Summary, c.PreTokens, c.PostTokens, c.DurationMs, c.Instructions, c.TruncatedForRetry,
+                cancellationToken);
         }
         foreach (var message in snapshot.Messages)
         {
@@ -231,48 +242,20 @@ public sealed class AgentHostServer(
 
     public Task<HistoryPageDto> GetHistoryAsync(string sessionId, int before, int turnLimit, CancellationToken cancellationToken = default)
     {
-        var messages = sessions.Get(sessionId).Agent.Messages;
+        var messages = sessions.Get(sessionId).History;
         before = Math.Clamp(before, 0, messages.Count);
         var start = HistoryPaging.StartOfRecentTurns(messages, before, Math.Max(1, turnLimit));
         return Task.FromResult(new HistoryPageDto(ToHistory(messages, start, before), start));
     }
 
-    public Task<OpenSessionResult> OpenSessionAsync(string filePath, int? turnLimit, CancellationToken cancellationToken = default)
-    {
-        if (sessions.FindByFile(filePath) is { } open)
-        {
-            return Task.FromResult(Describe(open, turnLimit));
-        }
-        var snapshot = SessionStore.Read(filePath);
-        AgentSession session;
-        if (runtimes.Find(RuntimeOf(snapshot)) is { } runtime)
-        {
-            // 外部运行时的会话只能在同一运行时中继续；CLI 尚未探测完成或已卸载时用占位模型，提问时再报错。
-            var model = runtimes.FindModel(runtime.Id, snapshot.ModelId)?.Model
-                        ?? runtime.Descriptor.Models.FirstOrDefault()
-                        ?? RuntimeModels.Placeholder(runtime, snapshot.ModelId);
-            session = sessions.OpenExternal(filePath, runtime, model);
-        }
-        else
-        {
-            // 会话记录的模型不在当前目录中（例如未配置 API Key）时退回第一个可用模型。
-            var model = catalog.Find(snapshot.ModelProvider, snapshot.ModelId) ?? catalog.Find(catalog.DefaultModelRef) ?? catalog.Models[0];
-            session = sessions.Open(filePath, model);
-        }
-        SessionOptions.Initialize(session);
-        // 完全授权不沿用：重新打开的会话回到“询问”；其余档位按记录恢复
-        var permission = snapshot.PermissionMode is TCode.Agent.PermissionMode.FullAccess or null ? TCode.Agent.PermissionMode.Ask : snapshot.PermissionMode.Value;
-        // role 按记录恢复；自定义 role 已被删除时回到 agent
-        SessionOptions.Apply(session, new SessionOptionsDto(snapshot.ThinkingLevel?.ToString(), snapshot.FastMode, snapshot.ContextWindow,
-            PermissionMode: SessionOptions.ToWire(permission), Role: snapshot.Role), sessions.Assets.Get(session.Cwd));
-        return Task.FromResult(Describe(session, turnLimit));
-    }
+    public Task<OpenSessionResult> OpenSessionAsync(string filePath, int? turnLimit, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Describe(sessions.OpenFile(filePath), turnLimit));
 
     public async Task<PromptResult> PromptAsync(PromptRequest request, CancellationToken cancellationToken = default)
     {
         var behavior = request.WhileRunning == StreamingBehaviorDto.Steer ? StreamingBehavior.Steer : StreamingBehavior.FollowUp;
         var session = sessions.Get(request.SessionId);
-        var message = TCode.Agent.Coding.Sessions.ImageAttachments.CreatePrompt(ExpandCommands(session.Cwd, request),
+        var message = TCode.Agent.Coding.Sessions.ImageAttachments.CreatePrompt(ExpandCommands(session.Cwd, session.Agent.Model, request),
             (request.Images ?? []).Select(i => (i.Path, i.MimeType))) with
         {
             Display = request.Segments?.Select(s => new MessageSegment(s.Kind, s.Text, s.Value, s.Label)).ToArray(),
@@ -289,8 +272,9 @@ public sealed class AgentHostServer(
     /// 输入框里的 command 与 skill tag（docs/design/composer.md §9.2、§10.2）：
     /// skill 的说明以 &lt;skill&gt; 块、command 的 .md 正文依次放在用户文字之前（skill 的名字仍留在用户文字里）。
     /// 找不到的 command / skill 报错（不悄悄当作普通文字发出去）。
+    /// 内置提示词命令（/init、/commit，docs/design/composer.md §9.3）优先于同名的自定义 command。
     /// </summary>
-    private string ExpandCommands(string cwd, PromptRequest request)
+    private string ExpandCommands(string cwd, ModelInfo model, PromptRequest request)
     {
         var tags = request.Segments?.Where(s => s.Kind is "command" or "skill" && s.Value is not null).ToList() ?? [];
         if (tags.Count == 0)
@@ -308,6 +292,11 @@ public sealed class AgentHostServer(
         }
         foreach (var name in tags.Where(t => t.Kind == "command").Select(t => t.Value!))
         {
+            if (BuiltinPromptCommands.Render(name, model) is { } prompt)
+            {
+                parts.Add(prompt);
+                continue;
+            }
             var asset = catalog.FindCommand(name) ?? throw new InvalidOperationException($"Unknown command /{name}.");
             var body = TCode.Agent.Coding.Assets.AgentAssetStore.ReadBody(asset.Path)
                        ?? throw new InvalidOperationException($"Cannot read command /{name} ({asset.Path}).");
@@ -323,7 +312,17 @@ public sealed class AgentHostServer(
     public Task AbortAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Abort requested for session {SessionId} (user stop)", sessionId);
-        sessions.Get(sessionId).Agent.Abort();
+        // 被空闲释放的会话不在运行，无需为了停止而重新打开
+        sessions.TryGet(sessionId)?.Agent.Abort();
+        return Task.CompletedTask;
+    }
+
+    public Task CompactAsync(string sessionId, string? instructions, CancellationToken cancellationToken = default)
+    {
+        var session = sessions.Get(sessionId);
+        logger.LogInformation("Compaction requested for session {SessionId}", sessionId);
+        // 不等待压缩完成：进度与结果以会话事件推送
+        _ = session.CompactAsync(string.IsNullOrWhiteSpace(instructions) ? null : instructions.Trim());
         return Task.CompletedTask;
     }
 
@@ -358,7 +357,7 @@ public sealed class AgentHostServer(
 
     private OpenSessionResult Describe(AgentSession session, int? turnLimit = null)
     {
-        var messages = session.Agent.Messages;
+        var messages = session.History;
         var start = turnLimit is { } limit ? HistoryPaging.StartOfRecentTurns(messages, messages.Count, Math.Max(1, limit)) : 0;
         return new OpenSessionResult(
             new SessionDto(session.Id, session.Cwd, ModelCatalog.RefOf(session.Agent.Model), session.Store.FilePath, SessionOptions.Current(session),
@@ -402,14 +401,10 @@ public sealed class AgentHostServer(
     private static HistoryBlockDto? ToHistory(ContentBlock block) => block switch
     {
         TextContent t => new HistoryText(t.Text),
-        ThinkingContent t => new HistoryThinking(HistoryPaging.Truncate(t.Thinking)),
+        ThinkingContent t => new HistoryThinking(HistoryPaging.Truncate(t.Thinking), t.DurationMs),
         ToolCallContent c => new HistoryToolCall(c.Id, c.Name, c.ArgumentsJson),
         _ => null,
     };
-
-    /// <summary>会话所属的外部运行时：优先取记录的原生会话，其次看模型厂商是否为运行时 id。</summary>
-    private string? RuntimeOf(SessionSnapshot snapshot) =>
-        snapshot.Runtime ?? (runtimes.Find(snapshot.ModelProvider) is { } runtime ? runtime.Id : null);
 
     private static bool SamePath(string a, string b) =>
         string.Equals(Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
@@ -434,6 +429,16 @@ public sealed class AgentHostServer(
 
     public Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default) =>
         files.SearchAsync(request, cancellationToken);
+
+    public Task<RevertFileResult> RevertFileAsync(RevertFileRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!Path.IsPathFullyQualified(request.Path))
+        {
+            return Task.FromResult(new RevertFileResult($"Path must be absolute: {request.Path}"));
+        }
+        var error = TCode.Agent.Coding.Tools.Files.FileRevert.Revert(request.Path, request.ExpectedSha256, request.RestoreText);
+        return Task.FromResult(new RevertFileResult(error));
+    }
 
     public Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default)
     {

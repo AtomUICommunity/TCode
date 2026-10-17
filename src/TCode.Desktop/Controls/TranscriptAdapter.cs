@@ -18,6 +18,7 @@ public sealed class TranscriptAdapter
     private readonly Dictionary<object, TranscriptEntry> _cache = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AssistantMessageItemViewModel> _watched = [];
     private readonly Dictionary<AssistantBlockViewModel, ActivityGroupViewModel> _groups = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<ToolCallBlockViewModel, QuestionCardViewModel> _questions = new(ReferenceEqualityComparer.Instance);
     private SessionViewModel? _session;
     private bool _attaching;
 
@@ -29,6 +30,10 @@ public sealed class TranscriptAdapter
             foreach (var group in _groups.Values)
             {
                 group.RefreshSummary();
+            }
+            foreach (var card in _questions.Values)
+            {
+                card.RefreshLanguage();
             }
         };
     }
@@ -55,6 +60,7 @@ public sealed class TranscriptAdapter
         _watched.Clear();
         _cache.Clear();
         _groups.Clear();
+        _questions.Clear();
         _session = session;
         if (session is not null)
         {
@@ -112,83 +118,206 @@ public sealed class TranscriptAdapter
                 _ => new ContentEntry(item),
             };
 
+    /// <summary>提问工具：显示为独立的问答卡片，不并入活动组（docs/design/ask-user.md §7.4）。</summary>
+    private static bool IsQuestion(AssistantBlockViewModel block) => block is ToolCallBlockViewModel { Category: ToolCategory.Question };
+
+    private QuestionCardViewModel CardFor(AssistantBlockViewModel block)
+    {
+        var call = (ToolCallBlockViewModel)block;
+        if (!_questions.TryGetValue(call, out var card))
+        {
+            card = _questions[call] = new QuestionCardViewModel(call);
+        }
+        return card;
+    }
+
     private void Rebuild()
     {
         var desired = new List<TranscriptEntry>();
-        var pending = new List<AssistantBlockViewModel>();
         if (_session is { } session)
         {
-            // 收集到的思考 / 工具步骤：遇到正文、消息底栏或下一条用户消息时结束一个组
-            void Flush(bool trailing)
-            {
-                if (pending.Count == 0)
-                {
-                    return;
-                }
-                if (pending is [ThinkingBlockViewModel single])
-                {
-                    desired.Add(EntryFor(single));
-                }
-                else
-                {
-                    if (!_groups.TryGetValue(pending[0], out var group))
-                    {
-                        group = _groups[pending[0]] = new ActivityGroupViewModel();
-                    }
-                    group.SetSteps(pending);
-                    group.IsActive = trailing && session.IsRunning;
-                    desired.Add(EntryFor(group));
-                }
-                pending.Clear();
-            }
-
             // 还有更早的消息：顶部提示（滚动到顶部时加载）
             if (session.HasEarlierHistory)
             {
                 desired.Add(EntryFor(session.EarlierHistory));
             }
-            foreach (var item in session.Items)
+            var items = session.Items;
+            var start = 0;
+            for (var i = 1; i <= items.Count; i++)
             {
-                if (item is AssistantMessageItemViewModel message)
+                // 一轮 = 一条用户消息到下一条用户消息之前（或列表末尾）
+                if (i == items.Count || items[i] is UserMessageItemViewModel)
                 {
-                    if (_watched.Add(message))
+                    // 最后一轮仍在运行：实时显示（正文留在外面）；其余轮次已结束：收进工作空间
+                    if (i < items.Count || !session.IsRunning)
                     {
-                        message.Blocks.CollectionChanged += OnBlocksChanged;
-                        message.PropertyChanged += OnMessagePropertyChanged;
+                        EmitFinishedTurn(items, start, i, desired);
                     }
-                    foreach (var block in message.Blocks)
+                    else
                     {
-                        if (block is TextBlockViewModel)
-                        {
-                            Flush(trailing: false);
-                            desired.Add(EntryFor(block));
-                        }
-                        else
-                        {
-                            pending.Add(block);
-                        }
+                        EmitLiveTurn(session, items, start, desired);
                     }
-                    // 本轮仍在进行（工具执行间隙）时，最新消息不显示底栏，活动组也不因此被截断
-                    var live = session.IsRunning && ReferenceEquals(message, session.Items.LastOrDefault());
-                    if ((message.ShowFooter && !live) || message.HasError)
-                    {
-                        Flush(trailing: false);
-                        desired.Add(EntryFor(message));
-                    }
-                }
-                else
-                {
-                    Flush(trailing: false);
-                    desired.Add(EntryFor(item));
+                    start = i;
                 }
             }
-            Flush(trailing: true);
             if (session.IsPondering)
             {
                 desired.Add(EntryFor(session));
             }
         }
         Sync(desired);
+    }
+
+    /// <summary>进行中的一轮：思考 / 工具在两段正文之间分组，正文与底栏照常显示。</summary>
+    private void EmitLiveTurn(SessionViewModel session, IList<TranscriptItemViewModel> items, int start, List<TranscriptEntry> desired)
+    {
+        var pending = new List<AssistantBlockViewModel>();
+
+        // 收集到的思考 / 工具步骤：遇到正文、消息底栏或下一条用户消息时结束一个组
+        void Flush(bool trailing)
+        {
+            if (pending.Count == 0)
+            {
+                return;
+            }
+            if (pending is [ThinkingBlockViewModel single])
+            {
+                desired.Add(EntryFor(single));
+            }
+            else
+            {
+                if (!_groups.TryGetValue(pending[0], out var group))
+                {
+                    group = _groups[pending[0]] = new ActivityGroupViewModel();
+                }
+                group.SetSteps(pending);
+                group.IsActive = trailing && session.IsRunning;
+                desired.Add(EntryFor(group));
+            }
+            pending.Clear();
+        }
+
+        for (var i = start; i < items.Count && (i == start || items[i] is not UserMessageItemViewModel); i++)
+        {
+            var item = items[i];
+            if (item is AssistantMessageItemViewModel message)
+            {
+                Watch(message);
+                foreach (var block in message.Blocks)
+                {
+                    if (block is TextBlockViewModel)
+                    {
+                        Flush(trailing: false);
+                        desired.Add(EntryFor(block));
+                    }
+                    else if (IsQuestion(block))
+                    {
+                        Flush(trailing: false);
+                        desired.Add(EntryFor(CardFor(block)));
+                    }
+                    else
+                    {
+                        pending.Add(block);
+                    }
+                }
+                // 本轮仍在进行（工具执行间隙）时，最新消息不显示底栏，活动组也不因此被截断
+                var live = session.IsRunning && ReferenceEquals(message, items[^1]);
+                if ((message.ShowFooter && !live) || message.HasError)
+                {
+                    Flush(trailing: false);
+                    desired.Add(EntryFor(message));
+                }
+            }
+            else
+            {
+                Flush(trailing: false);
+                desired.Add(EntryFor(item));
+            }
+        }
+        Flush(trailing: true);
+    }
+
+    /// <summary>已结束的一轮：除最后一段正文外的思考、工具、中间正文收进“已工作 N 分 N 秒”的工作空间组，默认收起。</summary>
+    private void EmitFinishedTurn(IList<TranscriptItemViewModel> items, int start, int end, List<TranscriptEntry> desired)
+    {
+        var blocks = new List<AssistantBlockViewModel>();
+        var messages = new List<AssistantMessageItemViewModel>();
+        var others = new List<TranscriptItemViewModel>();
+        for (var i = start; i < end; i++)
+        {
+            switch (items[i])
+            {
+                case UserMessageItemViewModel user:
+                    desired.Add(EntryFor(user));
+                    break;
+                case AssistantMessageItemViewModel message:
+                    Watch(message);
+                    messages.Add(message);
+                    blocks.AddRange(message.Blocks);
+                    break;
+                default:
+                    others.Add(items[i]);
+                    break;
+            }
+        }
+
+        // 问答卡片不收进工作空间：放在工作空间之后、最后一段正文之前
+        var questions = blocks.Where(IsQuestion).ToList();
+        blocks.RemoveAll(IsQuestion);
+
+        // 最后一段正文留在外面，其余全部收进工作空间
+        var last = blocks.FindLastIndex(b => b is TextBlockViewModel);
+        var fold = last < 0 ? blocks : blocks.Where((_, index) => index != last).ToList();
+        if (fold.Count > 0)
+        {
+            if (!_groups.TryGetValue(fold[0], out var group))
+            {
+                group = _groups[fold[0]] = new ActivityGroupViewModel();
+            }
+            group.SetSteps(fold);
+            group.SetWorked(Elapsed(messages));
+            desired.Add(EntryFor(group));
+        }
+        foreach (var question in questions)
+        {
+            desired.Add(EntryFor(CardFor(question)));
+        }
+        if (last >= 0)
+        {
+            desired.Add(EntryFor(blocks[last]));
+        }
+        // 底栏（时间、复制）只给最后一条消息；出错的消息始终显示错误
+        foreach (var message in messages)
+        {
+            if (message.HasError || (ReferenceEquals(message, messages[^1]) && message.ShowFooter))
+            {
+                desired.Add(EntryFor(message));
+            }
+        }
+        foreach (var other in others)
+        {
+            desired.Add(EntryFor(other));
+        }
+    }
+
+    private static TimeSpan Elapsed(IReadOnlyList<AssistantMessageItemViewModel> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return TimeSpan.Zero;
+        }
+        var end = messages[^1].EndedAt ?? messages[^1].Timestamp;
+        var elapsed = end - messages[0].Timestamp;
+        return elapsed > TimeSpan.Zero ? elapsed : TimeSpan.Zero;
+    }
+
+    private void Watch(AssistantMessageItemViewModel message)
+    {
+        if (_watched.Add(message))
+        {
+            message.Blocks.CollectionChanged += OnBlocksChanged;
+            message.PropertyChanged += OnMessagePropertyChanged;
+        }
     }
 
     // 增量同步：保留共同前缀与共同后缀，只替换中间部分。流式输出时通常只是在末尾追加，

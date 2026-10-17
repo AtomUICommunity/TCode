@@ -174,7 +174,7 @@ public sealed partial class SessionItemViewModel : ObservableObject
         Title = live.Title ?? Title;
         ModelId = live.ModelId;
         Runtime = live.Runtime;
-        IsWaitingApproval = live.HasPendingApproval;
+        IsWaitingApproval = live.IsWaitingForUser;
         IsRunning = live.IsRunning;
         LastActivity = live.LastActivity;
     }
@@ -204,6 +204,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         _host.ModelsChanged += OnModelsChanged;
         _host.ApprovalHandler = HandleApprovalAsync;
         _host.ElicitationHandler = HandleElicitationAsync;
+        _host.UserInputHandler = HandleUserInputAsync;
         Mcp = new McpComposerViewModel(host, () => CurrentCwd, logger);
         Mcp.PropertyChanged += (_, e) =>
         {
@@ -219,6 +220,12 @@ public sealed partial class ConversationViewModel : ObservableObject
             new("model", TCodeLangResourceKind.BuiltinModelDescription, LucideKind.Box, () => ModelPickerRequested?.Invoke()),
             new("fork", TCodeLangResourceKind.BuiltinForkDescription, LucideKind.GitBranch, () => _ = ForkActiveAsync(), () => ActiveItem is not null),
             new("role", TCodeLangResourceKind.BuiltinRoleDescription, LucideKind.Layers, () => RolePickerRequested?.Invoke()),
+            // 提示词型：Run 为 null，选中后插入 command tag，正文由 Host 展开（composer.md §9.3）
+            new("init", TCodeLangResourceKind.BuiltinInitDescription, LucideKind.FileText, null),
+            new("commit", TCodeLangResourceKind.BuiltinCommitDescription, LucideKind.GitCommit, null),
+            // 外部运行时有自己的 /compact（由运行时命令列出并原样发送）
+            new("compact", TCodeLangResourceKind.BuiltinCompactDescription, LucideKind.Minimize2, () => _ = CompactActiveAsync(null),
+                () => Active is { Runtime: null }),
         ]);
         RolePicker.RoleChosen += role => _ = ApplyRoleAsync(role);
         RolePicker.Show(userSettings.Current.DefaultRole);
@@ -248,14 +255,7 @@ public sealed partial class ConversationViewModel : ObservableObject
             foreach (var session in _open.Values)
             {
                 session.SetRunning(false);
-                foreach (var approval in session.PendingApprovals.ToList())
-                {
-                    approval.Cancel();
-                }
-                foreach (var elicitation in session.PendingElicitations.ToList())
-                {
-                    elicitation.Cancel();
-                }
+                session.CancelPendingRequests();
             }
             _open.Clear();
             foreach (var item in Sessions)
@@ -300,13 +300,17 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     /// <summary>当前会话；null 表示空状态（下一次发送时创建会话）。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty), nameof(HeaderTitle), nameof(HeaderSubtitle), nameof(HeaderIconKey))]
+    [NotifyPropertyChangedFor(nameof(IsEmpty), nameof(HeaderTitle), nameof(HeaderSubtitle), nameof(HeaderIconKey), nameof(IsAnsweringQuestion))]
     public partial SessionViewModel? Active { get; private set; }
 
     public bool IsEmpty => Active is null || Active.IsEmpty;
 
+    /// <summary>当前会话有待回答的提问：问答面板替换输入框，用户必须先回答或拒绝回答（docs/design/ask-user.md §9）。</summary>
+    public bool IsAnsweringQuestion => Active?.HasPendingQuestion == true;
+
     partial void OnActiveChanged(SessionViewModel? value)
     {
+        SendCommand.NotifyCanExecuteChanged();
         Permission.Show(value is null ? RememberedPermission() : value.Options.PermissionMode);
         RolePicker.AcpAvailable = Picker.Selected?.Model.SupportsSubagents != false;
         // 空状态沿用当前的 role（新会话以它开始，与 Cursor 的模式一致）
@@ -393,6 +397,10 @@ public sealed partial class ConversationViewModel : ObservableObject
     public partial string? ContextUsageTip { get; private set; }
 
     public bool HasContextUsage => ContextUsageTip is not null;
+
+    /// <summary>上下文接近自动压缩阈值（占用环变色并提示 /compact）。</summary>
+    [ObservableProperty]
+    public partial bool IsContextNearlyFull { get; private set; }
 
     public string WorkspaceName => Workspace?.Name ?? Strings.Get(TCodeLangResourceKind.NoProjectName);
     public string BranchName => Branch ?? Strings.Get(TCodeLangResourceKind.NoBranch);
@@ -609,7 +617,39 @@ public sealed partial class ConversationViewModel : ObservableObject
     /// <summary>/fork：从当前会话分叉。</summary>
     private Task ForkActiveAsync() => ActiveItem is { } item ? ForkSessionAsync(item) : Task.CompletedTask;
 
-    private bool CanSend() => !string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0 || Mcp.HasPrompt;
+    /// <summary>输入的是 “/compact [指令]” 时返回指令（可能为空串），否则 null。</summary>
+    private static string? CompactInstructions(string text)
+    {
+        const string command = "/compact";
+        if (!text.StartsWith(command, StringComparison.OrdinalIgnoreCase) || (text.Length > command.Length && !char.IsWhiteSpace(text[command.Length])))
+        {
+            return null;
+        }
+        return text[command.Length..].Trim();
+    }
+
+    /// <summary>压缩当前会话的上下文（docs/design/compaction.md §12）：进度与结果以会话事件显示为分隔卡片。</summary>
+    private async Task CompactActiveAsync(string? instructions)
+    {
+        if (Active is not { Runtime: null } session)
+        {
+            StatusMessage = Strings.Get(TCodeLangResourceKind.CompactionUnavailable);
+            return;
+        }
+        try
+        {
+            var server = await _host.GetServerAsync();
+            await server.CompactAsync(session.SessionId, instructions);
+            StatusMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Compact failed");
+            StatusMessage = Strings.Format(TCodeLangResourceKind.CompactionFailedFormat, ex.Message);
+        }
+    }
+
+    private bool CanSend() => !IsAnsweringQuestion && (!string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0 || Mcp.HasPrompt);
 
     private static IReadOnlyList<ImageAttachmentDto>? ToDtos(IReadOnlyList<ImageAttachmentViewModel> images) =>
         images.Count == 0 ? null : images.Select(i => new ImageAttachmentDto(i.Path, i.MimeType)).ToArray();
@@ -617,6 +657,10 @@ public sealed partial class ConversationViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
+        if (IsAnsweringQuestion)
+        {
+            return;
+        }
         var images = Attachments.ToArray();
         var draft = Composer.Segments.ToArray();
         // 占位符展开为「[Image #N: 路径]」；图片本身由 AgentHost 读取附件文件、以 base64 发送。
@@ -626,6 +670,12 @@ public sealed partial class ConversationViewModel : ObservableObject
         var hasCommand = draft.Any(s => s is TagSegment { Kind: TagKind.Command });
         if (text.Length == 0 && !Mcp.HasPrompt && !hasCommand)
         {
+            return;
+        }
+        if (images.Length == 0 && !hasCommand && !Mcp.HasPrompt && Active is { Runtime: null } && CompactInstructions(text) is { } compact)
+        {
+            ComposerText = "";
+            await CompactActiveAsync(compact.Length == 0 ? null : compact);
             return;
         }
         var title = ImagePrompt.Title(ComposerDocument.PlainText(draft).Trim());
@@ -899,6 +949,11 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
         await RunSessionActionAsync(async server =>
         {
+            // 先撤回待处理的审批 / 表单 / 提问，Host 不必等到超时
+            if (_open.TryGetValue(item.SessionId, out var open))
+            {
+                open.CancelPendingRequests();
+            }
             // 会话文件尚未创建（新会话还没有消息）时只需关闭
             if (File.Exists(item.FilePath))
             {
@@ -1001,9 +1056,17 @@ public sealed partial class ConversationViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsInitialized { get; private set; }
 
+    /// <summary>撤销文件改动：经宿主执行（宿主负责校验文件指纹）。</summary>
+    private async Task<RevertFileResult> RevertFileAsync(RevertFileRequest request)
+    {
+        var server = await _host.GetServerAsync();
+        return await server.RevertFileAsync(request);
+    }
+
     private SessionViewModel Track(SessionViewModel session)
     {
         _open[session.SessionId] = session;
+        session.RevertFile = RevertFileAsync;
         // 本轮正常结束：发出队列中的下一条（后台会话同样继续）
         session.RunEnded += completed =>
         {
@@ -1012,13 +1075,16 @@ public sealed partial class ConversationViewModel : ObservableObject
                 _ = SendQueuedAsync(next, steer: false);
             }
         };
-        session.PendingApprovals.CollectionChanged += (_, _) =>
+        void SyncWaiting()
         {
             if (Sessions.FirstOrDefault(s => s.SessionId == session.SessionId) is { } item)
             {
                 item.SyncFrom(session);
             }
-        };
+        }
+        session.PendingApprovals.CollectionChanged += (_, _) => SyncWaiting();
+        session.PendingElicitations.CollectionChanged += (_, _) => SyncWaiting();
+        session.PendingQuestions.CollectionChanged += (_, _) => SyncWaiting();
         session.Items.CollectionChanged += (_, _) =>
         {
             if (session == Active)
@@ -1036,6 +1102,10 @@ public sealed partial class ConversationViewModel : ObservableObject
             {
                 case nameof(SessionViewModel.IsRunning):
                     IsRunning = session.IsRunning;
+                    break;
+                case nameof(SessionViewModel.HasPendingQuestion):
+                    OnPropertyChanged(nameof(IsAnsweringQuestion));
+                    SendCommand.NotifyCanExecuteChanged();
                     break;
                 case nameof(SessionViewModel.LastUsageTokens):
                     UpdateContextUsage();
@@ -1093,7 +1163,7 @@ public sealed partial class ConversationViewModel : ObservableObject
     /// Host 请求审批：加入对应会话的待审批队列，在 Composer 上方显示，等待用户选择。
     /// 未在 UI 中打开的会话（理论上不会发生）直接拒绝。
     /// </summary>
-    private Task<ToolApprovalResponse> HandleApprovalAsync(ToolApprovalRequest request)
+    private Task<ToolApprovalResponse> HandleApprovalAsync(ToolApprovalRequest request, CancellationToken ct)
     {
         if (!_open.TryGetValue(request.SessionId, out var session))
         {
@@ -1101,6 +1171,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
         var approval = new ApprovalRequestViewModel(request);
         session.AddApproval(approval);
+        WithdrawOnCancel(ct, approval.Cancel);
         if (Sessions.FirstOrDefault(s => s.SessionId == session.SessionId) is { } item)
         {
             item.SyncFrom(session);
@@ -1112,7 +1183,7 @@ public sealed partial class ConversationViewModel : ObservableObject
     /// MCP elicitation：显示在发起请求的会话中；找不到该会话（例如子 Agent 或设置页的临时连接）时显示在当前会话，
     /// 没有打开的会话时 cancel。
     /// </summary>
-    private Task<McpElicitResponse> HandleElicitationAsync(McpElicitRequest request)
+    private Task<McpElicitResponse> HandleElicitationAsync(McpElicitRequest request, CancellationToken ct)
     {
         var session = request.SessionId is { } id && _open.TryGetValue(id, out var owner) ? owner : Active;
         if (session is null)
@@ -1121,7 +1192,49 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
         var elicitation = new McpElicitationViewModel(request, OpenExternalUrl);
         session.AddElicitation(elicitation);
+        WithdrawOnCancel(ct, elicitation.Cancel);
         return elicitation.Result;
+    }
+
+    /// <summary>
+    /// Agent 提问（docs/design/ask-user.md §7）：加入发起会话的提问队列，问答面板替换输入框。
+    /// 会话不在 UI 中打开时（理论上不会发生）视为拒绝回答。
+    /// </summary>
+    private Task<UserInputResponse> HandleUserInputAsync(UserInputRequest request, CancellationToken ct)
+    {
+        if (!_open.TryGetValue(request.SessionId, out var session))
+        {
+            return Task.FromResult(UserInputResponse.Decline);
+        }
+        var question = new QuestionRequestViewModel(request, RuntimeDisplayName(request.Source));
+        session.AddQuestion(question);
+        WithdrawOnCancel(ct, question.Cancel);
+        if (session == Active)
+        {
+            QuestionOpened?.Invoke();
+        }
+        return question.Result;
+    }
+
+    /// <summary>新的提问出现在当前会话（视图据此把焦点移到问答面板）。</summary>
+    public event Action? QuestionOpened;
+
+    /// <summary>面板标题里的来源名：内置为 null（“TCode 提问”），外部运行时用其显示名。</summary>
+    private string? RuntimeDisplayName(string source) => source switch
+    {
+        "builtin" => null,
+        _ => Picker.AllModels.FirstOrDefault(m => m.Provider == source)?.ProviderName ?? source,
+    };
+
+    /// <summary>
+    /// Host 撤回请求（中止、运行时取消、连接断开）时收起对应的卡片或面板；否则卡片会一直留着，点了也没有回应。
+    /// </summary>
+    private static void WithdrawOnCancel(CancellationToken ct, Action cancel)
+    {
+        if (ct.CanBeCanceled)
+        {
+            ct.Register(() => Avalonia.Threading.Dispatcher.UIThread.Post(cancel));
+        }
     }
 
     /// <summary>用系统默认浏览器打开（elicitation 的 URL 模式，用户已确认）。</summary>
@@ -1220,7 +1333,11 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
         ContextUsage = Math.Clamp((double)tokens / budget, 0, 1);
         ContextUsageText = $"{Math.Round(ContextUsage * 100):0}%";
-        ContextUsageTip = Strings.Format(TCodeLangResourceKind.ContextUsageFormat, tokens.ToString("N0"), budget.ToString("N0"));
+        var usage = Strings.Format(TCodeLangResourceKind.ContextUsageFormat, tokens.ToString("N0"), budget.ToString("N0"));
+        // 警告带：自动压缩阈值之前 20K（按 20K 输出预留估算；Host 用模型的真实 max_tokens，docs/design/compaction.md §4）
+        var autoCompactAt = Math.Max(budget - 20_000 - 13_000, (long)((budget - 20_000) * 0.6));
+        IsContextNearlyFull = Active?.Runtime is null && tokens >= autoCompactAt - 20_000;
+        ContextUsageTip = IsContextNearlyFull ? Strings.Format(TCodeLangResourceKind.ContextUsageWarnFormat, usage) : usage;
     }
 
     /// <summary>选择器变化时同步到当前会话：换模型走 session/setModel，其余走 session/setOptions；以 Host 返回值为准。</summary>

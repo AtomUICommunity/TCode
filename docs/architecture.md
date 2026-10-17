@@ -68,7 +68,7 @@ Start → (Text|Thinking|ToolCall)Start → *Delta → *End … → Done | Error
 1. **历史只追加**：Anthropic 新模型的 preserved thinking 会校验历史前缀，修改历史会使后续思考块失效甚至返回 400。
    - 系统提示和工具集在会话开始时冻结；
    - 变化通过追加系统消息表达；
-   - 压缩采用"摘要 + 新一轮"的简单形态。
+   - 压缩采用"摘要 + 新一轮"的简单形态（docs/design/compaction.md）：唯一允许替换历史的操作，只在两次模型请求之间发生；压缩前的消息留在会话文件中供界面回看。
 2. **思考 / 推理原样回放**：
    - Anthropic：thinking 块带签名；
    - Responses：`store:false`，回放 reasoning item；
@@ -125,6 +125,7 @@ PromptAsync → AgentStart
 - **中止**：`Abort()` 取消本轮的 `CancellationToken`。流以 `Aborted` 收尾，未开始的工具返回 "Operation aborted"。
 - **工具并发**：预检（含审批）串行；执行时，批内有 `Exclusive` 工具就整批串行，否则并行。结果按源顺序追加。进度事件按报告顺序送达，并且先于结束事件。
 - **审批**：`BeforeToolCall` 钩子收到工具描述的 `ToolPermission`。Host 按 `PermissionPolicy` 判定：工作区内的只读操作和只读命令放行，其余按权限档位决定是否通过 `tool/approve` 询问 UI。详见 [builtin-agent-tools.md](design/builtin-agent-tools.md) §10。
+- **提问**：内置 `ask_user` 工具和外部运行时的提问（Claude `AskUserQuestion`、Codex `requestUserInput`）经 `input/request` 交给 UI 的问答面板，不受权限档位影响，从不自动回答。详见 [ask-user.md](design/ask-user.md)。
 - **系统提示**：按节构建，开头的版本冻结。每批用户输入之前，如果某节有变化，就追加一条 `SystemMessage` 补丁。快照记录在 JSONL 的 `systemPrompt` 条目里，恢复会话时以它为准。
 
 ## 5. 进程模型与 RPC
@@ -145,7 +146,7 @@ PromptAsync → AgentStart
   |---|---|
   | UI → Host | `host/initialize`、`models/list`、`session/create\|list\|open\|prompt\|abort\|setModel\|setOptions\|close` |
   | Host ↔ Host | `peer/list`、`peer/send`（本机 Unix socket，用于跨窗口的 `send_message` / `list_agents`） |
-  | Host → UI | `session/event`（notification）、`tool/approve` |
+  | Host → UI | `session/event`（notification）、`tool/approve`、`input/request`（Agent 提问，见 [ask-user.md](design/ask-user.md)） |
 
 - 事件只携带增量，并带单调递增的 `Seq`。
 - 会话列表与恢复（协议版本 3）：
@@ -153,10 +154,10 @@ PromptAsync → AgentStart
   - `session/open(filePath)` 返回会话和当前分支的历史（`HistoryMessageDto`），UI 用它重建转录。同一文件已经打开时直接返回该会话，避免两个 Agent 同时写一个文件。
   - 恢复时，模型和参数取分支上最后一条 `modelChange` / `optionsChange`；记录的模型不在目录中时退回第一个可用模型。
 - 会话参数（协议版本 2 起）：
-  - `ModelDto` 带上模型能力：`ThinkingLevels`（只列出会按原样生效的档位，由 `ThinkingLevels.Available` 按协议与兼容配置推导）、`DefaultThinkingLevel`（优先 High）、`ContextWindows`（上限超过 200K 时额外提供 200K 档，默认取最小）、`SupportsFastMode`。
+  - `ModelDto` 带上模型能力：`ThinkingLevels`（只列出会按原样生效的档位，由 `ThinkingLevels.Available` 按协议与兼容配置推导）、`DefaultThinkingLevel`（优先 High）、`ContextWindows`（上限超过默认预算时提供“默认预算 / 模型最大窗口”两档，默认取前者；默认预算 272K，个别模型单独指定，例如 gpt-6.1-sol 为 500K，见 `SessionOptions.ContextWindows` 与 settings.md `defaultContextWindow`）、`SupportsFastMode`。
   - `session/create` 可带 `SessionOptionsDto`；`session/setOptions` 和 `session/setModel` 返回**生效后**的参数（不支持的值就近修正），UI 以返回值为准。
   - Fast mode：Anthropic 发送 `speed:"fast"` + `anthropic-beta: fast-mode-2026-02-01`（仅 Opus 5.5 / Opus 5 / Opus 4.8，且只在 Claude API 上可用）；OpenAI 发送 `service_tier:"fast"`。模型未声明 `supportsFastMode` 时适配器忽略该选项。
-  - 上下文预算目前只用于计算占用比例（输入 + 缓存 + 输出 tokens / 预算），以后作为压缩阈值；各厂商没有对应的请求参数。
+  - 上下文预算用于计算占用比例（输入 + 缓存 + 输出 tokens / 预算），也是自动压缩阈值的依据（docs/design/compaction.md §4）；各厂商没有对应的请求参数。
 
 ## 5.1 NativeAOT 约束（整个客户端必须支持 AOT）
 
@@ -263,4 +264,4 @@ PromptAsync → AgentStart
 |---|---|
 | 当前（壳子） | 三栏界面、双主题、Composer / 模型选择器 / 工作台 / 文件树、Agent 循环、JSONL 会话、Host 进程与 RPC、Fake Provider、只读工具 |
 | 下一步 | 三个协议适配器（含兼容配置与录制 SSE 夹具测试）、模型目录与 `models.json`、API Key 设置页、流式 Markdown（LiveMarkdown.Avalonia）、跨模型交接（transform） |
-| 之后 | write / edit / bash 工具与审批界面、压缩、会话列表 / 分支 / fork、终端（Iciclecreek.Avalonia.Terminal）、浏览器（Avalonia.Controls.WebView）、变更 diff（DiffPlex + AvaloniaEdit）、本地化（AtomUI XLIFF） |
+| 之后 | write / edit / bash 工具与审批界面、会话列表 / 分支 / fork、终端（Iciclecreek.Avalonia.Terminal）、浏览器（Avalonia.Controls.WebView）、变更 diff（DiffPlex + AvaloniaEdit）、本地化（AtomUI XLIFF） |

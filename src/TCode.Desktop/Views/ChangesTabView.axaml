@@ -1,0 +1,56 @@
+<!-- 变更标签页：当前会话改动过的文件列表（右侧为增删行数），点击某个文件在其下展开 diff。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:icons="using:TCode.Desktop.Icons"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             xmlns:motion="using:TCode.Desktop.Motion"
+             xmlns:views="using:TCode.Desktop.Views"
+             x:Class="TCode.Desktop.Views.ChangesTabView"
+             x:DataType="vm:ChangesTabViewModel">
+    <Panel>
+        <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource TCode.TextTertiary}" />
+        <ScrollViewer x:Name="Scroller" IsVisible="{Binding !IsEmpty}" atom:ScrollViewer.IsLiteMode="True"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="FileList" ItemsSource="{Binding Files}" Margin="8,6,8,12">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FileChangeViewModel">
+                        <StackPanel Margin="0,0,0,2">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Button Theme="{StaticResource TCode.RowButton}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                        Padding="6,6" Command="{Binding ToggleExpandedCommand}">
+                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+                                        <icons:LucideIcon Kind="ChevronRight" Width="12" Height="12" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                          Foreground="{DynamicResource TCode.TextSecondary}"
+                                                          motion:Turn.IsOn="{Binding IsExpanded}" />
+                                        <Border Grid.Column="1" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                                            <icons:FileTypeIcon Kind="{Binding Icon}" ColorKey="{Binding IconColor}" Width="14" Height="14"
+                                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Grid.Column="2" Text="{Binding Name}" FontSize="13" Foreground="{DynamicResource TCode.TextPrimary}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Directory}" FontSize="12" Margin="8,0,0,0" TextTrimming="PrefixCharacterEllipsis"
+                                                   Foreground="{DynamicResource TCode.TextTertiary}" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AddedText}" FontSize="12" Foreground="{DynamicResource TCode.Success}" />
+                                            <TextBlock Text="{Binding RemovedText}" FontSize="12" Foreground="{DynamicResource TCode.Danger}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                                <Button Grid.Column="1" Theme="{StaticResource TCode.ChipButton}" Padding="8,2" Margin="6,0,0,0"
+                                        VerticalAlignment="Center" Command="{Binding RevertCommand}" IsEnabled="{Binding CanRevertNow}">
+                                    <TextBlock Text="{loc:TCodeLangResource ChangesRevert}" FontSize="12" />
+                                </Button>
+                            </Grid>
+                            <TextBlock Text="{Binding Error}" FontSize="11" IsVisible="{Binding HasError}" Margin="32,0,0,4"
+                                       Foreground="{DynamicResource TCode.Danger}" TextWrapping="Wrap" />
+                            <views:DiffView IsVisible="{Binding IsExpanded}" Lines="{Binding Lines}" MaxContentHeight="0" Margin="4,2,0,8" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Panel>
+</UserControl>

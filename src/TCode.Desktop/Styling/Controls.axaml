@@ -107,6 +107,17 @@
             <!-- 不做按下缩放：它是弹层的触发按钮，AtomUI 弹层按按钮当时（缩放中）的边界定位，会固定偏几个像素 -->
         </ControlTheme>
 
+        <!-- 会话里的步骤行与活动组标题：悬停 / 按下只提亮文字，不填充背景。行内文字与图标跟随 Foreground -->
+        <ControlTheme x:Key="TCode.TextButton" TargetType="Button" BasedOn="{StaticResource TCode.ChipButton}">
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource TCode.TextPrimary}" />
+            </Style>
+            <Style Selector="^:pressed">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+        </ControlTheme>
+
         <!-- 弹层菜单项：比 RowButton 更紧凑，悬停色更亮（模型选择器、项目 / 分支选择器、命令面板） -->
         <ControlTheme x:Key="TCode.MenuItem" TargetType="Button" BasedOn="{StaticResource TCode.RowButton}">
             <Setter Property="MinHeight" Value="30" />

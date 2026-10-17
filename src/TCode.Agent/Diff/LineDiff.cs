@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace TCode.Agent.Coding.Tools.Files;
+namespace TCode.Agent.Diff;
 
 /// <summary>按行的 Myers diff，输出 unified diff（供 UI 渲染，不发给模型）。</summary>
 public static class LineDiff

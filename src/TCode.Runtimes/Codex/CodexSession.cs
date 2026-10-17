@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using TCode.Agent.Questions;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
 using TCode.Rpc;
@@ -751,7 +752,7 @@ internal sealed class CodexSession : IRuntimeSession
         {
             "item/commandExecution/requestApproval" or "item/fileChange/requestApproval" or "item/permissions/requestApproval"
                 => ApproveAsync(id, method, p, ct),
-            "item/tool/requestUserInput" => Task.FromResult<JsonElement?>(JsonBuilder.Parse("""{"answers":{}}""")),
+            "item/tool/requestUserInput" => RequestUserInputAsync(id, p, ct),
             "mcpServer/elicitation/request" => Task.FromResult<JsonElement?>(JsonBuilder.Parse("""{"action":"decline"}""")),
             "item/tool/call" => Task.FromResult<JsonElement?>(JsonBuilder.Parse(
                 """{"success":false,"contentItems":[{"type":"inputText","text":"TCode does not provide dynamic tools"}]}""")),
@@ -820,6 +821,123 @@ internal sealed class CodexSession : IRuntimeSession
                 ApprovalOutcome.Cancel => "cancel",
                 _ => "decline",
             }));
+    }
+
+    /// <summary>
+    /// requestUserInput（§6.5，docs/design/ask-user.md §8）：交给 TCode 的问答面板。这个请求没有对应的 ThreadItem，
+    /// 转录里合成一个 request_user_input 工具调用显示问答。回答按问题 id：选项标签，自由输入写成 "user_note: …"
+    /// （与 Codex TUI 一致）；拒绝回答时每个问题都是空列表。轮次结束、被中断或收到 serverRequest/resolved 时不回复。
+    /// </summary>
+    private async Task<JsonElement?> RequestUserInputAsync(JsonElement id, JsonElement p, CancellationToken ct)
+    {
+        var questions = ParseQuestions(p);
+        var itemId = p.Str("itemId") is { Length: > 0 } item ? item : "request_user_input_" + id.GetRawText();
+        var arguments = JsonBuilder.Object(w =>
+        {
+            w.WritePropertyName("questions");
+            (p.Prop("questions") ?? JsonBuilder.Parse("[]")).WriteTo(w);
+        }).GetRawText();
+        var prepared = new TaskCompletionSource<(Turn Turn, CancellationTokenSource Scope)?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Enqueue(async () =>
+        {
+            var turn = _turn;
+            if (turn is null || turn.Done || turn.InterruptPending)
+            {
+                prepared.TrySetResult(null);
+                return;
+            }
+            var scope = CancellationTokenSource.CreateLinkedTokenSource(turn.ApprovalScope.Token);
+            turn.Approvals[id.GetRawText()] = scope;
+            await turn.Writer.ToolCallAsync(itemId, QuestionToolName, arguments);
+            await turn.Writer.ToolStartedAsync(itemId, QuestionToolName, arguments);
+            prepared.TrySetResult((turn, scope));
+        });
+        if (await prepared.Task is not { } ready)
+        {
+            throw new RpcSuppressReplyException();
+        }
+        var (turnRef, scope) = ready;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(scope.Token, ct);
+        UserInputResult result;
+        try
+        {
+            result = await _host.RequestInputAsync(new RuntimeInputRequest(itemId, questions), linked.Token);
+        }
+        catch (Exception) when (linked.IsCancellationRequested)
+        {
+            result = UserInputResult.Aborted;
+        }
+        if (result.Outcome == UserInputOutcome.Aborted)
+        {
+            await RunOnQueueAsync(() => ValueTask.CompletedTask);
+        }
+        var withdrawn = scope.IsCancellationRequested || linked.IsCancellationRequested;
+        if (withdrawn && result.Outcome != UserInputOutcome.Aborted)
+        {
+            result = UserInputResult.Aborted;
+        }
+        turnRef.Approvals.Remove(id.GetRawText());
+        var reply = JsonBuilder.Object(w =>
+        {
+            w.WriteStartObject("answers");
+            foreach (var question in questions)
+            {
+                w.WriteStartObject(question.Id);
+                w.WriteStartArray("answers");
+                if (result.Outcome == UserInputOutcome.Answered && result.AnswerFor(question) is { } answer)
+                {
+                    foreach (var label in answer.Selected)
+                    {
+                        w.WriteStringValue(label);
+                    }
+                    if (answer.HasText)
+                    {
+                        w.WriteStringValue("user_note: " + answer.Text!.Trim());
+                    }
+                }
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
+            w.WriteEndObject();
+        });
+        var text = result.Outcome switch
+        {
+            UserInputOutcome.Answered => reply.GetRawText(),
+            UserInputOutcome.Declined => UserAnswers.DeclinedMessage,
+            _ => "Operation aborted.",
+        };
+        var details = UserAnswers.DetailsJson(questions, result);
+        // 轮次已经结束时写入器不再接受内容
+        Enqueue(() => turnRef.Done ? ValueTask.CompletedTask
+            : turnRef.Writer.ToolCompletedAsync(itemId, QuestionToolName, text, result.Outcome == UserInputOutcome.Aborted, arguments, details));
+        if (withdrawn)
+        {
+            throw new RpcSuppressReplyException();
+        }
+        return reply;
+    }
+
+    private const string QuestionToolName = "request_user_input";
+
+    /// <summary>requestUserInput 的 questions：{id, header, question, isOther, isSecret, options: [{label, description}] | null}。</summary>
+    internal static IReadOnlyList<UserQuestion> ParseQuestions(JsonElement p)
+    {
+        var questions = new List<UserQuestion>();
+        foreach (var q in p.Arr("questions"))
+        {
+            if (q.Str("id") is not { Length: > 0 } qid)
+            {
+                continue;
+            }
+            var text = q.Str("question") ?? "";
+            var options = q.Arr("options")
+                .Select(o => o.Str("label") is { Length: > 0 } label ? new UserQuestionOption(label, o.Str("description")) : null)
+                .OfType<UserQuestionOption>()
+                .ToList();
+            questions.Add(new UserQuestion(qid, q.Str("header") ?? qid, text, options, MultiSelect: false,
+                AllowOther: q.Bool("isOther") || options.Count == 0, IsSecret: q.Bool("isSecret")));
+        }
+        return questions;
     }
 
     private static JsonElement PermissionsReply(JsonElement p, ApprovalDecision decision) => JsonBuilder.Object(w =>

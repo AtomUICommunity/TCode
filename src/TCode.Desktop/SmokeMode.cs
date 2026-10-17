@@ -127,10 +127,34 @@ internal static class SmokeMode
             Check("command.expanded", commandTurn && commandMessage is { HasSegments: true } &&
                 commandMessage.Text.Contains("<skill name=\"greet\"", StringComparison.Ordinal) && commandMessage.Text.EndsWith("Say hello.\n\nworld /greet", StringComparison.Ordinal),
                 commandMessage?.Text);
+            // 压缩上下文：/compact 经 RPC 到 Host 的压缩器（会话记录的压缩条目、事件与分隔卡片在 AOT 下可用）
+            vm.Conversation.ComposerText = "/compact keep file names";
+            vm.Conversation.SendCommand.Execute(null);
+            var compacted = WaitUntil(() => vm.Conversation.Active?.Items.OfType<CompactionItemViewModel>().Any(c => c is { IsRunning: false, HasSummary: true }) == true);
+            var card = vm.Conversation.Active?.Items.OfType<CompactionItemViewModel>().LastOrDefault();
+            Check("compaction.card", compacted && card is { IsFailed: false }, card?.Header);
+            card?.ToggleCommand.Execute(null);
+            Pump(10);
+            Check("compaction.rendered", window.GetVisualDescendants().Any(v => v.DataContext is CompactionItemViewModel), null);
             // 模式：Host 解析 role、过滤工具并写入会话记录
             vm.Conversation.RolePicker.Choose("plan");
             var planApplied = WaitUntil(() => vm.Conversation.Active?.Options.Role == "plan");
             Check("role.plan", planApplied, vm.Conversation.Active?.Options.Role);
+            // 提问：plan 模式也提供 ask_user；问答面板经 input/request 出现，回答后转录里留下问答卡片（docs/design/ask-user.md）
+            vm.Conversation.ComposerText = """mcp:ask_user {"questions":[{"question":"Which DB?","header":"Database","options":[{"label":"Postgres","description":"Full"},{"label":"SQLite","description":"Small"}]}]}""";
+            vm.Conversation.SendCommand.Execute(null);
+            var asked = WaitUntil(() => vm.Conversation.IsAnsweringQuestion);
+            var question = vm.Conversation.Active?.CurrentQuestion;
+            Pump(5);
+            Check("question.panel", asked && window.GetVisualDescendants().OfType<Views.QuestionPanelView>().Any(p => p.IsEffectivelyVisible), question?.Title);
+            if (question is not null)
+            {
+                question.ChooseCommand.Execute(question.Pages[0].Options[1]);
+            }
+            var answered = WaitUntil(() => vm.Conversation.Active is { IsRunning: false } && !vm.Conversation.IsAnsweringQuestion
+                && window.GetVisualDescendants().Any(v => v.DataContext is QuestionCardViewModel { Status: "answered" }));
+            Check("question.card", answered, window.GetVisualDescendants().Select(v => v.DataContext).OfType<QuestionCardViewModel>().FirstOrDefault()?.Lines
+                .FirstOrDefault()?.Answer);
             Check("files.search", WaitUntil(() => search.IsCompleted) && search.Result.Items.FirstOrDefault()?.Path == "README.md",
                 search.IsCompletedSuccessfully ? string.Join(", ", search.Result.Items.Select(i => i.Path)) : search.Exception?.GetBaseException().Message);
             CheckTerminal(Check, vm, project);

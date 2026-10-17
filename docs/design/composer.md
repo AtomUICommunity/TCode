@@ -242,10 +242,11 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
 | `/model` | 打开模型选择器 |
 | `/role` | 打开 Role 下拉框 |
 | `/fork` | 从这里分叉会话（`session/fork`） |
-| `/compact` | 压缩上下文（需要运行时支持；内置 Agent 等实现上下文压缩之后再提供） |
+| `/compact [指令]` | 压缩上下文（内置 Agent，docs/design/compaction.md）；后面的文字作为摘要重点。外部运行时用它们自己的 `/compact`（运行时命令） |
 
 - 选中内置命令后立即执行，并清除输入框里的查询文字，不生成 tag。
 - 内置命令和自定义 command 重名时内置命令优先，被遮住的自定义 command 在设置页里给出警告。
+- 发给模型的内置命令 `/init`、`/commit` 见 §9.3。
 
 ### 9.2 自定义 command
 
@@ -254,6 +255,21 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
   1. 转录里显示 command tag 加用户输入的文字。
   2. Host 读取 `.md` 正文，后面接上用户输入的文字，作为本轮实际的用户消息发给模型。展开后的全文存进 JSONL 的 `expanded` 字段，方便回放。
   3. 外部运行时同样发送展开后的文本，因为 TCode 的 command 运行时并不认识。
+
+### 9.3 内置提示词命令（发给模型）
+
+`/init`、`/commit` 需要模型参与，因此是“提示词型”内置命令：
+- 选中后和自定义 command 一样插入 command tag，用户可以在后面补充说明（如 `/commit 只提交 src/ 下的改动`）。
+- 发送时 Host（`ExpandCommands`，`BuiltinPromptCommands.Render`）用内置正文替代 `.md` 文件，正文在用户文字之前发给模型。转录显示 tag 加用户文字，展开全文存进 JSONL 的 `Content`。
+- 正文是 `src/TCode.Agent.Coding/Assets/BuiltinPrompts/*.md` 嵌入资源，改动要经过本节的审阅。占位符 `{{model_name}}`、`{{model_id}}` 在展开时替换为当前会话的模型，每次发送都取当前模型。
+- 与同名自定义 command 重名时内置优先；Desktop 的 `BuiltinCommandProvider.Names` 把自定义同名项隐藏。
+- 外部运行时同样发送展开后的文本。
+
+**`/init`**：让模型阅读项目后新建或更新根目录的 `AGENTS.md`。已有 `AGENTS.md` / `AGENTS.override.md` 时在原文上补充，不整体覆盖、不删除用户写的内容；只写代码里读不出来的信息（构建、测试、运行、目录职责、约定、坑），不超过约 100 行；完成后说明哪些是推断。
+
+**`/commit`**：模型并行运行 `git status`、`git diff`（含已暂存）与 `git log -n 10`，参考近期提交的风格；没有改动就说明并停止；只暂存本次相关的文件，不暂存 `.env` 等疑似密钥的文件；不 amend、不 `--no-verify`、不 push；提交信息末尾加一行 `Co-Authored-By: {{model_name}} ({{model_id}}) <token@routin.ai>`，用 HEREDOC 传入。
+
+完整原文见 `Assets/BuiltinPrompts/init.md` 与 `commit.md`。提交邮箱固定为 `token@routin.ai`。
 
 ## 10. Skills
 
@@ -394,7 +410,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
 - **补全列表改为弹出层**（用户反馈）：最初放在输入框框内的上方，会把输入框撑高；现在改为浮在上方的 `Popover`。AtomUI 的 Popup 不使用 `PlacementRect`，所以改用 `HorizontalOffset` 对齐到查询起点。
 - **不是由编辑器自己发起的文档修改**（设置文本、恢复草稿、补全插入、删除图片 tag）：编辑器把光标移到变化范围的末尾。之前光标会停在原处，导致设置文本后检测不到查询。
 - **C7 command 与消息格式**：
-  - 内置命令首版只有 `/new`、`/model`、`/fork`。`/compact` 等运行时支持后再加；`/role` 已保留名字，在 C9 实现。
+  - 内置命令首版只有 `/new`、`/model`、`/fork`。`/compact` 已在内置 Agent 实现上下文压缩后加入；`/role` 已保留名字，在 C9 实现。
   - 与内置命令同名的自定义 command 不出现在列表里。
   - command tag 可以放在消息的任何位置，可以有多个。Desktop 发送的 `Text` 不含 command tag；Host 读出各个 command 的正文，按出现顺序放在用户文字之前，用空行分隔。找不到的 command 直接报错，输入框内容恢复。
   - `UserMessage` 新增 `Display`（显示用的片段），写入 JSONL 的 `display` 字段，`Content` 是展开后实际发给模型的版本。设计里写的 `segments` / `expanded` 两个字段合并成了这一个，因为展开后的文字已经在 `Content` 里。
@@ -442,7 +458,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
 1. **结构固定**。每个模式的提示词都按同一个顺序写：这个模式是什么、按什么顺序工作、硬性限制、最后交付什么。工作流程用编号列表，限制单独放在最后一段。参考 NextCoWork 的 mode 提示词。
 2. **限制与工具一致**。提示词里说"不能写文件"，那么工具列表里就确实没有 write / edit。提示词负责解释原因和应该怎么做，真正的约束靠过滤工具来保证，不靠模型自觉。
 3. **位置在后，用来覆盖**。模式节（节名 `mode`）放在 `project_context` 和 skills 之后、`cwd` 之前。AGENTS.md 里如果写着"直接改"之类的话，会被模式节覆盖。NextCoWork 也是这样放的。
-4. **只引用存在的工具**。提示词里提到的工具名必须是该模式下实际可用的，例如 `agent`、`task_create`、`send_message`。TCode 没有 AskUserQuestion，所以"向用户确认"统一写成：在回复里提出问题，然后结束本轮。
+4. **只引用存在的工具**。提示词里提到的工具名必须是该模式下实际可用的，例如 `agent`、`task_create`、`send_message`。内置 Agent 用 `ask_user` 向用户提问（[ask-user.md](ask-user.md) §5）；外部运行时的模式说明不提工具名（见 §18.8）。
 5. **切换有交代**。模式变化时，下一批用户输入前会追加一条系统提示补丁（`Updated/Removed system prompt section "mode"`）。从 Plan 或 ACP 切回 Agent 时，补丁不是"删除"这一节，而是换成一段简短的 Agent 说明，明确告诉模型现在可以动手，以及之前定下的计划怎么处理。新会话一开始就是 Agent 模式时不加这一节，保持基础提示词不变。
 6. **英文书写**，与现有系统提示一致。
 
@@ -453,7 +469,7 @@ You are in Plan mode. Turn the user's request into one implementation plan that 
 
 Work in this order:
 1. Investigate the workspace with the read-only tools available to you. Keep facts you verified in the code separate from assumptions, and say which is which.
-2. If a choice would materially change scope, behavior, compatibility, data or user experience, and the code does not settle it, ask the user. Ask a few focused questions, then end your turn. Do not guess, and do not write the plan until the answers are in.
+2. If a choice would materially change scope, behavior, compatibility, data or user experience, and the code does not settle it, ask the user with ask_user. Ask only what you cannot find out yourself, and do not write the plan until the answers are in.
 3. When the requirements are clear, reply with the plan in Markdown:
    - Goal: what will be true when the work is done.
    - Approach: the design and why, including alternatives you rejected.
@@ -461,6 +477,7 @@ Work in this order:
    - Edge cases and risks.
    - Verification: the tests and checks that will prove it works.
    - Open questions, if any remain.
+   Do not use ask_user to ask whether the plan is acceptable; end your turn with the plan.
 4. If the user asks for revisions, reply with the complete updated plan, not only the changed parts.
 
 Constraints: you cannot write or edit files, launch subagents or use MCP tools in this mode, and any command you run must not modify the workspace. Never claim that something was changed. When the user approves the plan, they will switch to Agent or ACP mode to carry it out.
@@ -473,7 +490,7 @@ You are the coordinating agent in ACP mode. You own the architecture, the task b
 
 Work in this order:
 1. Investigate enough of the workspace to define the architecture and clear task boundaries.
-2. If a choice would materially change scope or behavior and the code does not settle it, ask the user and end your turn before dispatching any work.
+2. If a choice would materially change scope or behavior and the code does not settle it, ask the user with ask_user before dispatching any work.
 3. Record the plan with task_create: one task per unit of delegated work, with the files it owns. Keep the tasks updated with task_update as work progresses.
 4. Dispatch each task to a general-purpose subagent with the agent tool. A subagent cannot see this conversation, so its prompt must contain:
    - the goal and how it fits the overall design;
@@ -489,7 +506,7 @@ Work in this order:
 Constraints: you cannot write or edit files, run commands or use MCP tools in this mode; you may read and search to plan and to check results. Never state that something was changed or verified unless a subagent reported it.
 ```
 
-工具：read、ls、glob、grep、web_fetch、web_search、skill、task_create / task_get / task_list / task_update / task_stop、agent、send_message、list_agents。子 Agent 仍使用现有的 general-purpose 提示（`SubagentTypes.PromptOf`），它的每一次工具调用照常走审批。
+工具：read、ls、glob、grep、web_fetch、web_search、skill、task_create / task_get / task_list / task_update / task_stop、agent、send_message、list_agents、ask_user。子 Agent 仍使用现有的 general-purpose 提示（`SubagentTypes.PromptOf`），它的每一次工具调用照常走审批。
 
 ### 18.4 切回 Agent
 

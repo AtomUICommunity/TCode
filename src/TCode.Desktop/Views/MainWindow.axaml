@@ -158,7 +158,7 @@
                                                     <Ellipse Width="5" Height="5" Fill="{DynamicResource TCode.TextTertiary}" HorizontalAlignment="Center"
                                                              IsVisible="{Binding ShowIdleDot}" />
                                                     <Ellipse Width="7" Height="7" Fill="{DynamicResource TCode.GitModified}" HorizontalAlignment="Center"
-                                                             IsVisible="{Binding IsWaitingApproval}" ToolTip.Tip="{loc:TCodeLangResource ApprovalTitle}" />
+                                                             IsVisible="{Binding IsWaitingApproval}" ToolTip.Tip="{loc:TCodeLangResource SessionWaitingForYou}" />
                                                 </Panel>
                                                 <Panel Grid.Column="1" Width="14" Height="14" Margin="4,0,6,0" VerticalAlignment="Center">
                                                     <icons:ProviderLogo Key="{Binding ModelIconKey}" Width="14" Height="14" />
@@ -318,8 +318,6 @@
                                     </StackPanel>
                                 </Border>
                                 </motion:Reveal>
-                                <!-- 任务清单（task_* 工具） -->
-                                <views:TaskListView DataContext="{Binding Conversation.Active.TaskList, FallbackValue={x:Null}}" />
                                 <!-- 等待批准的操作 -->
                                 <motion:Reveal IsOpen="{Binding Conversation.Active.HasPendingApproval, FallbackValue=False}" Offset="12">
                                 <Border Classes="card" Padding="14,12" BorderBrush="{DynamicResource TCode.GitModified}">
@@ -356,7 +354,11 @@
                                 <motion:Reveal IsOpen="{Binding Conversation.Active.HasPendingElicitation, FallbackValue=False}" Offset="12">
                                     <views:McpElicitationView DataContext="{Binding Conversation.Active.CurrentElicitation, FallbackValue={x:Null}}" />
                                 </motion:Reveal>
-                                <views:ComposerView x:Name="DockedComposer" Classes="compact" DataContext="{Binding Conversation}" />
+                                <!-- Agent 提问：问答面板替换输入框，必须先回答或拒绝回答（docs/design/ask-user.md §7） -->
+                                <views:QuestionPanelView x:Name="QuestionPanel" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.IsAnsweringQuestion, FallbackValue=False}"
+                                                         DataContext="{Binding Conversation.Active.CurrentQuestion, FallbackValue={x:Null}}" />
+                                <views:ComposerView x:Name="DockedComposer" Classes="compact" DataContext="{Binding Conversation}"
+                                                    IsVisible="{Binding !IsAnsweringQuestion}" />
                                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="6,0">
                                     <Button Theme="{StaticResource TCode.ChipButton}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -370,8 +372,15 @@
                                     <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                                 IsVisible="{Binding Conversation.HasContextUsage}" ToolTip.Tip="{Binding Conversation.ContextUsageTip}"
                                                 Background="Transparent">
-                                        <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
-                                                              TrackBrush="{DynamicResource TCode.RingTrack}" Foreground="{DynamicResource TCode.TextSecondary}" />
+                                        <Panel>
+                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
+                                                                  TrackBrush="{DynamicResource TCode.RingTrack}" Foreground="{DynamicResource TCode.TextSecondary}"
+                                                                  IsVisible="{Binding !Conversation.IsContextNearlyFull}" />
+                                            <!-- 接近自动压缩阈值：换成强调色 -->
+                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
+                                                                  TrackBrush="{DynamicResource TCode.RingTrack}" Foreground="{DynamicResource TCode.FileOrange}"
+                                                                  IsVisible="{Binding Conversation.IsContextNearlyFull}" />
+                                        </Panel>
                                         <TextBlock Classes="secondary" Text="{Binding Conversation.ContextUsageText}" FontSize="12" />
                                     </StackPanel>
                                 </Grid>
@@ -385,10 +394,18 @@
                             <sm:TranscriptView x:Name="Transcript" MaxContentWidth="760" Padding="32,8,32,16" EntrySpacing="12"
                                                atom:ScrollViewer.IsLiteMode="True">
                                 <sm:TranscriptView.DataTemplates>
+                                    <!-- 一轮结束的改动：N 个文件已更改，整轮撤销，逐文件审查 / 打开 -->
+                                    <DataTemplate DataType="vm:TurnChangesItemViewModel">
+                                        <views:TurnChangesView />
+                                    </DataTemplate>
+                                    <!-- Agent 的提问与用户的回答 -->
+                                    <DataTemplate DataType="vm:QuestionCardViewModel">
+                                        <views:QuestionCardView />
+                                    </DataTemplate>
                                     <!-- 非用户输入：后台任务通知 / 其他 Agent 会话的消息，一行提示，展开看正文 -->
                                     <DataTemplate DataType="vm:NotificationItemViewModel">
                                         <StackPanel Margin="0,4">
-                                            <Button Theme="{StaticResource TCode.ChipButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                            <Button Theme="{StaticResource TCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <icons:LucideIcon Kind="{Binding Icon}" Width="13" Height="13" VerticalAlignment="Center"
                                                                       StrokeBrush="{DynamicResource TCode.TextSecondary}" />
@@ -401,6 +418,36 @@
                                                 <Border Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8" Margin="22,4,0,0">
                                                     <ScrollViewer MaxHeight="240" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
                                                         <SelectableTextBlock Text="{Binding Body}" FontSize="12" TextWrapping="Wrap"
+                                                                             Foreground="{DynamicResource TCode.TextSecondary}" />
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </motion:Reveal>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 上下文压缩：分隔线中间一行状态（压缩中 / 已压缩 N → M / 失败），点击展开摘要 -->
+                                    <DataTemplate DataType="vm:CompactionItemViewModel">
+                                        <StackPanel Margin="0,8">
+                                            <Grid ColumnDefinitions="*,Auto,*">
+                                                <Border Height="1" Background="{DynamicResource TCode.Divider}" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Theme="{StaticResource TCode.ChipButton}" Padding="8,0" Margin="8,0"
+                                                        Command="{Binding ToggleCommand}" Cursor="{Binding HasSummary, Converter={x:Static vm:CompactionCursors.Of}}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:DotSpinner Width="10" Height="10" VerticalAlignment="Center" IsVisible="{Binding IsRunning}" />
+                                                        <icons:LucideIcon Kind="Minimize2" Width="12" Height="12" VerticalAlignment="Center"
+                                                                          StrokeBrush="{DynamicResource TCode.TextTertiary}"
+                                                                          IsVisible="{Binding !IsRunning}" />
+                                                        <TextBlock Classes="secondary" Text="{Binding Header}" FontSize="12" VerticalAlignment="Center"
+                                                                   TextWrapping="Wrap" MaxWidth="520" />
+                                                        <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                                                          IsVisible="{Binding HasSummary}" motion:Turn.IsOn="{Binding IsExpanded}" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Border Grid.Column="2" Height="1" Background="{DynamicResource TCode.Divider}" VerticalAlignment="Center" />
+                                            </Grid>
+                                            <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                                <Border Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8" Margin="0,6,0,0">
+                                                    <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                                                        <SelectableTextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap"
                                                                              Foreground="{DynamicResource TCode.TextSecondary}" />
                                                     </ScrollViewer>
                                                 </Border>
@@ -459,11 +506,12 @@
                                     <!-- 单独的一段思考（其后紧跟正文）：› 思考过程 -->
                                     <DataTemplate DataType="vm:ThinkingBlockViewModel">
                                         <StackPanel motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="6">
-                                            <Button Theme="{StaticResource TCode.ChipButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                            <Button Theme="{StaticResource TCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
                                                                       motion:Turn.IsOn="{Binding IsExpanded}" />
                                                     <TextBlock Text="{Binding Header}" FontSize="13" VerticalAlignment="Center" />
+                                                    <TextBlock Classes="tertiary" Text="{Binding Stats}" FontSize="12" VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </Button>
                                             <motion:Reveal IsOpen="{Binding IsExpanded}">
@@ -487,7 +535,7 @@
                                                     <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
                                                 </Style>
                                             </StackPanel.Styles>
-                                            <Button Theme="{StaticResource TCode.ChipButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                            <Button Theme="{StaticResource TCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
                                                                       motion:Turn.IsOn="{Binding IsExpanded}" />
@@ -501,44 +549,54 @@
                                                     <ItemsControl.DataTemplates>
                                                         <!-- 工具步骤：⌘ 运行  git status …（单行），展开后显示完整参数与输出 -->
                                                         <DataTemplate DataType="vm:ToolCallBlockViewModel">
+<views:ToolStepView />
+</DataTemplate>
+                                                        <!-- 工作空间里的正文（中间段落）：纯文本，最后一段正文在外面用 Markdown 渲染 -->
+                                                        <DataTemplate DataType="vm:TextBlockViewModel">
+                                                            <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13" LineHeight="21"
+                                                                                 Foreground="{DynamicResource TCode.TextSecondary}" Margin="10,4,8,6" />
+                                                        </DataTemplate>
+                                                        <!-- 查阅组：› 查阅 · 1 搜索, 4 文件；默认收起，执行中展开，完成后收起 -->
+                                                        <DataTemplate DataType="vm:ExploreStepViewModel">
                                                             <StackPanel>
-                                                                <Button Theme="{StaticResource TCode.RowButton}" MinHeight="30" Padding="0,0,6,0"
-                                                                        Command="{Binding ToggleCommand}" ToolTip.Tip="{Binding Duration}">
-                                                                    <Grid ColumnDefinitions="10,Auto,Auto,*,Auto">
+                                                                <Button Theme="{StaticResource TCode.TextButton}" HorizontalAlignment="Stretch" MinHeight="30" Padding="0,0,6,0" Command="{Binding ToggleCommand}">
+                                                                    <Grid ColumnDefinitions="10,Auto,*,Auto">
                                                                         <Border Height="1" Background="{DynamicResource TCode.TreeLine}" VerticalAlignment="Center" />
-                                                                        <icons:LucideIcon Grid.Column="1" Kind="{Binding Icon}" Width="14" Height="14" Margin="6,0,8,0"
-                                                                                          VerticalAlignment="Center" StrokeBrush="{DynamicResource TCode.TextSecondary}" />
-                                                                        <TextBlock Grid.Column="2" Text="{Binding Verb}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center"
-                                                                                   Foreground="{DynamicResource TCode.TextPrimary}" />
-                                                                        <TextBlock Grid.Column="3" Classes="secondary" Text="{Binding Summary}" FontSize="13"
-                                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                                        <Panel Grid.Column="4" Width="14" Margin="8,0,0,0" VerticalAlignment="Center">
-                                                                            <controls:DotSpinner Width="11" Height="11" IsVisible="{Binding IsBusy}" />
-                                                                            <icons:LucideIcon Kind="X" Width="13" Height="13" IsVisible="{Binding IsFailed}"
-                                                                                              StrokeBrush="{DynamicResource TCode.Danger}" />
-                                                                            <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" motion:Presence.IsPresent="{Binding IsExpanded}" motion:Presence.Effect="Pop"
-                                                                                              StrokeBrush="{DynamicResource TCode.TextSecondary}" />
-                                                                        </Panel>
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Search" Width="14" Height="14" Margin="6,0,8,0"
+                                                                                          VerticalAlignment="Center" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                        <TextBlock Grid.Column="2" Text="{Binding Summary}" FontSize="13" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="3" Kind="ChevronDown" Width="12" Height="12" Margin="8,0,0,0"
+                                                                                          motion:Turn.IsOn="{Binding IsExpanded}" StrokeBrush="{Binding $parent[Button].Foreground}" />
                                                                     </Grid>
                                                                 </Button>
                                                                 <motion:Reveal IsOpen="{Binding IsExpanded}">
-                                                                <!-- 完整参数、diff、命令输出、子 Agent 进度 -->
-                                                                <views:ToolCallDetailView />
+                                                                <!-- 组内步骤限高，超出在框内滚动 -->
+                                                                <ScrollViewer MaxHeight="320" Margin="9,2,0,4" atom:ScrollViewer.IsLiteMode="True"
+                                                                              HorizontalScrollBarVisibility="Disabled">
+                                                                    <ItemsControl ItemsSource="{Binding Calls}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:ToolCallBlockViewModel">
+                                                                                <views:ToolStepView />
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </ScrollViewer>
                                                                 </motion:Reveal>
                                                             </StackPanel>
                                                         </DataTemplate>
                                                         <!-- 思考步骤：💬 思考过程，展开后就地显示思考内容 -->
                                                         <DataTemplate DataType="vm:ThinkingBlockViewModel">
                                                             <StackPanel>
-                                                                <Button Theme="{StaticResource TCode.RowButton}" MinHeight="30" Padding="0,0,6,0" Command="{Binding ToggleCommand}">
-                                                                    <Grid ColumnDefinitions="10,Auto,*,Auto">
+                                                                <Button Theme="{StaticResource TCode.TextButton}" HorizontalAlignment="Stretch" MinHeight="30" Padding="0,0,6,0" Command="{Binding ToggleCommand}">
+                                                                    <Grid ColumnDefinitions="10,Auto,*,Auto,Auto">
                                                                         <Border Height="1" Background="{DynamicResource TCode.TreeLine}" VerticalAlignment="Center" />
-                                                                        <icons:LucideIcon Grid.Column="1" Kind="MessageSquare" Width="14" Height="14" Margin="6,0,8,0"
-                                                                                          VerticalAlignment="Center" StrokeBrush="{DynamicResource TCode.TextSecondary}" />
-                                                                        <TextBlock Grid.Column="2" Text="{Binding Header}" FontSize="13" VerticalAlignment="Center"
-                                                                                   Foreground="{DynamicResource TCode.TextPrimary}" />
-                                                                        <icons:LucideIcon Grid.Column="3" Kind="ChevronDown" Width="12" Height="12" Margin="8,0,0,0"
-                                                                                          motion:Presence.IsPresent="{Binding IsExpanded}" motion:Presence.Effect="Pop" StrokeBrush="{DynamicResource TCode.TextSecondary}" />
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Brain" Width="14" Height="14" Margin="6,0,8,0"
+                                                                                          VerticalAlignment="Center" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                        <TextBlock Grid.Column="2" Text="{Binding Header}" FontSize="13" VerticalAlignment="Center" />
+                                                                        <!-- 右侧：耗时 · 估算 token 数 -->
+                                                                        <TextBlock Grid.Column="3" Classes="tertiary" Text="{Binding Stats}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="4" Kind="ChevronDown" Width="12" Height="12" Margin="8,0,0,0"
+                                                                                          motion:Presence.IsPresent="{Binding IsExpanded}" motion:Presence.Effect="Pop" StrokeBrush="{Binding $parent[Button].Foreground}" />
                                                                     </Grid>
                                                                 </Button>
                                                                 <motion:Reveal IsOpen="{Binding IsExpanded}">
@@ -583,6 +641,9 @@
                                     </DataTemplate>
                                 </sm:TranscriptView.DataTemplates>
                             </sm:TranscriptView>
+                            <!-- 任务球（右上角）：收起是一个球，展开是 Agent / Shell / 任务清单 / 更改 -->
+                            <views:TaskOrbView x:Name="TaskOrb" DataContext="{Binding Conversation.Active, FallbackValue={x:Null}}"
+                                               HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,20,0" />
                             <!-- 向上滚动离开底部后浮出：↓ 回到底部 -->
                             <Button x:Name="ScrollToBottomButton" Theme="{StaticResource TCode.PillButton}" motion:Presence.IsPresent="False"
                                     motion:Presence.Effect="SlideUp" motion:Presence.Distance="14"
@@ -713,6 +774,10 @@
                                 <DataTemplate DataType="vm:TerminalTabViewModel">
                                     <views:TerminalTabView />
                                 </DataTemplate>
+                                <!-- 变更：当前会话的文件改动（左列表，右 diff） -->
+                                <DataTemplate DataType="vm:ChangesTabViewModel">
+                                    <views:ChangesTabView />
+                                </DataTemplate>
                                 <DataTemplate DataType="vm:PlaceholderTabViewModel">
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="320" Spacing="10">
                                         <icons:LucideIcon Kind="{Binding Icon}" Width="28" Height="28" HorizontalAlignment="Center" />
@@ -726,7 +791,7 @@
                     </Panel>
                 </DockPanel>
 
-                <GridSplitter x:Name="ExplorerSplitter" Grid.Column="3" Theme="{StaticResource TCode.Splitter}"
+                <controls:PanelSplitter x:Name="ExplorerSplitter" Grid.Column="3" Theme="{StaticResource TCode.Splitter}"
                               ResizeDirection="Columns" IsVisible="False" />
 
                 <!-- ============ 文件树 ============ -->

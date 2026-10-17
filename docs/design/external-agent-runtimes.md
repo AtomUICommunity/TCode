@@ -155,7 +155,8 @@ public interface IRuntimeHost   // 会话 → TCode
 | Claude `control_request: can_use_tool {tool_name, input, permission_suggestions}` | → `tool/approve` → `{behavior:"allow", updatedInput}` 或 `{behavior:"deny", message}`；"本会话允许"时附带 `updatedPermissions` |
 | Codex `item/commandExecution/requestApproval`、`item/fileChange/requestApproval` | → `tool/approve` → `accept`、`acceptForSession`、`decline` 或 `cancel`；收到 `serverRequest/resolved` 时关闭对话框 |
 | ACP `session/request_permission {toolCall, options}` | → `tool/approve`，选项按 `allow_once`、`allow_always`、`reject_once`、`reject_always` 渲染；取消时一律回复 `cancelled` |
-| Claude `AskUserQuestion`、Codex `item/tool/requestUserInput`、ACP elicitation | 这些是**提问**而不是审批：新增 Host→UI 方法 `input/request` |
+| Claude `AskUserQuestion`、Codex `item/tool/requestUserInput` | 这些是**提问**而不是审批：经 Host→UI 方法 `input/request` 交给问答面板（[ask-user.md](ask-user.md) §8） |
+| ACP `elicitation/create`（form） | 复用 MCP 表单卡片（`mcp/elicit`）；只声明 form 模式 |
 
 - **默认模式**：
   - Claude：`--permission-mode default`。注意 stdin 必须保持打开，否则控制通道收不到 `can_use_tool`。
@@ -261,7 +262,7 @@ public interface IRuntimeHost   // 会话 → TCode
 
 已知限制：
 - 尚未用真实 CLI 跑过模型轮次，需要用户确认后再进行。
-- AskUserQuestion、Codex 的 requestUserInput 等提问目前都回复“无法交互”，等 `input/request` 实现。
+- 提问已经接入问答面板（2026-10-18，[ask-user.md](ask-user.md)）。Codex 的 requestUserInput 只有在用户自己打开 `default_mode_request_user_input` 特性时才会出现；TCode 不开启 Codex 的实验接口（Plan 协作模式）。
 - 子 Agent 帧、后台唤醒轮次、计划 / 命令列表 / 上下文用量等状态类更新暂不展示。
 - 工具执行中的输出增量（`ToolExecutionUpdateEvent`）还没有映射到 SessionEvent。
 

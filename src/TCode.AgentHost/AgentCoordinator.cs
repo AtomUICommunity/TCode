@@ -63,8 +63,11 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
             Approvals = parent.Approvals,
             ToolSet = SubagentTypes.ToolSetOf(request.AgentType),
             ExtraPromptSections = SubagentTypes.PromptOf(request.AgentType, sessions.NameOf(parent)),
-            Services = sessions.ServicesFor(parent.Cwd),
+            Services = sessions.ServicesFor(parent.Cwd) with { UserInput = null },   // 子 Agent 不向用户提问
+            AutoCompact = parent.Agent is TCode.Agent.Agent { AutoCompact: var autoCompact } ? autoCompact : true,
         });
+        // 子 Agent 沿用父会话的上下文预算（自动压缩阈值据此计算）
+        session.ContextWindow = parent.ContextWindow > 0 ? Math.Min(parent.ContextWindow, model.ContextWindow) : model.ContextWindow;
         session.Agent.PermissionMode = parent.Agent.PermissionMode;
         session.Agent.ThinkingLevel = parent.Agent.ThinkingLevel;
 
@@ -276,6 +279,9 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
     }
 
     public bool IsSubagent(string sessionId) => _children.ContainsKey(sessionId);
+
+    public bool HasRunningChildren(string parentSessionId) =>
+        _children.Values.Any(c => c.ParentId == parentSessionId && c.Session.Agent.IsRunning);
 
     private string UniqueName(string parentId, string baseName)
     {

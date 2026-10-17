@@ -1,3 +1,4 @@
+using TCode.Agent.Diff;
 using System.Text;
 using System.Text.Json;
 using TCode.Agent.Coding.Tools;

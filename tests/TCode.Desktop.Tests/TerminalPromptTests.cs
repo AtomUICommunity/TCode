@@ -9,7 +9,7 @@ using Xunit;
 
 namespace TCode.Desktop.Tests;
 
-/// <summary>终端的确认栏（06 §2）：含换行的粘贴需要确认；关闭仍在运行的程序需要确认。真实 host 与真实会话。</summary>
+/// <summary>终端的确认（06 §2）：含换行的粘贴在确认栏里确认；关闭仍在运行的程序先拒绝，由工作台弹窗确认后强制关闭。真实 host 与真实会话。</summary>
 public sealed class TerminalPromptTests
 {
     private static TerminalTabViewModel Tab() => new(new PtyHostService(NullLogger<PtyHostService>.Instance), cwd: null);
@@ -82,13 +82,11 @@ public sealed class TerminalPromptTests
         var closed = false;
         tab.Closed += () => closed = true;
 
-        Assert.False(await tab.CloseAsync());          // 程序在运行：不关闭，请求确认
-        Assert.True(tab.PendingClose);
-        Assert.True(tab.HasPrompt);
+        Assert.False(await tab.CloseAsync());          // 程序在运行：不关闭，交给调用方弹窗确认（不显示确认栏）
+        Assert.False(tab.HasPrompt);
         Assert.False(closed);
-        Assert.Equal(TCode.Desktop.Localization.Strings.Get(TCode.Desktop.Localization.TCodeLangResourceKind.TerminalCloseRunning), tab.PromptMessage);
 
-        await tab.ConfirmPromptCommand.ExecuteAsync(null);  // 确认：强制关闭
+        Assert.True(await tab.CloseAsync(force: true));  // 确认后：强制关闭
         Assert.True(closed);
         Assert.Empty(await client.ListSessionsAsync());
     }

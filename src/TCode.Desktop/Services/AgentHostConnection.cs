@@ -22,8 +22,11 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
     /// <summary>Host 断开（进程退出或崩溃）。</summary>
     public event Action<string>? Disconnected;
 
-    /// <summary>工具审批处理器（UI 弹窗）。未设置时默认拒绝。</summary>
-    public Func<ToolApprovalRequest, Task<ToolApprovalResponse>>? ApprovalHandler { get; set; }
+    /// <summary>
+    /// 工具审批处理器（UI 卡片，UI 线程上调用）。未设置时默认拒绝。
+    /// 令牌在 Host 撤回请求（$/cancelRequest）时触发，处理器据此收起卡片。
+    /// </summary>
+    public Func<ToolApprovalRequest, CancellationToken, Task<ToolApprovalResponse>>? ApprovalHandler { get; set; }
 
     public async Task<IAgentHostServer> GetServerAsync(CancellationToken ct = default)
     {
@@ -133,7 +136,7 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
         Dispatcher.UIThread.Post(() => AssetsChanged?.Invoke(notification));
 
     /// <summary>MCP elicitation 的处理器（UI 线程上调用）；没有设置时一律 cancel。</summary>
-    public Func<McpElicitRequest, Task<McpElicitResponse>>? ElicitationHandler { get; set; }
+    public Func<McpElicitRequest, CancellationToken, Task<McpElicitResponse>>? ElicitationHandler { get; set; }
 
     async Task<McpElicitResponse> IAgentHostClient.RequestMcpElicitationAsync(McpElicitRequest request, CancellationToken cancellationToken)
     {
@@ -142,7 +145,20 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
         {
             return new McpElicitResponse("cancel");
         }
-        return await Dispatcher.UIThread.InvokeAsync(() => handler(request)).WaitAsync(cancellationToken);
+        return await Dispatcher.UIThread.InvokeAsync(() => handler(request, cancellationToken)).WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Agent 提问的处理器（问答面板，UI 线程上调用）；没有设置时视为拒绝回答。</summary>
+    public Func<UserInputRequest, CancellationToken, Task<UserInputResponse>>? UserInputHandler { get; set; }
+
+    async Task<UserInputResponse> IAgentHostClient.RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken)
+    {
+        var handler = UserInputHandler;
+        if (handler is null)
+        {
+            return UserInputResponse.Decline;
+        }
+        return await Dispatcher.UIThread.InvokeAsync(() => handler(request, cancellationToken)).WaitAsync(cancellationToken);
     }
 
     /// <summary>MCP OAuth：用系统默认浏览器打开授权页（Host 在本机回环地址等待回调）。</summary>
@@ -174,7 +190,7 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
         {
             return new ToolApprovalResponse(false, "No approval handler.");
         }
-        return await Dispatcher.UIThread.InvokeAsync(() => handler(request));
+        return await Dispatcher.UIThread.InvokeAsync(() => handler(request, cancellationToken));
     }
 
     public void Dispose()

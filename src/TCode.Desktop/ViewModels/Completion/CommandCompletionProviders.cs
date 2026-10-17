@@ -95,14 +95,16 @@ public sealed class CommandCompletionProvider(AssetCatalogCache assets) : ICompl
     }
 }
 
-/// <summary>/ 补全：内置命令，在界面里直接执行、不发给模型（docs/design/composer.md §9.1）。</summary>
+/// <summary>/ 补全：内置命令。多数在界面里直接执行、不发给模型（docs/design/composer.md §9.1）；
+/// Run 为 null 的是提示词型命令（/init、/commit），选中后插入同名 command tag，正文由 Host 展开后发给模型（§9.3）。</summary>
 public sealed class BuiltinCommandProvider(IReadOnlyList<BuiltinCommandProvider.Command> commands) : ICompletionProvider
 {
+    /// <param name="Run">选中后执行；null 表示插入 command tag。</param>
     /// <param name="IsAvailable">当前是否可用（例如 /fork 需要已有会话）；null 表示总是可用。</param>
-    public sealed record Command(string Name, TCodeLangResourceKind Description, LucideKind Icon, Action Run, Func<bool>? IsAvailable = null);
+    public sealed record Command(string Name, TCodeLangResourceKind Description, LucideKind Icon, Action? Run, Func<bool>? IsAvailable = null);
 
     /// <summary>内置命令的名称：同名的自定义 command 被遮住。</summary>
-    public static readonly HashSet<string> Names = new(StringComparer.OrdinalIgnoreCase) { "new", "model", "fork", "role", "agent", "plan", "acp" };
+    public static readonly HashSet<string> Names = new(StringComparer.OrdinalIgnoreCase) { "new", "model", "fork", "role", "compact", "init", "commit", "agent", "plan", "acp" };
 
     public char Trigger => '/';
 
@@ -117,8 +119,11 @@ public sealed class BuiltinCommandProvider(IReadOnlyList<BuiltinCommandProvider.
             {
                 continue;
             }
+            var action = command.Run is { } run
+                ? new CompletionAction(Run: run)
+                : new CompletionAction(new TagSegment(TagKind.Command, command.Name, command.Name));
             items.Add(new CompletionItem(command.Name, Strings.Get(command.Description), command.Icon, Strings.Get(TCodeLangResourceKind.CommandSourceBuiltin),
-                new CompletionAction(Run: command.Run), match.Score, match.Positions));
+                action, match.Score, match.Positions));
         }
         return ValueTask.FromResult<IReadOnlyList<CompletionItem>>(items);
     }

@@ -19,7 +19,7 @@ public static class SettingsFile
         AllowTrailingCommas = true,
     };
 
-    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers", "update", "closeToTray" };
+    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers", "update", "closeToTray", "autoCompact" };
     private static readonly HashSet<string> WebSearchKeys = new(StringComparer.OrdinalIgnoreCase) { "provider", "apiKey", "baseUrl" };
     private static readonly HashSet<string> WebSearchProviders = new(StringComparer.OrdinalIgnoreCase) { "brave", "tavily", "exa", "searxng" };
     private static readonly HashSet<string> UpdateKeys = new(StringComparer.OrdinalIgnoreCase) { "prerelease", "autoCheck" };
@@ -30,7 +30,7 @@ public static class SettingsFile
     };
     private static readonly HashSet<string> ModelKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "api", "baseUrl", "name", "description", "contextWindow", "maxTokens", "reasoning", "efforts", "images", "fastMode", "compat",
+        "api", "baseUrl", "name", "description", "contextWindow", "defaultContextWindow", "maxTokens", "reasoning", "efforts", "images", "fastMode", "compat",
     };
     private static readonly HashSet<string> Apis = new(StringComparer.Ordinal) { "chat", "responses", "messages" };
 

@@ -33,6 +33,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
     private string? _title;
     private bool _exited;
     private bool _lost;
+    private bool _dark = true;
 
     // 指针状态（UI 线程）
     private bool _dragging;
@@ -68,21 +69,14 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
     /// <summary>需要用户确认的粘贴内容（含换行等）；确认前不会发送。</summary>
     public string? PendingPaste { get; private set; }
 
-    /// <summary>程序仍在运行，关闭需要确认。</summary>
-    public bool PendingClose { get; private set; }
-
-    /// <summary>有需要用户确认的操作（粘贴、关闭）。</summary>
-    public bool HasPrompt => PendingPaste is not null || PendingClose;
+    /// <summary>有需要用户确认的粘贴。（关闭仍在运行的程序改由工作台弹窗确认。）</summary>
+    public bool HasPrompt => PendingPaste is not null;
 
     /// <summary>确认栏的说明文字。</summary>
-    public string? PromptMessage => PendingPaste is not null
-        ? Strings.Get(TCodeLangResourceKind.TerminalPasteConfirm)
-        : PendingClose ? Strings.Get(TCodeLangResourceKind.TerminalCloseRunning) : null;
+    public string? PromptMessage => PendingPaste is not null ? Strings.Get(TCodeLangResourceKind.TerminalPasteConfirm) : null;
 
-    /// <summary>确认按钮的文字（粘贴 / 关闭终端）。</summary>
-    public string? PromptActionText => PendingPaste is not null
-        ? Strings.Get(TCodeLangResourceKind.TerminalPasteAction)
-        : PendingClose ? Strings.Get(TCodeLangResourceKind.TerminalCloseAction) : null;
+    /// <summary>确认按钮的文字。</summary>
+    public string? PromptActionText => PendingPaste is not null ? Strings.Get(TCodeLangResourceKind.TerminalPasteAction) : null;
 
     // ---- 搜索栏 ----
 
@@ -217,13 +211,18 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             {
                 Size = new TerminalSizeDto(size.Columns, size.Rows, size.CellWidth, size.CellHeight),
                 Cwd = _cwd,
-                Palette = TerminalTheme.Dark,
+                Palette = TerminalTheme.For(Volatile.Read(ref _dark)),
                 Kind = "user",
                 WidthMode = "compat",
                 ShellIntegration = "auto",
             };
             await client.CreateSessionAsync(create, session).ConfigureAwait(false);
             _session = session;
+            // 创建期间主题可能已经切换：补发一次当前的调色板
+            if (TerminalTheme.For(Volatile.Read(ref _dark)) != create.Palette)
+            {
+                SendColors(session);
+            }
             // 创建期间窗口可能已经改变尺寸：创建完成后补发一次（Resize 在会话创建之前不会生效）
             if (_size is { } latest && latest != size)
             {
@@ -289,9 +288,33 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         SetStatus(TCodeLangResourceKind.TerminalLost);
     }
 
+    /// <summary>跟随应用的明暗主题（UI 线程，由视图在主题变化时调用）。会话已经创建时，调色板经 host 更新。</summary>
+    public void SetDarkTheme(bool dark)
+    {
+        if (_dark == dark)
+        {
+            return;
+        }
+        Volatile.Write(ref _dark, dark);
+        if (_session is { } session)
+        {
+            SendColors(session);
+        }
+    }
+
+    private void SendColors(TerminalSession session)
+    {
+        if (session.Handle is not { } handle)
+        {
+            return;
+        }
+        _ = handle.SetColorsAsync(TerminalTheme.For(Volatile.Read(ref _dark))).ContinueWith(
+            t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);  // 会话或连接已经结束：没有需要更新的调色板
+    }
+
     /// <summary>
-    /// 关闭标签（UI 线程）。会话里有程序在运行时不关闭，改为请求确认（<see cref="PendingClose"/>）；
-    /// 确认后以 <paramref name="force"/> 再次调用。关闭成功时引发 <see cref="Closed"/>。
+    /// 关闭标签（UI 线程）。会话里有程序在运行时不关闭并返回 false，由调用方弹窗确认后以 <paramref name="force"/> 再次调用。
+    /// 关闭成功时引发 <see cref="Closed"/>。
     /// </summary>
     public async Task<bool> CloseAsync(bool force = false)
     {
@@ -303,14 +326,22 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             Closed?.Invoke();
             return true;
         }
-        var result = await client.CloseSessionAsync(session.SessionId, force).ConfigureAwait(true);
+        CloseResult result;
+        try
+        {
+            result = await client.CloseSessionAsync(session.SessionId, force).ConfigureAwait(true);
+        }
+        catch (Exception e) when (e is IOException or PtyHostException or ObjectDisposedException)
+        {
+            // host 已经不可用（连接断开、会话不存在）：不能让标签关不掉，只释放本地资源
+            await DisposeAsync();
+            Closed?.Invoke();
+            return true;
+        }
         if (!result.Closed)
         {
-            PendingClose = true;
-            NotifyPrompt();
             return false;
         }
-        PendingClose = false;
         await DisposeAsync();
         Closed?.Invoke();
         return true;
@@ -325,24 +356,18 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             NotifyPrompt();
             await PasteAsync(paste, allowUnsafe: true).ConfigureAwait(true);
         }
-        else if (PendingClose)
-        {
-            await CloseAsync(force: true).ConfigureAwait(true);
-        }
     }
 
     [RelayCommand]
     private void CancelPrompt()
     {
         PendingPaste = null;
-        PendingClose = false;
         NotifyPrompt();
     }
 
     private void NotifyPrompt()
     {
         OnPropertyChanged(nameof(PendingPaste));
-        OnPropertyChanged(nameof(PendingClose));
         OnPropertyChanged(nameof(HasPrompt));
         OnPropertyChanged(nameof(PromptMessage));
         OnPropertyChanged(nameof(PromptActionText));

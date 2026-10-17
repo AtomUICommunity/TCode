@@ -73,6 +73,9 @@ public interface IAgentHostServer
 
     Task AbortAsync(string sessionId, CancellationToken cancellationToken = default);
 
+    /// <summary>压缩上下文（/compact，仅内置 Agent）：空闲时立即开始，运行中则在下一次模型请求前执行。进度以会话事件推送。</summary>
+    Task CompactAsync(string sessionId, string? instructions, CancellationToken cancellationToken = default);
+
     /// <summary>切换模型，返回按新模型修正后的会话参数。</summary>
     Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default);
 
@@ -108,6 +111,9 @@ public interface IAgentHostServer
     /// <summary>输入框 @ 文件：在目录的文件索引中模糊搜索。</summary>
     Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>撤销 Agent 的文件改动：文件仍与改动后的内容一致时才恢复。</summary>
+    Task<RevertFileResult> RevertFileAsync(RevertFileRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>cwd 所在项目生效的 command / skill / role（全局 ~/.tcode 与项目 .agents 合并后）。</summary>
     Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default);
 }
@@ -137,9 +143,15 @@ public interface IAgentHostClient
 
     /// <summary>command / skill / role 的定义文件变化（notification）。</summary>
     void OnAssetsChanged(AssetsChangedNotification notification);
+
+    /// <summary>
+    /// Agent 向用户提问（内置 ask_user、Claude AskUserQuestion、Codex requestUserInput；docs/design/ask-user.md §6）。
+    /// 不受权限档位影响，从不自动回答；Host 取消请求时 UI 必须收起问答面板。
+    /// </summary>
+    Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default);
 }
 
 public static class RpcProtocol
 {
-    public const int Version = 18;
+    public const int Version = 20;
 }

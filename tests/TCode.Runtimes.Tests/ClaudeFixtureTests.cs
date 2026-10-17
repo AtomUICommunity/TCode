@@ -172,6 +172,90 @@ public sealed class ClaudeFixtureTests
         Assert.False(agent.IsRunning);
     }
 
+    private const string AskInput =
+        """{"questions":[{"question":"Which database?","header":"Database","options":[{"label":"Postgres","description":"Full featured"},{"label":"SQLite","description":"Zero setup"}],"multiSelect":false},{"question":"Which features?","header":"Features","options":[{"label":"Auth"},{"label":"Logs, metrics"}],"multiSelect":true}]}""";
+
+    /// <summary>AskUserQuestion 的一轮：assistant 帧 → can_use_tool → TCode 的应答 → tool_result → result。</summary>
+    private static TranscriptLine[] AskTurn(string uuid, string response, string toolResult, bool isError)
+    {
+        string Fill(string template) => template.Replace("@UUID", uuid).Replace("@SESSION", SessionId).Replace("@INPUT", AskInput)
+            .Replace("@RESPONSE", response).Replace("@RESULT", toolResult).Replace("@ERROR", isError ? "true" : "false");
+        return
+        [
+            new(true, Fill("""{"type":"user","message":{"role":"user","content":[{"type":"text","text":"build it"}]},"parent_tool_use_id":null,"uuid":"@UUID"}""")),
+            new(false, Fill("""{"type":"assistant","message":{"model":"claude-opus-5-5","id":"msg_ask","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_ask","name":"AskUserQuestion","input":@INPUT}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}},"parent_tool_use_id":null,"session_id":"@SESSION","uuid":"a0000000-0000-4000-8000-000000000001"}""")),
+            new(false, Fill("""{"type":"control_request","request_id":"req_ask","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":@INPUT,"tool_use_id":"toolu_ask","requires_user_interaction":true}}""")),
+            new(true, Fill("""{"type":"control_response","response":{"subtype":"success","request_id":"req_ask","response":@RESPONSE}}""")),
+            new(false, Fill("""{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_ask","type":"tool_result","content":"@RESULT","is_error":@ERROR}]},"parent_tool_use_id":null,"session_id":"@SESSION","uuid":"a0000000-0000-4000-8000-000000000002"}""")),
+            new(false, Fill("""{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"@SESSION","terminal_reason":"completed"}""")),
+        ];
+    }
+
+    [Fact]
+    public async Task AskUserQuestion_AnswersGoIntoUpdatedInput_KeyedByQuestionText()
+    {
+        var peer = new ScriptedPeer();
+        var uuids = new Queue<string>();
+        var runtime = new FixtureRuntime(peer, uuids, SessionId);
+        RuntimeInputRequest? asked = null;
+        var agent = new ExternalAgent(runtime, RuntimeModels.Create(runtime, ClaudeRuntime.DefaultModelId), "/Users/dev/proj")
+        {
+            // 权限模式与提问无关：完全授权下也交给问答面板
+            InputHandler = (request, _) =>
+            {
+                asked = request;
+                return Task.FromResult(new TCode.Agent.Questions.UserInputResult(TCode.Agent.Questions.UserInputOutcome.Answered, [
+                    new("Which database?", ["SQLite"]),
+                    new("Which features?", ["Auth", "Logs, metrics"]),
+                ]));
+            },
+            ApprovalHandler = (_, _) => throw new InvalidOperationException("AskUserQuestion is not an approval"),
+        };
+        var events = Record(agent);
+        uuids.Enqueue("00000000-0000-4000-8000-0000000000a1");
+        var run = agent.PromptAsync(UserMessage.FromText("build it"));
+        await peer.RunAsync(Load("### A.1 (a)").Take(2));
+        await peer.RunAsync(AskTurn("00000000-0000-4000-8000-0000000000a1",
+            """{"behavior":"allow","updatedInput":@INPUT,"toolUseID":"toolu_ask","decisionClassification":"user_temporary"}"""
+                .Replace("@INPUT", AskInput[..^1] + ""","answers":{"Which database?":"SQLite","Which features?":"Auth, \"Logs, metrics\""}}"""),
+            "User answered", isError: false));
+        await run.WaitAsync(Timeout);
+
+        Assert.Equal("toolu_ask", asked!.ToolCallId);
+        Assert.Equal(["Which database?", "Which features?"], asked.Questions.Select(q => q.Id));
+        Assert.True(asked.Questions[1].MultiSelect);
+        Assert.Equal("Zero setup", asked.Questions[0].Options[1].Description);
+        // 转录卡片：工具结果的 Details 是 TCode 记录的问答
+        var end = events.OfType<ToolExecutionEndEvent>().Single(e => e.ToolCallId == "toolu_ask");
+        var details = JsonDocument.Parse(end.Result.Details!).RootElement;
+        Assert.Equal("question", details.GetProperty("kind").GetString());
+        Assert.Equal("answered", details.GetProperty("status").GetString());
+        Assert.Equal("SQLite", details.GetProperty("questions")[0].GetProperty("selected")[0].GetString());
+    }
+
+    [Fact]
+    public async Task AskUserQuestion_Declined_DeniesWithDeclinedMessage()
+    {
+        var peer = new ScriptedPeer();
+        var uuids = new Queue<string>();
+        var runtime = new FixtureRuntime(peer, uuids, SessionId);
+        var agent = new ExternalAgent(runtime, RuntimeModels.Create(runtime, ClaudeRuntime.DefaultModelId), "/Users/dev/proj")
+        {
+            InputHandler = (_, _) => Task.FromResult(TCode.Agent.Questions.UserInputResult.Declined),
+        };
+        var events = Record(agent);
+        uuids.Enqueue("00000000-0000-4000-8000-0000000000a2");
+        var run = agent.PromptAsync(UserMessage.FromText("build it"));
+        await peer.RunAsync(Load("### A.1 (a)").Take(2));
+        var declined = JsonSerializer.Serialize(TCode.Agent.Questions.UserAnswers.DeclinedMessage);
+        await peer.RunAsync(AskTurn("00000000-0000-4000-8000-0000000000a2",
+            """{"behavior":"deny","message":@MESSAGE,"toolUseID":"toolu_ask","decisionClassification":"user_reject"}""".Replace("@MESSAGE", declined),
+            "declined", isError: true));
+        await run.WaitAsync(Timeout);
+        var end = events.OfType<ToolExecutionEndEvent>().Single(e => e.ToolCallId == "toolu_ask");
+        Assert.Equal("declined", JsonDocument.Parse(end.Result.Details!).RootElement.GetProperty("status").GetString());
+    }
+
     [Fact]
     public void Models_AreParsedFromInitialize()
     {

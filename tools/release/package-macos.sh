@@ -1,34 +1,40 @@
 #!/usr/bin/env bash
-# 把（已签名的）TCode.app 打成 pkg（应用内更新与首次安装）和 dmg（首次安装），可选公证（docs/design/auto-update.md §4、§11）。
+# 把（已签名的）TCode.app 公证并 staple，再打成 zip（应用内更新）和 dmg（首次安装）（docs/design/auto-update.md §4、§11）。
 # 用法: tools/release/package-macos.sh <TCode.app> <版本> <rid> <输出目录>
 # 环境变量（都可省略；省略时生成未签名 / 未公证的包，只用于本地测试）：
-#   MACOS_SIGN_IDENTITY       Developer ID Application（签 dmg）
-#   MACOS_INSTALLER_IDENTITY  Developer ID Installer（签 pkg）
-#   APPLE_API_KEY_PATH / APPLE_API_KEY_ID / APPLE_API_ISSUER_ID  notarytool 的 App Store Connect API key
+#   MACOS_SIGN_IDENTITY  Developer ID Application（签 dmg）
+#   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID  notarytool 的 Apple ID 凭据
 set -euo pipefail
 APP="$1"
 VERSION="$2"
 RID="$3"
 OUT="$4"
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PKG_DIR="$ROOT/src/TCode.Desktop/Packaging/macos"
 mkdir -p "$OUT"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-PKG="$OUT/TCode-$VERSION-$RID.pkg"
+ZIP="$OUT/TCode-$VERSION-$RID.zip"
 DMG="$OUT/TCode-$VERSION-$RID.dmg"
-
-# ---- pkg ----
-mkdir -p "$WORK/root"
-ditto "$APP" "$WORK/root/TCode.app"
-pkgbuild --root "$WORK/root" --component-plist "$PKG_DIR/component.plist" --scripts "$PKG_DIR/scripts" \
-    --identifier com.tcode.desktop.pkg --version "${VERSION%%-*}" --install-location /Applications "$WORK/component.pkg"
-if [ -n "${MACOS_INSTALLER_IDENTITY:-}" ]; then
-    productbuild --package "$WORK/component.pkg" --sign "$MACOS_INSTALLER_IDENTITY" --timestamp "$PKG"
-else
-    productbuild --package "$WORK/component.pkg" "$PKG"
+NOTARIZE=false
+if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+    NOTARIZE=true
 fi
+
+# 公证失败时 notarytool 也可能返回 0，以随后的 stapler staple 是否成功为准
+notarize() {
+    xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+}
+
+# ---- .app：先公证再 staple，zip 和 dmg 里都是 staple 过的 .app（离线也能通过 Gatekeeper） ----
+if $NOTARIZE; then
+    ditto -c -k --keepParent "$APP" "$WORK/notarize.zip"
+    notarize "$WORK/notarize.zip"
+    xcrun stapler staple "$APP"
+    spctl -a -t exec -vv "$APP"
+fi
+
+# ---- zip：顶层是 TCode.app；ditto 保留符号链接与扩展属性，客户端也用 ditto 解压 ----
+ditto -c -k --keepParent "$APP" "$ZIP"
 
 # ---- dmg：TCode.app + 指向 /Applications 的快捷方式 ----
 mkdir -p "$WORK/dmg"
@@ -38,16 +44,11 @@ hdiutil create -volname TCode -srcfolder "$WORK/dmg" -ov -format UDZO "$DMG" >/d
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$DMG"
 fi
-
-# ---- 公证 + staple ----
-if [ -n "${APPLE_API_KEY_PATH:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER_ID:-}" ]; then
-    for f in "$PKG" "$DMG"; do
-        xcrun notarytool submit "$f" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
-        xcrun stapler staple "$f"
-    done
-    pkgutil --check-signature "$PKG"
-    spctl -a -t install -vv "$PKG"
+if $NOTARIZE; then
+    notarize "$DMG"
+    xcrun stapler staple "$DMG"
+    spctl -a -t open --context context:primary-signature -vv "$DMG"
 fi
 
-echo "已生成 $PKG"
+echo "已生成 $ZIP"
 echo "已生成 $DMG"

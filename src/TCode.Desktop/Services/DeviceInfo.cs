@@ -7,7 +7,8 @@ public static class DeviceInfo
 {
     private static readonly Lazy<string> LazyName = new(ReadName);
 
-    public static string Name => LazyName.Value;
+    /// <summary>环境变量 TCODE_DEVICE_NAME 优先（README 截图等场景不暴露真实电脑名）。</summary>
+    public static string Name => Environment.GetEnvironmentVariable("TCODE_DEVICE_NAME") is { Length: > 0 } name ? name : LazyName.Value;
 
     private static string ReadName()
     {

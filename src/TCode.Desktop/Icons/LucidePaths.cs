@@ -34,6 +34,7 @@ internal static class LucidePaths
         LucideKind.ChevronRight => ["M9 18l6-6-6-6"],
         LucideKind.Check => ["M20 6L9 17l-5-5"],
         LucideKind.GitBranch => ["M6 3v12", "M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0", "M3 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0", "M18 9a9 9 0 0 1-9 9"],
+        LucideKind.GitCommit => ["M3 12h6", "M15 12h6", "M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0"],
         LucideKind.Laptop => ["M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9", "M4 16h16", "M20 16l1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"],
         LucideKind.GitCompare => ["M15 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0", "M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0", "M13 6h3a2 2 0 0 1 2 2v7", "M11 18H8a2 2 0 0 1-2-2V9"],
         LucideKind.Globe => ["M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0", "M12 2a14.5 14.5 0 0 0 0 20a14.5 14.5 0 0 0 0-20", "M2 12h20"],
@@ -90,6 +91,7 @@ internal static class LucidePaths
         LucideKind.ShieldQuestion => [Shield, "M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3", "M12 17h.01"],
         LucideKind.ShieldCheck => [Shield, "M9 12l2 2 4-4"],
         LucideKind.ShieldAlert => [Shield, "M12 8v4", "M12 16h.01"],
+        LucideKind.MessageCircleQuestion => ["M7.9 20A9 9 0 1 0 4 16.1L2 22Z", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
         LucideKind.Pin => ["M12 17v5", "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"],
         _ => [],
     };

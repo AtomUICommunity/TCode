@@ -5,6 +5,8 @@ using TCode.Agent.Coding;
 using TCode.Agent.Coding.Assets;
 using TCode.Agent.Coding.Sessions;
 using TCode.Agent.Coding.Tools;
+using TCode.Agent.Coding.Tools.Questions;
+using TCode.Agent.Questions;
 using TCode.Agent.Coding.Tools.Web;
 using TCode.Agent.Coding.Workspace;
 using TCode.AgentHost.Peers;
@@ -22,10 +24,15 @@ namespace TCode.AgentHost;
 /// <summary>
 /// 管理 Host 内的多个会话，把 Agent 事件翻译成只含增量的 RPC 事件推送给 UI，
 /// 并为非只读工具向 UI 请求审批。
+/// 空闲的会话会被释放（只留下文件路径与不落盘的状态），再次访问时从会话文件透明地重新打开。
 /// </summary>
-public sealed class SessionManager : IAsyncDisposable
+public sealed class SessionManager : IAsyncDisposable, IUserInputService
 {
     private readonly ConcurrentDictionary<string, Entry> _sessions = new();
+    private readonly ConcurrentDictionary<string, Evicted> _evicted = new();
+    private readonly Lock _gate = new();
+    private readonly Timer _sweeper;
+    private int _collectPending;
     private readonly WireApiRegistry apis;
     private readonly ModelCatalog catalog;
     private readonly RuntimeRegistry runtimes;
@@ -48,7 +55,13 @@ public sealed class SessionManager : IAsyncDisposable
         this.runtimes = runtimes;
         this.logger = logger;
         Coordinator = new AgentCoordinator(this, peers, logger);
+        _sweeper = new Timer(_ => _ = SweepAsync(), null, SweepInterval, SweepInterval);
     }
+
+    private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>不在运行的会话空闲多久后释放。</summary>
+    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>MCP 连接池。</summary>
     public McpManager Mcp { get; }
@@ -84,6 +97,7 @@ public sealed class SessionManager : IAsyncDisposable
         WebFetcher = _webFetcher,
         WebSearch = CurrentWebSearch(),
         Agents = Coordinator,
+        UserInput = this,
         // MCP 工具与 skills（docs/design/composer.md §10.1）
         DynamicTools = context => new CompositeToolSource([
             Mcp.CreateSource(context),
@@ -120,11 +134,16 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
-    private BuiltinOptions OptionsFor(string cwd) => new()
+    private BuiltinOptions OptionsFor(string cwd)
     {
-        Workspace = new WorkspaceRoots(cwd, SettingsFile.Load().Settings?.Permissions?.AdditionalDirectories),
-        Services = ServicesFor(cwd),
-    };
+        var settings = SettingsFile.Load().Settings;
+        return new BuiltinOptions
+        {
+            Workspace = new WorkspaceRoots(cwd, settings?.Permissions?.AdditionalDirectories),
+            Services = ServicesFor(cwd),
+            AutoCompact = settings?.AutoCompact ?? true,
+        };
+    }
 
     /// <summary>会话在 send_message / list_agents 中的名字：项目目录名加会话 id 的末 4 位。</summary>
     public string NameOf(AgentSession session) =>
@@ -133,7 +152,8 @@ public sealed class SessionManager : IAsyncDisposable
     /// <summary>打开的顶层会话（不含子 Agent）。</summary>
     public IReadOnlyList<AgentSession> TopLevel() => _sessions.Values.Select(e => e.Session).ToArray();
 
-    public AgentSession? TryGet(string sessionId) => _sessions.TryGetValue(sessionId, out var entry) ? entry.Session : null;
+    /// <summary>已加载的会话；已释放的会话不会因此重新打开。</summary>
+    public AgentSession? TryGet(string sessionId) => _sessions.TryGetValue(sessionId, out var entry) ? Touch(entry).Session : null;
 
     public void AttachClient(IAgentHostClient client)
     {
@@ -259,17 +279,59 @@ public sealed class SessionManager : IAsyncDisposable
     public AgentSession Create(string cwd, ModelInfo model) =>
         Register(AgentSession.Create(apis, model, cwd, getApiKey: catalog.GetApiKey, options: OptionsFor(cwd)));
 
-    public AgentSession Open(string filePath, ModelInfo model) =>
-        Register(AgentSession.Open(apis, model, filePath, catalog.GetApiKey, OptionsFor(SessionStore.Read(filePath).Cwd)));
-
     /// <summary>由外部运行时承载的新会话；CLI 进程在第一次提问时启动。</summary>
     public AgentSession CreateExternal(string cwd, IAgentRuntime runtime, ModelInfo model) =>
         Register(AgentSession.Create(cwd, store => WithBridge(new ExternalAgent(runtime, model, cwd), () => store.SessionId, cwd)));
 
-    /// <summary>打开外部运行时的会话：第一次提问时用记录的原生会话 id 恢复。</summary>
-    public AgentSession OpenExternal(string filePath, IAgentRuntime runtime, ModelInfo model) =>
-        Register(AgentSession.Open(filePath, (store, snapshot) =>
-            WithBridge(new ExternalAgent(runtime, model, store.Cwd, snapshot.NativeSessionId), () => store.SessionId, store.Cwd)));
+    /// <summary>打开会话文件（已打开时直接返回）。会话文件只解析一次。</summary>
+    public AgentSession OpenFile(string filePath)
+    {
+        lock (_gate)
+        {
+            if (_sessions.Values.FirstOrDefault(e => SameFile(e.Session, filePath)) is { } open)
+            {
+                return Touch(open).Session;
+            }
+            var snapshot = SessionStore.Read(filePath);
+            _evicted.TryRemove(snapshot.SessionId, out var evicted);
+            AgentSession session;
+            if (runtimes.Find(RuntimeOf(snapshot)) is { } runtime)
+            {
+                // 外部运行时的会话只能在同一运行时中继续；CLI 尚未探测完成或已卸载时用占位模型，提问时再报错。
+                var model = runtimes.FindModel(runtime.Id, snapshot.ModelId)?.Model
+                            ?? runtime.Descriptor.Models.FirstOrDefault()
+                            ?? RuntimeModels.Placeholder(runtime, snapshot.ModelId);
+                // 第一次提问时用记录的原生会话 id 恢复
+                session = Register(AgentSession.Open(filePath, (store, s) =>
+                    WithBridge(new ExternalAgent(runtime, model, store.Cwd, s.NativeSessionId), () => store.SessionId, store.Cwd), snapshot));
+            }
+            else
+            {
+                // 会话记录的模型不在当前目录中（例如未配置 API Key）时退回第一个可用模型。
+                var model = catalog.Find(snapshot.ModelProvider, snapshot.ModelId) ?? catalog.Find(catalog.DefaultModelRef) ?? catalog.Models[0];
+                var options = OptionsFor(snapshot.Cwd);
+                if (evicted is not null)
+                {
+                    options = options with { Approvals = evicted.Approvals };
+                }
+                session = Register(AgentSession.Open(apis, model, filePath, catalog.GetApiKey, options, snapshot));
+            }
+            // 解析会话文件留下大量临时对象，下一次清理时回收
+            Interlocked.Exchange(ref _collectPending, 1);
+            SessionOptions.Initialize(session);
+            // 完全授权不沿用到重新打开的会话（回到“询问”）；只是空闲释放过的会话保持原档位。其余档位按记录恢复
+            var permission = evicted?.PermissionMode
+                             ?? (snapshot.PermissionMode is PermissionMode.FullAccess or null ? PermissionMode.Ask : snapshot.PermissionMode.Value);
+            // role 按记录恢复；自定义 role 已被删除时回到 agent
+            SessionOptions.Apply(session, new SessionOptionsDto(snapshot.ThinkingLevel?.ToString(), snapshot.FastMode, snapshot.ContextWindow,
+                PermissionMode: SessionOptions.ToWire(permission), Role: snapshot.Role), Assets.Get(session.Cwd));
+            return session;
+        }
+    }
+
+    /// <summary>会话所属的外部运行时：优先取记录的原生会话，其次看模型厂商是否为运行时 id。</summary>
+    public string? RuntimeOf(SessionSnapshot snapshot) =>
+        snapshot.Runtime ?? (runtimes.Find(snapshot.ModelProvider) is { } runtime ? runtime.Id : null);
 
     /// <summary>
     /// 换承载会话的运行时（<paramref name="runtime"/> 为 null 表示内置 Agent）。只允许尚无消息、未在运行的会话：
@@ -285,6 +347,10 @@ public sealed class SessionManager : IAsyncDisposable
         if (_sessions.TryRemove(sessionId, out var entry))
         {
             entry.Subscription?.Dispose();
+            if (entry.Tasks is { } tasks && entry.TasksChanged is { } changed)
+            {
+                tasks.Changed -= changed;
+            }
             await entry.Session.DisposeAsync();
         }
         logger.LogInformation("Session {SessionId} switched to {Runtime}", sessionId, runtime?.Id ?? "builtin");
@@ -295,8 +361,10 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>按会话文件查找已打开的会话（同一文件只允许一个 Agent 写入）。</summary>
     public AgentSession? FindByFile(string filePath) =>
-        _sessions.Values.Select(e => e.Session)
-            .FirstOrDefault(s => string.Equals(Path.GetFullPath(s.Store.FilePath), Path.GetFullPath(filePath), StringComparison.Ordinal));
+        _sessions.Values.Select(e => e.Session).FirstOrDefault(s => SameFile(s, filePath));
+
+    private static bool SameFile(AgentSession session, string filePath) =>
+        string.Equals(Path.GetFullPath(session.Store.FilePath), Path.GetFullPath(filePath), StringComparison.Ordinal);
 
     public bool IsRunning(string sessionId) => _sessions.TryGetValue(sessionId, out var entry) && entry.Session.Agent.IsRunning;
 
@@ -311,26 +379,120 @@ public sealed class SessionManager : IAsyncDisposable
         else if (session.Agent is ExternalAgent external)
         {
             external.ApprovalHandler = (request, ct) => ApproveExternalAsync(session.Id, request, ct);
+            external.InputHandler = (request, ct) => RequestUserInputAsync(session.Id, external.RuntimeId, request.ToolCallId, request.Questions, ct);
+            external.ElicitationHandler = (request, ct) => ElicitExternalAsync(session.Id, external.RuntimeId, request, ct);
             external.CommandsChanged += commands => Publish(entry,
                 new CommandsChanged(commands.Select(c => new RuntimeCommandDto(c.Name, c.Description, c.ArgumentHint)).ToList()));
+        }
+        if (session.Tools is { } tools)
+        {
+            // 后台任务列表变化：推送整体快照（主会话与它的子 Agent 共用同一个 BackgroundTasks，这里只推送归属本会话的）
+            entry.Tasks = tools.BackgroundTasks;
+            entry.TasksChanged = owner =>
+            {
+                if (owner is null || owner == session.Id)
+                {
+                    PublishBackgroundTasks(entry);
+                }
+            };
+            tools.BackgroundTasks.Changed += entry.TasksChanged;
         }
         _sessions[session.Id] = entry;
         logger.LogInformation("Session {SessionId} registered in {Cwd}", session.Id, session.Cwd);
         return session;
     }
 
-    public AgentSession Get(string sessionId) =>
-        _sessions.TryGetValue(sessionId, out var entry)
-            ? entry.Session
-            : throw new KeyNotFoundException($"Session '{sessionId}' not found.");
+    /// <summary>取会话；已被空闲释放的会话从文件重新打开。</summary>
+    public AgentSession Get(string sessionId)
+    {
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(sessionId, out var entry))
+            {
+                return Touch(entry).Session;
+            }
+            if (_evicted.TryGetValue(sessionId, out var evicted) && File.Exists(evicted.FilePath))
+            {
+                logger.LogInformation("Reopening idle-released session {SessionId}", sessionId);
+                return OpenFile(evicted.FilePath);
+            }
+            _evicted.TryRemove(sessionId, out _);
+            throw new KeyNotFoundException($"Session '{sessionId}' not found.");
+        }
+    }
+
+    private static Entry Touch(Entry entry)
+    {
+        Volatile.Write(ref entry.LastActive, Environment.TickCount64);
+        return entry;
+    }
+
+    /// <summary>
+    /// 释放空闲且可释放（<see cref="CanRelease"/>）的会话。
+    /// 有会话被释放、刚打开过会话或刚有一轮结束时做一次压缩式 GC，把临时分配占用的堆还给系统。
+    /// </summary>
+    internal async Task SweepAsync()
+    {
+        var released = new List<string>();
+        lock (_gate)
+        {
+            var now = Environment.TickCount64;
+            foreach (var (id, entry) in _sessions)
+            {
+                var session = entry.Session;
+                if (now - Volatile.Read(ref entry.LastActive) < IdleTimeout.TotalMilliseconds || !CanRelease(session))
+                {
+                    continue;
+                }
+                _evicted[id] = new Evicted(session.Store.FilePath, session.Agent.PermissionMode, session.Approvals);
+                released.Add(id);
+            }
+        }
+        foreach (var id in released)
+        {
+            try
+            {
+                logger.LogInformation("Releasing idle session {SessionId}", id);
+                await CloseCoreAsync(id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to release idle session {SessionId}", id);
+            }
+        }
+        if ((released.Count > 0 || Interlocked.Exchange(ref _collectPending, 0) == 1) && !_sessions.Values.Any(e => e.Session.Agent.IsRunning))
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        }
+    }
+
+    /// <summary>
+    /// 关闭会话会结束它启动的后台进程（外部运行时则是 CLI 及其后台任务），这些会话不释放；
+    /// 新会话还没有文件，释放后无法重新打开。
+    /// </summary>
+    private bool CanRelease(AgentSession session) =>
+        !session.Agent.IsRunning && session.External is null && !Coordinator.HasRunningChildren(session.Id) &&
+        session.Tools?.BackgroundTasks.All.Any(t => t.IsRunning && (t.Owner is null || t.Owner == session.Id)) != true &&
+        File.Exists(session.Store.FilePath);
 
     public async Task CloseAsync(string sessionId)
+    {
+        _evicted.TryRemove(sessionId, out _);
+        Interlocked.Exchange(ref _collectPending, 1);
+        await CloseCoreAsync(sessionId);
+    }
+
+    private async Task CloseCoreAsync(string sessionId)
     {
         logger.LogInformation("Closing session {SessionId}", sessionId);
         await Coordinator.CloseChildrenAsync(sessionId);
         if (_sessions.TryRemove(sessionId, out var entry))
         {
             entry.Subscription?.Dispose();
+            if (entry.Tasks is { } tasks && entry.TasksChanged is { } changed)
+            {
+                tasks.Changed -= changed;
+            }
             await entry.Session.DisposeAsync();
         }
         await Bridge.ForgetAsync(sessionId);
@@ -338,6 +500,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _sweeper.DisposeAsync();
         foreach (var id in _sessions.Keys.ToArray())
         {
             await CloseAsync(id);
@@ -378,6 +541,68 @@ public sealed class SessionManager : IAsyncDisposable
         return ToolCallDecision.Allow;
     }
 
+    Task<UserInputResult> IUserInputService.AskAsync(string sessionId, string toolCallId, IReadOnlyList<UserQuestion> questions,
+        CancellationToken cancellationToken) =>
+        RequestUserInputAsync(sessionId, "builtin", toolCallId, questions, cancellationToken);
+
+    /// <summary>
+    /// 向用户提问（input/request，docs/design/ask-user.md §6）：不看权限档位，从不自动回答。
+    /// 中止时抛出 <see cref="OperationCanceledException"/>；没有 UI 或请求失败时抛出 <see cref="UserInputUnavailableException"/>。
+    /// </summary>
+    public async Task<UserInputResult> RequestUserInputAsync(string sessionId, string source, string? toolCallId,
+        IReadOnlyList<UserQuestion> questions, CancellationToken ct)
+    {
+        if (_client is not { } client)
+        {
+            throw new UserInputUnavailableException("No client is connected.");
+        }
+        var request = new UserInputRequest(sessionId, Guid.NewGuid().ToString("N"), source, toolCallId,
+            questions.Select(q => new UserQuestionDto(q.Id, q.Header, q.Question,
+                q.Options.Select(o => new UserQuestionOptionDto(o.Label, o.Description)).ToList(), q.MultiSelect, q.AllowOther, q.IsSecret)).ToList());
+        UserInputResponse response;
+        try
+        {
+            response = await client.RequestUserInputAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "input/request failed");
+            throw new UserInputUnavailableException(ex.Message, ex);
+        }
+        if (response.Outcome != UserInputResponse.Answered)
+        {
+            return UserInputResult.Declined;
+        }
+        return new UserInputResult(UserInputOutcome.Answered, (response.Answers ?? [])
+            .Select(a => new UserAnswer(a.QuestionId, a.Selected, string.IsNullOrWhiteSpace(a.Text) ? null : a.Text)).ToList());
+    }
+
+    /// <summary>运行时的结构化信息请求（ACP elicitation）→ MCP 表单卡片；没有 UI 或失败时 cancel。</summary>
+    private async Task<RuntimeElicitationResult> ElicitExternalAsync(string sessionId, string runtimeId, RuntimeElicitationRequest request,
+        CancellationToken ct)
+    {
+        if (_client is not { } client)
+        {
+            return RuntimeElicitationResult.Cancel;
+        }
+        var title = runtimes.Find(runtimeId)?.DisplayName ?? runtimeId;
+        try
+        {
+            var response = await client.RequestMcpElicitationAsync(
+                new McpElicitRequest(sessionId, runtimeId, title, "form", request.Message, request.SchemaJson, null), ct);
+            return new RuntimeElicitationResult(response.Action, response.ContentJson);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Runtime elicitation failed");
+            return RuntimeElicitationResult.Cancel;
+        }
+    }
+
     /// <summary>外部运行时的审批：没有 UI 连接时拒绝（ExternalAgent 也会把异常与断连转成拒绝）。</summary>
     private async ValueTask<ApprovalDecision> ApproveExternalAsync(string sessionId, RuntimeApprovalRequest request, CancellationToken ct)
     {
@@ -404,11 +629,27 @@ public sealed class SessionManager : IAsyncDisposable
 
     private ValueTask ForwardAsync(Entry entry, AgentEvent e)
     {
+        Touch(entry);
+        if (e is AgentEndEvent)
+        {
+            Interlocked.Exchange(ref _collectPending, 1);
+        }
         if (Map(e) is { } mapped)
         {
             Publish(entry, mapped);
         }
         return ValueTask.CompletedTask;
+    }
+
+    private void PublishBackgroundTasks(Entry entry)
+    {
+        // 运行中的全部保留；已结束的只保留最近 20 个（任务球不无限增长）
+        var owned = entry.Tasks?.All.Where(t => t.Owner is null || t.Owner == entry.Session.Id).ToList() ?? [];
+        var tasks = owned.Where(t => t.IsRunning)
+            .Concat(owned.Where(t => !t.IsRunning).TakeLast(20))
+            .Select(t => new BackgroundTaskDto(t.Id, t.Type, t.Description, t.Status))
+            .ToList();
+        Publish(entry, new BackgroundTasksChanged(tasks));
     }
 
     private void Publish(Entry entry, SessionEvent mapped)
@@ -446,10 +687,20 @@ public sealed class SessionManager : IAsyncDisposable
             a.Usage is { } usage ? new UsageDto(usage.Input, usage.Output, usage.CacheRead, usage.CacheWrite) : null),
         MessageEndEvent { Message: UserMessage } m => new MessageEnded(m.MessageId, "user", "Stop", null, null),
         ToolExecutionStartEvent t => new ToolExecutionStarted(t.ToolCallId, t.ToolName, t.ArgumentsJson),
+        CompactionStartEvent c => new CompactionStarted(Trigger(c.Trigger), c.PreTokens),
+        CompactionEndEvent c => new CompactionEnded(Trigger(c.Trigger), c.PreTokens, c.Result?.PostTokens, c.Error),
+        CompactionSuspendedEvent c => new CompactionSuspended(c.Reason),
         ToolExecutionUpdateEvent t => new ToolExecutionUpdated(t.ToolCallId, t.ToolName, HistoryPaging.Truncate(TextOf(t.Partial.Content)), t.Partial.Details),
         ToolExecutionEndEvent t => new ToolExecutionEnded(t.ToolCallId, t.ToolName, t.Result.IsError, HistoryPaging.Truncate(TextOf(t.Result.Content)),
             t.Duration.TotalMilliseconds, t.Result.Details),
         _ => null,
+    };
+
+    private static string Trigger(TCode.Agent.Compaction.CompactionTrigger trigger) => trigger switch
+    {
+        TCode.Agent.Compaction.CompactionTrigger.Auto => "auto",
+        TCode.Agent.Compaction.CompactionTrigger.Reactive => "reactive",
+        _ => "manual",
     };
 
     public static IReadOnlyList<PromptSegmentDto>? ToDto(IReadOnlyList<MessageSegment>? segments) =>
@@ -461,6 +712,12 @@ public sealed class SessionManager : IAsyncDisposable
     {
         public AgentSession Session { get; } = session;
         public IDisposable? Subscription { get; set; }
+        public BackgroundTasks? Tasks { get; set; }
+        public Action<string?>? TasksChanged { get; set; }
         public long Seq;
+        public long LastActive = Environment.TickCount64;
     }
+
+    /// <summary>被释放的会话：重新打开时恢复不落盘的权限档位与本会话内的授权。</summary>
+    private sealed record Evicted(string FilePath, PermissionMode PermissionMode, SessionApprovals Approvals);
 }

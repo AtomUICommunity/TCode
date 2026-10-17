@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace TCode.Desktop.Views;
 
-public partial class TaskListView : UserControl
+public partial class QuestionCardView : UserControl
 {
-    public TaskListView()
+    public QuestionCardView()
     {
         InitializeComponent();
     }

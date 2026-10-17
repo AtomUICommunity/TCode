@@ -15,6 +15,22 @@ public sealed class DiffLineViewModel(string text, DiffLineKind kind)
     public bool IsAdded => Kind == DiffLineKind.Added;
     public bool IsRemoved => Kind == DiffLineKind.Removed;
     public bool IsHunk => Kind == DiffLineKind.Hunk;
+
+    /// <summary>行号（旧文件 / 新文件）；块头与新增、删除行缺少的一侧为 null。</summary>
+    public int? OldNumber { get; init; }
+    public int? NewNumber { get; init; }
+
+    /// <summary>行号的显示文字（缺少的一侧为空）。</summary>
+    public string OldText => OldNumber?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+    public string NewText => NewNumber?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+
+    /// <summary>行首的符号列：+ / - / 空格；块头为空。</summary>
+    public string Sign => Kind switch
+    {
+        DiffLineKind.Added => "+",
+        DiffLineKind.Removed => "-",
+        _ => "",
+    };
 }
 
 public enum DiffLineKind
@@ -36,6 +52,18 @@ public sealed record ParsedToolDetails
     public IReadOnlyList<DiffLineViewModel> DiffLines { get; init; } = [];
     public int Added { get; init; }
     public int Removed { get; init; }
+
+    /// <summary>diff 对应的文件（相对于 cwd 之外的绝对路径）。</summary>
+    public string? Path { get; init; }
+
+    /// <summary>本次改动新建了文件；撤销即删除。</summary>
+    public bool Created { get; init; }
+
+    /// <summary>改动前的完整文本；为 null 且非新建时不可撤销。</summary>
+    public string? Before { get; init; }
+
+    /// <summary>改动后文件字节的 SHA-256，撤销前用于检测文件是否又被改过。</summary>
+    public string? AfterSha256 { get; init; }
 
     public string? SubagentName { get; init; }
     public string? SubagentStatus { get; init; }
@@ -70,6 +98,10 @@ public sealed record ParsedToolDetails
                     DiffLines = DiffLinesOf(Str(root, "diff") ?? ""),
                     Added = Int(root, "added") ?? 0,
                     Removed = Int(root, "removed") ?? 0,
+                    Path = Str(root, "path"),
+                    Created = root.TryGetProperty("created", out var created) && created.ValueKind == JsonValueKind.True,
+                    Before = Str(root, "before"),
+                    AfterSha256 = Str(root, "afterSha256"),
                 },
                 "subagent" => new ParsedToolDetails
                 {
@@ -99,9 +131,11 @@ public sealed record ParsedToolDetails
         }
     }
 
-    private static IReadOnlyList<DiffLineViewModel> DiffLinesOf(string diff)
+    /// <summary>解析 unified diff，并按块头 @@ -a,b +c,d @@ 推算每行的新旧行号。</summary>
+    public static IReadOnlyList<DiffLineViewModel> DiffLinesOf(string diff)
     {
         var lines = new List<DiffLineViewModel>();
+        int oldNumber = 0, newNumber = 0;
         foreach (var line in diff.Split('\n'))
         {
             if (line.StartsWith("--- ", StringComparison.Ordinal) || line.StartsWith("+++ ", StringComparison.Ordinal) || line.Length == 0)
@@ -113,15 +147,36 @@ public sealed record ParsedToolDetails
                 lines.Add(new DiffLineViewModel("…", DiffLineKind.Hunk));
                 break;
             }
+            if (line[0] == '@')
+            {
+                (oldNumber, newNumber) = HunkStart(line);
+                lines.Add(new DiffLineViewModel(line, DiffLineKind.Hunk));
+                continue;
+            }
+            // 首字符（+ / - / 空格）单独放在符号列，文字只保留行内容
+            var text = line[1..];
             lines.Add(line[0] switch
             {
-                '+' => new DiffLineViewModel(line, DiffLineKind.Added),
-                '-' => new DiffLineViewModel(line, DiffLineKind.Removed),
-                '@' => new DiffLineViewModel(line, DiffLineKind.Hunk),
-                _ => new DiffLineViewModel(line, DiffLineKind.Context),
+                '+' => new DiffLineViewModel(text, DiffLineKind.Added) { NewNumber = newNumber++ },
+                '-' => new DiffLineViewModel(text, DiffLineKind.Removed) { OldNumber = oldNumber++ },
+                _ => new DiffLineViewModel(text, DiffLineKind.Context) { OldNumber = oldNumber++, NewNumber = newNumber++ },
             });
         }
         return lines;
+    }
+
+    /// <summary>“@@ -12,4 +12,5 @@”的起始行号；无法解析时返回 (0, 0)。</summary>
+    private static (int Old, int New) HunkStart(string header)
+    {
+        var parts = header.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+        {
+            return (0, 0);
+        }
+        return (Start(parts[1]), Start(parts[2]));
+
+        static int Start(string range) =>
+            int.TryParse(range.AsSpan(1).ToString().Split(',')[0], out var n) ? n : 0;
     }
 
     private static string? Str(JsonElement e, string name) =>
@@ -129,6 +184,33 @@ public sealed record ParsedToolDetails
 
     private static int? Int(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
+}
+
+/// <summary>
+/// 任务球里的一项：后台 shell（bash）、后台子 Agent，或前台执行中的子 Agent（来自工具调用，执行结束即移除）。
+/// </summary>
+public sealed partial class BackgroundTaskItemViewModel(string id, string title, bool isAgent, bool isBackground) : ObservableObject
+{
+    public string Id { get; } = id;
+    public bool IsAgent { get; } = isAgent;
+    public bool IsBackground { get; } = isBackground;
+
+    [ObservableProperty]
+    public partial string Title { get; set; } = title;
+
+    [ObservableProperty]
+    public partial bool IsRunning { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsFailed { get; set; }
+
+    /// <summary>后台任务的状态（running / completed / failed / stopped）。</summary>
+    public void Update(string title, string status)
+    {
+        Title = title;
+        IsRunning = status == "running";
+        IsFailed = status == "failed";
+    }
 }
 
 /// <summary>任务清单中的一项。</summary>

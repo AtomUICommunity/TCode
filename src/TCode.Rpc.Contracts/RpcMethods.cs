@@ -27,6 +27,7 @@ public static class RpcMethods
     public const string OpenSession = "session/open";
     public const string Prompt = "session/prompt";
     public const string Abort = "session/abort";
+    public const string Compact = "session/compact";
     public const string SetModel = "session/setModel";
     public const string SetOptions = "session/setOptions";
     public const string CloseSession = "session/close";
@@ -39,6 +40,7 @@ public static class RpcMethods
     public const string McpTrust = "mcp/trust";
     public const string McpCatalog = "mcp/catalog";
     public const string SearchFiles = "workspace/searchFiles";
+    public const string RevertFile = "workspace/revertFile";
     public const string ListAssets = "assets/list";
 
     // Host → UI
@@ -48,6 +50,7 @@ public static class RpcMethods
     public const string McpChanged = "mcp/changed";
     public const string McpElicit = "mcp/elicit";
     public const string McpOpenUrl = "mcp/openUrl";
+    public const string RequestInput = "input/request";
     public const string AssetsChanged = "assets/changed";
 }
 
@@ -77,3 +80,6 @@ public sealed record ProviderIdParams(string ProviderId);
 public sealed record SetModelParams(string SessionId, string ModelId);
 
 public sealed record SetOptionsParams(string SessionId, SessionOptionsDto Options);
+
+/// <param name="Instructions">/compact 后面的文字：摘要的重点；null 表示没有。</param>
+public sealed record CompactParams(string SessionId, string? Instructions);

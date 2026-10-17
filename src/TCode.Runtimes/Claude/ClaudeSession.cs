@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using TCode.Agent.Questions;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
 using TCode.Rpc;
@@ -486,7 +487,9 @@ internal sealed class ClaudeSession : IRuntimeSession
                     .Select(c => c.Str("text")).OfType<string>()),
                 _ => "",
             };
-            var details = frame.Prop("tool_use_result") is { } structured ? structured.GetRawText() : null;
+            // 提问：转录卡片使用 TCode 记录的问答（kind = question），而不是 CLI 的结构化结果
+            var details = turn.QuestionDetails.Remove(id, out var question) ? question
+                : frame.Prop("tool_use_result") is { } structured ? structured.GetRawText() : null;
             if (tool is not null)
             {
                 tool.Done = true;
@@ -608,14 +611,14 @@ internal sealed class ClaudeSession : IRuntimeSession
             RespondDeny(requestId, toolUseId, "The turn has ended.");
             return;
         }
-        if (toolName == "AskUserQuestion")
-        {
-            // 提问不是审批：问答面板（input/request）完成之前，请模型自行判断
-            RespondDeny(requestId, toolUseId, "TCode cannot show interactive questions yet. Continue with your best judgment and state your assumptions.");
-            return;
-        }
         var scope = CancellationTokenSource.CreateLinkedTokenSource(turn.ApprovalScope.Token);
         turn.Approvals[requestId] = scope;
+        if (toolName == "AskUserQuestion")
+        {
+            // 提问不是审批：交给 TCode 的问答面板，与权限模式无关（docs/design/ask-user.md §8）
+            _ = AskAsync(turn, requestId, toolUseId, input, scope);
+            return;
+        }
         var suggestions = request.Prop("permission_suggestions") is { ValueKind: JsonValueKind.Array } s ? s.Clone() : (JsonElement?)null;
         var canRemember = !request.Bool("suppress_always_allow_rule");
         var title = request.Str("description") ?? request.Str("title") ?? request.Str("display_name");
@@ -674,6 +677,106 @@ internal sealed class ClaudeSession : IRuntimeSession
         Enqueue(() => turn.Tools.TryGetValue(toolUseId, out var tool)
             ? turn.Writer.ToolStartedAsync(tool.Id, tool.Name, tool.ArgumentsJson)
             : ValueTask.CompletedTask);
+    }
+
+    /// <summary>
+    /// AskUserQuestion：回答写进 <c>updatedInput.answers</c>（以问题原文为键，多选以 ", " 连接，自由输入原样作为值），
+    /// 只在原 input 上追加 answers，CLI 的严格模式也能接受；拒绝回答时 deny。被撤回或轮次结束时不应答。
+    /// </summary>
+    private async Task AskAsync(Turn turn, string requestId, string toolUseId, JsonElement input, CancellationTokenSource scope)
+    {
+        var questions = ParseQuestions(input);
+        if (questions.Count == 0)
+        {
+            Enqueue(() =>
+            {
+                turn.Approvals.Remove(requestId);
+                return ValueTask.CompletedTask;
+            });
+            RespondDeny(requestId, toolUseId, "The questions could not be shown: no valid questions were given.");
+            return;
+        }
+        UserInputResult result;
+        try
+        {
+            result = await _host.RequestInputAsync(new RuntimeInputRequest(toolUseId, questions), scope.Token);
+        }
+        catch (Exception) when (scope.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            result = UserInputResult.Declined;
+        }
+        if (result.Outcome == UserInputOutcome.Aborted)
+        {
+            // 轮次被中断：先让队列处理已排入的中断，再判断请求是否已被撤销
+            await RunOnQueueAsync(() => ValueTask.CompletedTask);
+        }
+        if (scope.IsCancellationRequested)
+        {
+            return;
+        }
+        var details = UserAnswers.DetailsJson(questions, result);
+        Enqueue(() =>
+        {
+            turn.Approvals.Remove(requestId);
+            turn.QuestionDetails[toolUseId] = details;
+            return ValueTask.CompletedTask;
+        });
+        if (result.Outcome != UserInputOutcome.Answered)
+        {
+            RespondDeny(requestId, toolUseId, result.Outcome == UserInputOutcome.Declined ? UserAnswers.DeclinedMessage : DenyMessage,
+                interrupt: result.Outcome == UserInputOutcome.Aborted);
+            return;
+        }
+        Respond(requestId, w =>
+        {
+            w.WriteString("behavior", "allow");
+            w.WriteStartObject("updatedInput");
+            foreach (var property in input.EnumerateObject())
+            {
+                if (property.Name != "answers")
+                {
+                    property.WriteTo(w);
+                }
+            }
+            w.WriteStartObject("answers");
+            foreach (var question in questions)
+            {
+                if (result.AnswerFor(question) is { IsEmpty: false } answer)
+                {
+                    w.WriteString(question.Id, UserAnswers.ValueOf(answer));
+                }
+            }
+            w.WriteEndObject();
+            w.WriteEndObject();
+            w.WriteString("toolUseID", toolUseId);
+            w.WriteString("decisionClassification", "user_temporary");
+        });
+        Enqueue(() => turn.Tools.TryGetValue(toolUseId, out var tool)
+            ? turn.Writer.ToolStartedAsync(tool.Id, tool.Name, tool.ArgumentsJson)
+            : ValueTask.CompletedTask);
+    }
+
+    /// <summary>AskUserQuestion 的 input.questions（规格 §6.1）：问题原文作为 id（回答以它为键）。</summary>
+    internal static IReadOnlyList<UserQuestion> ParseQuestions(JsonElement input)
+    {
+        var questions = new List<UserQuestion>();
+        foreach (var q in input.Arr("questions"))
+        {
+            if (q.Str("question") is not { Length: > 0 } text)
+            {
+                continue;
+            }
+            var options = q.Arr("options")
+                .Select(o => o.Str("label") is { Length: > 0 } label ? new UserQuestionOption(label, o.Str("description")) : null)
+                .OfType<UserQuestionOption>()
+                .ToList();
+            questions.Add(new UserQuestion(text, q.Str("header") ?? text, text, options, q.Bool("multiSelect")));
+        }
+        return questions;
     }
 
     /// <summary>“本会话允许”：复制 CLI 的建议并把 destination 改写为 session，避免写入设置文件（§15）。</summary>
@@ -971,6 +1074,9 @@ internal sealed class ClaudeSession : IRuntimeSession
         public Dictionary<string, ToolState> Tools { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, CancellationTokenSource> Approvals { get; } = new(StringComparer.Ordinal);
         public CancellationTokenSource ApprovalScope { get; } = new();
+
+        /// <summary>已回答（或拒绝）的提问：工具结果到达时作为 Details 附上。</summary>
+        public Dictionary<string, string> QuestionDetails { get; } = new(StringComparer.Ordinal);
         public string? AssistantError { get; set; }
         public string? ActualModel { get; set; }
         public bool Stopping { get; set; }

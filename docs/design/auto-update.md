@@ -9,7 +9,7 @@
 - 程序启动约 60 秒后在后台检查一次更新，之后每 6 小时检查一次。发现新版本时以非模态方式提醒用户，不打断正在进行的工作。
 - 「设置 → 关于」页提供手动「检查更新」，并可切换更新通道、开关自动检查。
 - 用户点击更新后在后台下载**安装程序**。下载并校验完成后提示「安装并重启」，点击后 TCode 启动安装程序，然后自己退出，由安装程序完成替换并重新启动 TCode。
-- **不新增更新器进程或项目**：文件替换交给各平台的安装程序；Linux 没有安装程序，由 TCode 在退出前自己完成替换（§7.3）。
+- **不新增更新器进程或项目**：Windows 的文件替换交给安装程序；macOS 和 Linux 由 TCode 在退出前自己替换（§7.2、§7.3）。
 - 整个链路保持 NativeAOT：不引入运行时代码生成或反射序列化。
 
 ## 2. 已确认的决策
@@ -18,7 +18,7 @@
 |---|---|---|
 | 更新机制 | **自研：检查 + 下载安装程序 + 启动安装程序后退出** | 不引入 Velopack 或 NetSparkle，也不新增更新器控制台程序。流程为：查询 GitHub、验证签名清单、下载并校验 SHA-256，然后启动安装程序 |
 | 交互 | **提醒 → 后台下载 → 安装并重启** | 提醒卡片提供「更新 / 稍后 / 跳过此版本」三个按钮；下载完成后显示「安装并重启」；有会话正在运行时先确认 |
-| 平台 | **三个平台 + macOS 签名与公证** | osx-arm64、osx-x64、win-x64、linux-x64；macOS 的 .app 和 .pkg 都要签名并公证；Windows 签名留作后续开关 |
+| 平台 | **三个平台 + macOS 签名与公证** | osx-arm64、osx-x64、win-x64、linux-x64；macOS 的 .app 和 dmg 都要签名并公证；Windows 签名留作后续开关 |
 | 预发布版本与频率 | **默认接收预发布版本；启动 60 秒后检查，之后每 6 小时** | 预发布版本即 GitHub 的 Pre-release（0.1.0 本身就是预发布版本）；设置里可以关闭「接收预发布版本更新」与自动检查；手动检查不受开关影响 |
 | 托盘 | **默认关闭窗口不退出** | 点窗口关闭按钮只隐藏到系统托盘，会话继续运行；从托盘菜单、macOS ⌘Q 或安装更新时才退出；`closeToTray: false` 恢复为关闭即退出（§9.1） |
 
@@ -26,7 +26,7 @@
 
 现状：`Directory.Build.props` 写死 `<Version>0.1.0</Version>`，`tools/package_macos_app.sh` 的 Info.plist 里又写死了一份。
 
-- **唯一来源是 git tag**：`v1.2.0` 是稳定版，`v1.2.0-beta.1` / `-rc.1` 是预览版。发布 CI 用 `-p:Version=<tag 去掉 v>` 构建，Info.plist、Inno Setup 脚本和 pkg 的版本都从同一个变量生成。
+- **唯一来源是 git tag**：`v1.2.0` 是稳定版，`v1.2.0-beta.1` / `-rc.1` 是预览版。发布 CI 用 `-p:Version=<tag 去掉 v>` 构建，Info.plist 和 Inno Setup 脚本的版本都从同一个变量生成。
 - `Directory.Build.props` 的默认值改为 `0.0.0-dev`。本地开发构建**不做自动检查**，手动检查时显示“开发版本不支持自动更新”。如需测试，可通过 `TCODE_UPDATE_FEED` 指定本地源（见 §10）。
 - 运行时从 `AssemblyInformationalVersionAttribute` 读取版本（去掉 `+commit` 后缀）。关于页显示 `1.2.0 (abc1234)`。
 - 版本比较遵循 SemVer 2.0 优先级规则，自己实现一个约 80 行的 `SemVersion`，不引入依赖。
@@ -36,7 +36,7 @@
 | 资产 | 首次安装 | 应用内更新 |
 |---|---|---|
 | `TCode-<ver>-osx-arm64.dmg` / `-osx-x64.dmg` | ✓（拖到「应用程序」） | |
-| `TCode-<ver>-osx-arm64.pkg` / `-osx-x64.pkg` | ✓（可选） | ✓ |
+| `TCode-<ver>-osx-arm64.zip` / `-osx-x64.zip` | | ✓ |
 | `TCode-<ver>-win-x64-setup.exe` | ✓ | ✓ |
 | `TCode-<ver>-linux-x64.tar.gz` | ✓ | ✓ |
 | `manifest.json` + `manifest.json.sig` | | 更新清单及其签名 |
@@ -44,8 +44,8 @@
 各平台的安装程序：
 
 - **macOS**：
-  - 用 `pkgbuild --component TCode.app` 打包，再用 `productbuild --sign "Developer ID Installer: …"` 签名，然后公证并 staple。
-  - 组件保持 `BundleIsRelocatable = true`：Installer 会按 bundle id 找到已安装的 TCode.app 并原地覆盖，用户把应用放在 `~/Applications` 时也不会多装一份。
+  - 签名后的 TCode.app 先公证并 staple，再用 `ditto -c -k --keepParent` 打成 zip（顶层是 `TCode.app`，用于应用内更新），并用 hdiutil 打成 dmg（签名、公证、staple，用于首次安装）。
+  - 不打 pkg：pkg 需要额外的 Developer ID Installer 证书，更新时还要求管理员密码；与 electron-builder / Squirrel.Mac 一样，由应用自己替换 .app（§7.2）。
 - **Windows**：
   - 用 Inno Setup 生成，按用户安装到 `%LocalAppData%\Programs\TCode`，`PrivilegesRequired=lowest`，**不需要 UAC**。
   - 首次安装和更新使用同一个 setup.exe：首次安装走完整向导，更新时用静默参数启动（§7.1）。
@@ -61,8 +61,8 @@
   "publishedAt": "2026-11-01T08:00:00Z",
   "notesUrl": "https://github.com/AtomUICommunity/TCode/releases/tag/v1.2.0",
   "assets": {
-    "osx-arm64": { "name": "TCode-1.2.0-osx-arm64.pkg", "size": 48213456, "sha256": "…", "minOs": "11.0" },
-    "osx-x64":   { "name": "TCode-1.2.0-osx-x64.pkg", "size": 0, "sha256": "…", "minOs": "11.0" },
+    "osx-arm64": { "name": "TCode-1.2.0-osx-arm64.zip", "size": 48213456, "sha256": "…", "minOs": "11.0" },
+    "osx-x64":   { "name": "TCode-1.2.0-osx-x64.zip", "size": 0, "sha256": "…", "minOs": "11.0" },
     "win-x64":   { "name": "TCode-1.2.0-win-x64-setup.exe", "size": 0, "sha256": "…" },
     "linux-x64": { "name": "TCode-1.2.0-linux-x64.tar.gz", "size": 0, "sha256": "…" }
   }
@@ -82,7 +82,7 @@ UpdateService（Desktop，单例）
   ├─ UpdateScheduler    启动后 60 s 检查一次，之后用 PeriodicTimer 每 6 h 检查；时间来源是 TimeProvider，方便测试
   ├─ GitHubReleaseFeed  查询 Release 列表，选出候选版本，下载清单并验签
   ├─ UpdateDownloader   下载到 staging，校验大小和 SHA-256，支持断点续传
-  ├─ UpdateInstaller    按平台启动安装程序（或在 Linux 上替换目录）后让 App 退出
+  ├─ UpdateInstaller    按平台启动安装程序（或在 macOS / Linux 上替换安装位置）后让 App 退出
   └─ UpdateState        状态机 → 绑定到 UI
 ```
 
@@ -117,7 +117,7 @@ Idle ─check─▶ Checking ─┬─▶ UpToDate
 - 暂存目录为 `~/.tcode/updates/<ver>/`（遵循 `TCODE_HOME`）。先下载到 `<asset>.partial`，下载过程中计算 SHA-256；完成后校验大小和哈希，再改名为正式文件名。
 - 断点续传：`.partial` 已存在时发送 `Range` 请求；服务器返回 200 而不是 206 时从头下载。GitHub 资产会 302 跳转到 objects.githubusercontent.com，这个跳转是支持 Range 的。
 - 平台附加校验（通过后才进入 `Ready`）：
-  - **macOS**：`pkgutil --check-signature` 必须通过，签名者的 Team ID 必须与当前运行的应用相同；再用 `spctl -a -t install` 确认已公证。
+  - **macOS**：用 `ditto -x -k` 解压到 .app **旁边**的 `TCode.app.new/`（顶层必须是一个 `.app`）。当前应用已签名时：`codesign --verify --strict --deep` 必须通过，签名者的 Team ID 必须与当前运行的应用相同，`spctl -a -t exec` 必须认可为 `Notarized Developer ID`（用户关闭了 Gatekeeper 时接受 `security disabled`）。然后与 Linux 一样检查三个可执行文件（在 `Contents/MacOS/` 下）并运行 pty host 自检。
   - **Windows**：只依靠清单签名和 SHA-256（安装程序暂未签名）。
   - **Linux**：解压到安装目录**旁边**的 `<安装目录>.new/`（保证在同一个文件系统上，§7.3 才能用 rename 替换）。解压后检查 `TCode`、`agenthost/TCode.AgentHost`、`ptyhost/tcode-ptyhost` 三个可执行文件都在，并运行 `tcode-ptyhost --self-test`（返回 0 才算通过）。
 - 每次启动时清理除当前候选版本以外的旧暂存目录，以及残留的 `.old`、`.new` 目录。
@@ -140,15 +140,15 @@ Idle ─check─▶ Checking ─┬─▶ UpToDate
   - `[Run]` 中启动 TCode 的条目带 `Check: IsUpdate`，即带 `/UPDATE=1` 参数时安装完成后自动启动 TCode，并附带 `--updated-from <oldver>`。
 - 失败处理：Inno Setup 自带回滚，复制失败时会恢复旧文件。
 
-### 7.2 macOS（.pkg）
+### 7.2 macOS（zip，由 TCode 自己替换 .app）
 
-- 启动命令：`open -a Installer <pkg>`。
-  - 系统 Installer 会显示安装界面；安装到 `/Applications` 时会要求输入管理员密码。
-  - 这里无法做到静默安装（静默安装需要 root），这是接受的代价。
-- 自动重启：pkg 的 `postinstall` 脚本以控制台用户身份启动应用：
-  - `launchctl asuser <console uid> open -b com.tcode.desktop --args --updated-from <oldver>`
-  - 通过环境变量或标记文件判断这次安装是否来自应用内更新，首次安装时不自动启动。
-- 失败处理：Installer 失败时不会修改原有的 .app。用户取消安装后，下次启动 TCode 仍然显示 `Ready`。
+做法与 Linux（§7.3）相同，不需要管理员密码，也没有安装界面：
+
+1. 将 `TCode.app` 改名为 `TCode.app.old`，再将 `TCode.app.new` 改名为 `TCode.app`。
+2. 用 `open -n TCode.app` 启动新版本（`-n`：旧进程还没退出，不加只会激活旧进程）。失败时反向改名恢复。
+3. Desktop 退出。新版本启动后删除 `.old`。
+
+TCode 自己下载的 zip 不带 quarantine 属性，新的 .app 首次启动不会弹 Gatekeeper 确认；签名与公证已在 §6 校验。
 
 ### 7.3 Linux（tar.gz，由 TCode 自己替换）
 
@@ -162,7 +162,8 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 
 | 情况 | 行为 |
 |---|---|
-| macOS：从 `*.app` 包内运行，且 bundle id 为 `com.tcode.desktop` | 下载 pkg 并安装 |
+| macOS：从 `*.app` 包内运行，且 .app 所在目录可写 | 下载 zip，自己替换 .app |
+| macOS：.app 所在目录不可写（例如标准用户的 `/Applications`） | `ManualOnly` |
 | macOS：从 DMG 挂载卷或 App Translocation 路径（`/private/var/folders/.../AppTranslocation/`）运行 | `ManualOnly`，提示用户先把应用拖到「应用程序」文件夹 |
 | Windows：由 Inno Setup 安装（注册表中存在卸载项，且安装目录与当前运行目录一致） | 下载 setup.exe 并静默安装 |
 | Windows：便携方式运行（解压 zip 后直接运行） | `ManualOnly` |
@@ -232,7 +233,7 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
   - 抽出一个启动安装程序的接口，单元测试只断言生成的命令行和参数，不真正启动安装程序；
   - Linux 的目录替换和回滚在临时目录中做集成测试；
   - Inno Setup 静默安装在 CI 的 Windows runner 上实跑：先装 0.9.0，再用 `/SILENT /UPDATE=1` 装 0.9.1，检查文件版本和自动启动；
-  - pkg 用 `installer -pkg … -target CurrentUserHomeDirectory` 在 CI 的 macOS runner 上实跑。
+  - macOS 的 zip 解压与 .app 替换在临时目录中做集成测试（`ditto` 打包，与发布脚本相同）。
 - **端到端测试**：设置 `TCODE_UPDATE_FEED=file:///…` 或 `http://localhost:…`，指向本地生成的清单和测试密钥签名（测试构建才接受测试公钥），在本机从 0.9.0 真实更新到 0.9.1，检查重启后的版本号。
 - **UI**：用 headless 快照测试覆盖提醒卡片的各种状态和关于页「更新」一节的每个状态，不使用模拟输入。
 - **AOT**：`TCode.Desktop` 的 AOT 发布要 0 个 IL 警告，并且实际运行发布出来的二进制：`TCode --smoke` 在进程内启动一个假的 GitHub（临时密钥签名），检查 `update.check`（列表、清单验签）、`update.notes`（StreamMark 渲染）、`update.download`（下载与 SHA-256）。`TCode --version` 输出版本与 commit，发布 CI 用它做冒烟检查。
@@ -252,16 +253,15 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
    - 执行 `dotnet publish -p:Version=…`，发布到 publish 目录（包含 agenthost/、ptyhost/）；
    - 运行冒烟测试：`--version` 和 `tcode-ptyhost --self-test`。
 2. **macOS**：
-   - 从 secrets 导入 Developer ID Application 和 Developer ID Installer 两个证书到临时 keychain；
+   - 从 secrets 导入 Developer ID Application 证书到临时 keychain；
    - **由内向外**逐个签名所有 Mach-O 文件（dylib、tcode-ptyhost、tcode-pty-spawn、TCode.AgentHost），最后签整个 `.app`；全部加上 `--options runtime --timestamp`，**不使用 `--deep`**；
-   - 用 `pkgbuild` 和 `productbuild --sign` 生成 pkg（包含 postinstall 脚本），用 create-dmg（或 hdiutil）生成 dmg；
-   - pkg 和 dmg 都用 `xcrun notarytool submit --wait`（App Store Connect API key）公证，然后执行 `stapler staple`；
+   - `tools/release/package-macos.sh`：.app 用 `xcrun notarytool submit --wait`（Apple ID + App 专用密码）公证并 staple，再生成 zip 和 dmg；dmg 签名后同样公证并 staple；
    - 需要先验证：AOT 程序在 hardened runtime 下是否需要额外的 entitlements（预期不需要 JIT 相关权限）。
 3. **Windows**：用 `iscc` 编译 `packaging/windows/TCode.iss`，生成 setup.exe。签名步骤预留开关，有 secret 时才执行。
 4. **Linux**：打包 tar.gz，保留可执行权限位。
 5. **release**：汇总所有产物，生成 `manifest.json`（大小、SHA-256），用 `UPDATE_SIGNING_KEY` 签名，用 `gh release create` 上传（预发布版本加 `--prerelease`；tag 触发时加 `--draft`，由人工检查后再点 Publish，发布前客户端看不到 draft 版本）。
 
-需要的 secrets：`MACOS_APP_CERT_P12`、`MACOS_INSTALLER_CERT_P12`、`MACOS_CERT_PASSWORD`、`APPLE_API_KEY_P8`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER_ID`、`APPLE_TEAM_ID`、`UPDATE_SIGNING_KEY`（以及将来的 Windows 证书）。
+需要的 secrets：`MACOS_APP_CERT_P12`（Developer ID Application，base64）、`MACOS_CERT_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`、`UPDATE_SIGNING_KEY`（以及将来的 Windows 证书）。
 
 `tools/package_macos_app.sh` 同步改为从参数读取版本，并在本地复用和 CI 相同的打包逻辑（签名步骤可选）。
 
@@ -269,19 +269,17 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| U0 | 版本号统一由 tag 决定；release.yml 在不签名的情况下产出 dmg、pkg、setup.exe、tar.gz 和签名清单（draft） | 推送测试 tag 后得到完整的 draft Release |
+| U0 | 版本号统一由 tag 决定；release.yml 在不签名的情况下产出 dmg、zip、setup.exe、tar.gz 和签名清单（draft） | 推送测试 tag 后得到完整的 draft Release |
 | U1 | `UpdateService` 检查功能、设置与状态字段、提醒卡片、关于页「更新」一节 | 单元测试和快照测试通过；对着真实的 draft Release，能用 feed 覆盖检查到新版本 |
-| U2 | 下载、断点续传、校验（含 macOS 的 pkg 签名检查和 Linux 的解压预检） | 下载测试全部通过 |
-| U3 | 启动安装程序后退出：Inno Setup 脚本（等待 mutex、`/UPDATE` 自动启动）、pkg postinstall、Linux 目录替换，以及会话运行中的确认流程和「上次更新未完成」 | 三个平台的端到端 0.9.0 → 0.9.1 测试都通过 |
-| U4 | macOS 签名与公证（.app、pkg、dmg） | 公证后的 dmg 首次安装没有 Gatekeeper 拦截，应用内通过 pkg 更新到下一版成功 |
+| U2 | 下载、断点续传、校验（含 macOS 的签名 / 公证检查和解压预检） | 下载测试全部通过 |
+| U3 | 启动安装程序后退出：Inno Setup 脚本（等待 mutex、`/UPDATE` 自动启动）、macOS / Linux 的安装位置替换，以及会话运行中的确认流程和「上次更新未完成」 | 三个平台的端到端 0.9.0 → 0.9.1 测试都通过 |
+| U4 | macOS 签名与公证（.app、dmg） | 公证后的 dmg 首次安装没有 Gatekeeper 拦截，应用内通过 zip 更新到下一版成功 |
 | U5 | 打磨：失败提示、日志、预览版与稳定版切换、清理旧文件 | 走查 |
 
 ## 13. 待确认 / 风险
 
-1. **macOS 更新要求输入密码**：安装到 `/Applications` 时 Installer 会要求输入管理员密码，标准用户需要管理员协助。这是采用 pkg 的代价。
-   - 替代方案：Desktop 在退出前自己替换 .app，做法与 Linux 相同（§7.3），不需要密码，也没有 Installer 界面。但这样就不是「启动安装程序」了，所以 v1 不采用。
+1. **macOS 标准用户**：`/Applications` 对非管理员不可写，此时只提醒、打开下载页面（§7.4）。2026-10-17 由 pkg 改为自己替换 .app：少一张 Installer 证书，管理员用户更新也不再要输密码。
 2. **Windows 未签名**：首次安装会被 SmartScreen 拦截（需要点「仍要运行」）。应用内更新由 TCode 自己下载，不会带上 MOTW 标记，因此不受影响。
 3. **Linux 只提供 tar.gz**：不做 AppImage、deb、rpm，被包管理器安装的情况只提醒用户手动更新。
 4. **签名密钥保管**：`UPDATE_SIGNING_KEY` 一旦丢失，旧客户端就无法验证新版本，只能让用户手动重装。私钥需要离线备份。
 5. **更新前关闭终端**：更新前终端统一按 `revive` 方式退出，保持运行（keepAlive）的终端会被关闭。新版本启动后会从快照恢复界面，但正在运行的前台进程会被终止。确认框里要明确提示这一点。
-6. **需要两张 Apple 证书**：pkg 需要额外的 Developer ID Installer 证书（与 Application 证书属于同一个开发者账号）。

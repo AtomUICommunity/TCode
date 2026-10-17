@@ -53,6 +53,9 @@ public sealed class BackgroundTasks
     /// <summary>任务结束（完成、失败或被停止）。参数为结束的任务与应通知的会话 id（null 表示主会话）。</summary>
     public event Action<BackgroundTask, string?>? Completed;
 
+    /// <summary>任务列表变化（启动、结束、停止）。参数为发起任务的会话 id（null 表示主会话）。</summary>
+    public event Action<string?>? Changed;
+
     public IReadOnlyList<BackgroundTask> All => _tasks.Values.OrderBy(t => t.Id, StringComparer.Ordinal).ToArray();
 
     public BackgroundTask? Find(string id) => _tasks.GetValueOrDefault(id);
@@ -63,6 +66,7 @@ public sealed class BackgroundTasks
         var id = (type == "agent" ? "a" : "b") + Interlocked.Increment(ref _next);
         var task = new BackgroundTask(id, type, description, outputPath, stop) { Owner = ownerSessionId };
         _tasks[id] = task;
+        Changed?.Invoke(task.Owner);
         return task;
     }
 
@@ -77,6 +81,7 @@ public sealed class BackgroundTasks
             task.Status = status;
             task.Result = result;
         }
+        Changed?.Invoke(task.Owner);
         Completed?.Invoke(task, task.Owner);
     }
 

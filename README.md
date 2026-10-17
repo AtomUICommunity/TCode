@@ -13,6 +13,10 @@
 ![NativeAOT](https://img.shields.io/badge/NativeAOT-ready-success)
 ![Status](https://img.shields.io/badge/status-early%20development-orange)
 
+<br />
+
+<img src="docs/images/conversation-en.png" alt="TCode conversation view" width="900" />
+
 </div>
 
 TCode is a native desktop client for working with AI coding agents. It runs its agent loop in a separate Agent Host process, talks to models through three wire protocols, and keeps every session as a local, append-only JSONL file. The whole client is designed to publish as a NativeAOT binary.
@@ -21,14 +25,33 @@ TCode is a native desktop client for working with AI coding agents. It runs its 
 
 ## Features
 
-- **Project- and session-centric UI.** Dark-first visual design with light and system-following themes; Chinese and English UI.
-- **Command palette (⌘K)** with nested pages, searchable project and session lists, and keyboard navigation.
-- **Multiple providers and models.** Built-in provider catalog with a single API key per provider, custom OpenAI-compatible endpoints, and hot-reloaded settings.
+- **Project- and session-centric UI.** Dark-first design with light and system-following themes, Chinese and English UI, and a command palette (⌘K) with nested pages and keyboard navigation.
+- **Multiple providers and models.** Built-in provider catalog with one API key per provider, custom OpenAI-compatible and local endpoints, and hot-reloaded settings.
 - **Three protocol adapters:** OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, with thinking / reasoning replay and fast mode where the provider supports it.
-- **Coding tools for the built-in agent:** `read`, `write`, `edit`, `ls`, `glob`, `grep`, `bash` (with background tasks), task list tools, `web_fetch`, `web_search`, and multi-agent coordination.
-- **Approval flow.** Tool calls go through a permission policy; read-only actions inside the workspace pass, anything else can ask the UI first.
-- **Resumable sessions.** Sessions are stored as JSONL trees under `~/.tcode/sessions/` and can be listed, reopened, and continued.
-- **Streaming Markdown** via StreamMark (code highlighting, Mermaid, LaTeX).
+- **Coding tools for the built-in agent:** `read`, `write`, `edit`, `ls`, `glob`, `grep`, `bash` (with background tasks), task lists, `web_fetch`, `web_search`, and sub-agents.
+- **External agent runtimes.** Claude Code, Codex, and ACP agents found on the machine run inside TCode and share its approval flow.
+- **Approvals and permission modes.** Read-only actions inside the workspace pass; everything else can ask the UI first, once or for the whole session.
+- **Composer.** `@` file mentions, `/` commands and skills, Agent / Plan roles, and image attachments. Global assets live in `~/.tcode`, project assets in `.agents/`.
+- **MCP.** stdio and HTTP servers from `settings.json` or `.mcp.json`, with tools, resources, prompts, elicitation, and import / export.
+- **Workbench.** File tree, code and Markdown previews, and an integrated terminal (libghostty-vt, separate pty host that keeps sessions alive, search).
+- **Resumable sessions.** Sessions are stored as JSONL trees under `~/.tcode/sessions/` and can be listed, renamed, pinned, reopened, and continued.
+- **Streaming Markdown** via [StreamMark](https://github.com/AtomUICommunity/StreamMark) (code highlighting, Mermaid, LaTeX).
+- **In-app updates** from GitHub Releases, plus a system tray icon.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/home-en.png" alt="New chat" /><br /><sub><b>New chat.</b> Pick a device, project, model, and role.</sub></td>
+    <td width="50%"><img src="docs/images/workbench-en.png" alt="Workbench" /><br /><sub><b>Workbench.</b> Conversation, code preview, and file tree side by side.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/palette-en.png" alt="Command palette" /><br /><sub><b>Command palette (⌘K).</b> Commands, projects, and chats.</sub></td>
+    <td width="50%"><img src="docs/images/conversation-light-en.png" alt="Light theme" /><br /><sub><b>Light theme.</b> Follows the system or set explicitly.</sub></td>
+  </tr>
+</table>
+
+The screenshots are rendered headlessly from a sample project. Regenerate them with `tools/readme-screenshots.sh`.
 
 ## Architecture
 
@@ -52,7 +75,9 @@ TCode.Desktop ──(JSON-RPC 2.0 over stdio)──▶ TCode.AgentHost
 | `src/TCode.Rpc.Contracts` | Host ↔ UI interfaces and DTOs, minimal JSON-RPC 2.0 implementation |
 | `src/TCode.AgentHost` | Standalone process that hosts sessions and translates agent events into RPC notifications |
 | `src/TCode.Config` | Settings types and parsing, shared by Host and Desktop |
-| `src/TCode.Runtimes` | Groundwork for external agent runtimes (see Roadmap) |
+| `src/TCode.Runtimes` | External agent runtimes: Claude Code, Codex, ACP |
+| `src/TCode.Mcp` | MCP client: server configuration, connection pool, tool / resource / prompt bridging |
+| `src/TCode.Terminal.*` | Terminal: libghostty-vt core, PTY, pty host process and protocol, Avalonia view |
 | `src/TCode.Desktop` | Avalonia application: window, theme, views, view models, Host connection |
 
 Dependencies point one way. `TCode.Ai`, `TCode.Agent`, and `TCode.Agent.Coding` have no UI dependency and are marked `IsAotCompatible`.
@@ -62,11 +87,12 @@ Dependencies point one way. `TCode.Ai`, `TCode.Agent`, and `TCode.Agent.Coding` 
 ### Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) (pinned in `global.json`, `latestFeature` roll-forward)
-- A sibling checkout of **StreamMark** at `../StreamMark`. The `StreamMark.*` packages are read from a local feed (`../StreamMark/artifacts/packages`, set in `nuget.config`), so pack them first:
+- A [Rust toolchain](https://rustup.rs/), used once to build the native LaTeX library for StreamMark.
+- **StreamMark** comes in as a git submodule (`external/StreamMark`). Its `StreamMark.*` packages are read from a local feed (`packages/streammark`, set in `nuget.config`), so pack them first:
 
   ```bash
-  # from the StreamMark checkout, next to this repository
-  dotnet pack -o artifacts/packages
+  git submodule update --init
+  tools/streammark/pack.sh
   ```
 
 - AtomUI (`AtomUI.Desktop.Controls`) is consumed from nuget.org; no source checkout is needed.
@@ -86,7 +112,7 @@ The desktop build copies the Agent Host into the output directory's `agenthost/`
 dotnet test TCode.slnx
 ```
 
-The Desktop tests render real components headlessly (Avalonia.Headless + Skia) and write PNG snapshots to the test output's `snapshots/` directory, or to `TCODE_SNAPSHOT_DIR` if set.
+The Desktop tests render real components headlessly (Avalonia.Headless + Skia) and write PNG snapshots to the test output's `snapshots/` directory, or to `TCODE_SNAPSHOT_DIR` if set. `tools/readme-screenshots.sh` renders the README screenshots into `docs/images/` the same way.
 
 ### Publish (NativeAOT)
 
@@ -144,16 +170,20 @@ API keys can be plain text, `{env:VAR}`, or `$VAR`. Saving from the UI sets the 
 | [docs/architecture.md](docs/architecture.md) | Technical decisions, layering, RPC, UI and theming, NativeAOT rules |
 | [docs/settings.md](docs/settings.md) | `settings.json` format and merge rules |
 | [docs/design/builtin-agent-tools.md](docs/design/builtin-agent-tools.md) | Built-in agent system prompt and tool design |
-| [docs/design/external-agent-runtimes.md](docs/design/external-agent-runtimes.md) | Plans for Claude Code, Codex, and ACP runtimes |
+| [docs/design/external-agent-runtimes.md](docs/design/external-agent-runtimes.md) | Claude Code, Codex, and ACP runtimes |
+| [docs/design/composer.md](docs/design/composer.md) | Composer: mentions, commands, skills, roles |
+| [docs/design/mcp.md](docs/design/mcp.md) | MCP client |
+| [docs/design/auto-update.md](docs/design/auto-update.md) | In-app updates and the release pipeline |
+| [docs/terminal/](docs/terminal/) | Terminal architecture, pty host, and roadmap |
 | [docs/design/motion.md](docs/design/motion.md) | Motion guidelines |
 | [docs/protocols/](docs/protocols/) | Wire protocol specs the adapters implement |
 
 ## Roadmap
 
-- Harden the three protocol adapters against recorded provider traffic.
-- Finish built-in write / edit / bash tools with an approval UI.
-- External runtimes: Claude Code (stream-json), Codex (`app-server`), and generic ACP agents, reusing the TCode approval flow.
-- Context compaction, session branching and fork, integrated terminal, diff view.
+- Harden the protocol adapters and external runtimes against recorded provider traffic.
+- Context compaction, session branching and fork, and a diff view for changes.
+- Terminal: split panes, shell profiles, SSH, and agent integration (see [docs/terminal/13-roadmap.md](docs/terminal/13-roadmap.md)).
+- Signed and notarized macOS builds.
 
 ## Contributing
 

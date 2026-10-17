@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using TCode.Agent.Compaction;
 using TCode.Ai;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
@@ -18,7 +19,8 @@ public enum QueueMode
 /// <summary>
 /// 与协议无关的 Agent 循环：调用模型 → 执行工具 → 回传结果，直到模型不再调用工具。
 /// steer：当前轮（含工具）结束后、下一次模型调用前插入；followUp：Agent 即将停止时插入。
-/// 历史只追加，从不改写已有消息。
+/// 历史只追加，从不改写已有消息；唯一的例外是压缩（docs/design/compaction.md）：整段历史替换为摘要，
+/// 只发生在两次模型请求之间。
 /// </summary>
 public sealed class Agent : IAgentLoop
 {
@@ -30,6 +32,14 @@ public sealed class Agent : IAgentLoop
     private readonly Lock _gate = new();
     private CancellationTokenSource? _runCts;
     private Task _running = Task.CompletedTask;
+
+    // 压缩状态（docs/design/compaction.md §5、§10）
+    private bool _manualCompactPending;
+    private string? _manualCompactInstructions;
+    private bool _compactBeforeNextRequest;
+    private int _autoCompactFailures;
+    private int _rapidRefills;
+    private int _turnsSinceCompact = int.MaxValue;
 
     public Agent(WireApiRegistry apis, ModelInfo model, string systemPrompt, IReadOnlyList<IAgentTool> tools)
     {
@@ -66,6 +76,27 @@ public sealed class Agent : IAgentLoop
     /// </summary>
     public Func<CancellationToken, ValueTask<IReadOnlyList<Message>>>? ContextUpdates { get; set; }
 
+    /// <summary>
+    /// 消息进入历史之前调用：把图片数据转存到文件，历史里只留路径（<see cref="ImageContent.Path"/>），
+    /// 发给模型时再读回。
+    /// </summary>
+    public Func<Message, Message>? Offload { get; set; }
+
+    /// <summary>压缩器；为 null 时不压缩（自动、被动与手动都不可用）。</summary>
+    public ICompactor? Compactor { get; set; }
+
+    /// <summary>上下文预算（用户选择的档位，≤ 模型窗口）；0 表示用模型窗口。自动压缩阈值据此计算。</summary>
+    public int ContextBudget { get; set; }
+
+    /// <summary>自动压缩（请求前超过阈值、超窗后重试）。关闭后仍可手动压缩。</summary>
+    public bool AutoCompact { get; set; } = true;
+
+    /// <summary>本会话已停用自动压缩的原因（连续失败、反复触发等，§10）；null 表示正常。</summary>
+    public string? AutoCompactSuspended { get; private set; }
+
+    /// <summary>当前预算与模型下的压缩阈值。</summary>
+    public ContextThresholds Thresholds => ContextAccounting.Thresholds(ContextBudget, Model);
+
     public bool IsRunning
     {
         get
@@ -98,7 +129,7 @@ public sealed class Agent : IAgentLoop
                 throw new InvalidOperationException("Cannot load history while running.");
             }
             _messages.Clear();
-            _messages.AddRange(messages);
+            _messages.AddRange(Offload is { } offload ? messages.Select(offload) : messages);
         }
     }
 
@@ -149,6 +180,30 @@ public sealed class Agent : IAgentLoop
         }
     }
 
+    /// <summary>
+    /// 手动压缩（/compact）。空闲时立即作为一次运行执行；运行中则在下一次模型请求前执行，
+    /// 若本次运行没有下一次请求，则在运行结束后执行。
+    /// </summary>
+    public Task CompactAsync(string? instructions = null)
+    {
+        if (Compactor is null)
+        {
+            throw new InvalidOperationException("Compaction is not available for this session.");
+        }
+        lock (_gate)
+        {
+            if (_runCts is not null)
+            {
+                _manualCompactPending = true;
+                _manualCompactInstructions = instructions;
+                return Task.CompletedTask;
+            }
+            var cts = _runCts = new CancellationTokenSource();
+            _running = Task.Run(() => RunCompactionAsync(instructions, cts.Token));
+            return _running;
+        }
+    }
+
     public void Abort()
     {
         lock (_gate)
@@ -189,8 +244,14 @@ public sealed class Agent : IAgentLoop
             while (true)
             {
                 var stopped = false;
+                var reactiveTried = false;
                 while (true)
                 {
+                    // 新输入追加之前压缩：压缩后的历史 = 摘要 + 新的用户输入（§8.1）；已合并进新系统提示的补丁不再追加
+                    if (await CompactBeforeRequestAsync(pending, newMessages, ct))
+                    {
+                        pending = pending.Where(m => m is not SystemMessage).ToArray();
+                    }
                     foreach (var prompt in pending)
                     {
                         await AppendAsync(prompt, newMessages, ct);
@@ -202,8 +263,25 @@ public sealed class Agent : IAgentLoop
                     if (assistant.StopReason is StopReason.Error or StopReason.Aborted)
                     {
                         await EmitAsync(new TurnEndEvent(assistant, []), CancellationToken.None);
+                        // 超窗：压缩后重试同一请求一次（§5 reactive）
+                        if (assistant.StopReason == StopReason.Error && ContextOverflow.Is(assistant) && !reactiveTried &&
+                            Compactor is not null && AutoCompact)
+                        {
+                            reactiveTried = true;
+                            if (await TryCompactAsync(CompactionTrigger.Reactive, null, resumesWork: true, newMessages, ct))
+                            {
+                                continue;
+                            }
+                        }
                         stopped = true;
                         break;
+                    }
+                    reactiveTried = false;
+                    _turnsSinceCompact = _turnsSinceCompact == int.MaxValue ? int.MaxValue : _turnsSinceCompact + 1;
+                    if (ContextOverflow.Is(assistant))
+                    {
+                        // 输出撞上模型窗口（截断）：下一次请求前先压缩
+                        _compactBeforeNextRequest = true;
                     }
 
                     var toolCalls = assistant.Content.OfType<ToolCallContent>().ToList();
@@ -239,22 +317,219 @@ public sealed class Agent : IAgentLoop
         finally
         {
             await EmitAsync(new AgentEndEvent(newMessages), CancellationToken.None);
-            lock (_gate)
+            EndRun(ct);
+        }
+    }
+
+    /// <summary>
+    /// 结束一次运行。收尾期间排进队列的消息（例如后台任务完成通知）不能丢：未被中止时自动开始下一次运行；
+    /// 运行中请求的手动压缩若还没执行，先执行它。
+    /// </summary>
+    private void EndRun(CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            _runCts?.Dispose();
+            _runCts = null;
+            if (ct.IsCancellationRequested)
             {
-                _runCts?.Dispose();
-                _runCts = null;
-                // 运行收尾期间排进队列的消息（例如后台任务完成通知）不能丢：未被中止时自动开始下一次运行。
-                if (!ct.IsCancellationRequested && (_steering.Count > 0 || _followUps.Count > 0))
-                {
-                    var queued = _steering.Concat(_followUps).ToArray();
-                    _steering.Clear();
-                    _followUps.Clear();
-                    var next = _runCts = new CancellationTokenSource();
-                    _running = Task.Run(() => RunAsync(queued, next.Token));
-                }
+                _manualCompactPending = false;
+                return;
+            }
+            if (_manualCompactPending)
+            {
+                var instructions = _manualCompactInstructions;
+                _manualCompactPending = false;
+                _manualCompactInstructions = null;
+                var compact = _runCts = new CancellationTokenSource();
+                _running = Task.Run(() => RunCompactionAsync(instructions, compact.Token));
+                return;
+            }
+            if (_steering.Count > 0 || _followUps.Count > 0)
+            {
+                var queued = _steering.Concat(_followUps).ToArray();
+                _steering.Clear();
+                _followUps.Clear();
+                var next = _runCts = new CancellationTokenSource();
+                _running = Task.Run(() => RunAsync(queued, next.Token));
             }
         }
     }
+
+    /// <summary>只做一次手动压缩的运行（空闲时执行 /compact）。</summary>
+    private async Task RunCompactionAsync(string? instructions, CancellationToken ct)
+    {
+        var newMessages = new List<Message>();
+        try
+        {
+            await EmitAsync(new AgentStartEvent(), ct);
+            await TryCompactAsync(CompactionTrigger.Manual, instructions, resumesWork: false, newMessages, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            await EmitAsync(new AgentEndEvent(newMessages), CancellationToken.None);
+            EndRun(ct);
+        }
+    }
+
+    /// <summary>
+    /// 每次模型请求前（<paramref name="pending"/> 是即将追加的新输入）：执行排队的手动压缩、超窗后的补偿压缩，
+    /// 或在超过阈值时自动压缩（§5、§10）。返回是否压缩了。
+    /// </summary>
+    private async Task<bool> CompactBeforeRequestAsync(IReadOnlyList<Message> pending, List<Message> newMessages, CancellationToken ct)
+    {
+        if (Compactor is null)
+        {
+            return false;
+        }
+        // 没有新输入（工具轮之间）时，压缩后模型应直接接着干活
+        var resumesWork = pending.Count == 0;
+        string? manual;
+        bool hasManual;
+        lock (_gate)
+        {
+            hasManual = _manualCompactPending;
+            manual = _manualCompactInstructions;
+            _manualCompactPending = false;
+            _manualCompactInstructions = null;
+        }
+        if (hasManual)
+        {
+            return await TryCompactAsync(CompactionTrigger.Manual, manual, resumesWork: false, newMessages, ct);
+        }
+        var force = _compactBeforeNextRequest;
+        _compactBeforeNextRequest = false;
+        if (!AutoCompact)
+        {
+            return false;
+        }
+        if (force)
+        {
+            return await TryCompactAsync(CompactionTrigger.Reactive, null, resumesWork, newMessages, ct);
+        }
+        if (AutoCompactSuspended is not null)
+        {
+            return false;
+        }
+        var thresholds = Thresholds;
+        if (ContextAccounting.ContextTokens(Messages) + ContextAccounting.Estimate(pending) < thresholds.AutoCompactAt)
+        {
+            return false;
+        }
+        // 系统提示与工具定义本身已超过阈值：压缩也无济于事
+        var prefix = ContextAccounting.EstimateText(SystemPrompt) +
+                     Tools.Sum(t => ContextAccounting.EstimateText(t.Description) + ContextAccounting.EstimateText(t.ParametersSchemaJson));
+        if (prefix >= thresholds.AutoCompactAt)
+        {
+            await SuspendAutoCompactAsync("The system prompt and tool definitions alone exceed the auto-compact threshold; compaction cannot help.");
+            return false;
+        }
+        // 压缩后 3 轮内又到阈值，连续 3 次：判定为反复触发
+        if (_turnsSinceCompact <= 3)
+        {
+            if (++_rapidRefills >= 3)
+            {
+                await SuspendAutoCompactAsync(
+                    "Auto-compact is thrashing: the context refilled to the limit within a few turns of the previous compaction, several times in a row. " +
+                    "A file being read or a tool output is likely too large for the context window. Try reading in smaller chunks, or start a new session.");
+                return false;
+            }
+        }
+        else
+        {
+            _rapidRefills = 0;
+        }
+        if (await TryCompactAsync(CompactionTrigger.Auto, null, resumesWork, newMessages, ct))
+        {
+            _autoCompactFailures = 0;
+            return true;
+        }
+        if (++_autoCompactFailures >= 3)
+        {
+            await SuspendAutoCompactAsync("Auto-compact failed 3 times in a row and has been disabled for this session. Use /compact to retry.");
+        }
+        return false;
+    }
+
+    private async Task SuspendAutoCompactAsync(string reason)
+    {
+        AutoCompactSuspended = reason;
+        await EmitAsync(new CompactionSuspendedEvent(reason), CancellationToken.None);
+    }
+
+    /// <summary>压缩并替换历史；失败时历史不变。用户中止时抛出取消异常。</summary>
+    /// <param name="resumesWork">压缩后没有新的用户输入、模型应直接接着干活（摘要消息里加上“不要询问，直接继续”）。</param>
+    private async Task<bool> TryCompactAsync(CompactionTrigger trigger, string? instructions, bool resumesWork, List<Message> newMessages,
+        CancellationToken ct)
+    {
+        var compactor = Compactor ?? throw new InvalidOperationException("No compactor.");
+        var messages = Messages;
+        var preTokens = ContextAccounting.ContextTokens(messages);
+        await EmitAsync(new CompactionStartEvent(trigger, preTokens), ct);
+        CompactionResult result;
+        try
+        {
+            var request = new CompactionRequest(trigger, instructions, Model, SystemPrompt, Tools.Select(t => t.ToDefinition()).ToArray(),
+                ForModel(messages), preTokens, CompleteAsync)
+            {
+                ResumesWork = resumesWork,
+            };
+            result = await compactor.CompactAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await EmitAsync(new CompactionEndEvent(trigger, preTokens, null, "Compaction was cancelled.", []), CancellationToken.None);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await EmitAsync(new CompactionEndEvent(trigger, preTokens, null, ex.Message, []), CancellationToken.None);
+            return false;
+        }
+
+        lock (_gate)
+        {
+            _messages.Clear();
+        }
+        SystemPrompt = result.SystemPrompt;
+        _turnsSinceCompact = 0;
+        await EmitAsync(new CompactionEndEvent(trigger, preTokens, result, null, messages), CancellationToken.None);
+        foreach (var message in result.Messages)
+        {
+            await AppendAsync(message, newMessages, CancellationToken.None);
+        }
+        return true;
+    }
+
+    /// <summary>压缩用的一次性请求：当前模型、思考档位与 Key，不写入新的缓存断点（§6.1）。</summary>
+    private async Task<AssistantMessage> CompleteAsync(LlmContext context, int maxTokens, CancellationToken ct)
+    {
+        var options = new StreamOptions
+        {
+            ApiKey = GetApiKey?.Invoke(Model.Provider),
+            ThinkingLevel = ThinkingLevel,
+            FastMode = FastMode,
+            SessionId = SessionId,
+            MaxTokens = maxTokens,
+            SkipCacheWrite = true,
+        };
+        var stream = _apis.Stream(Model, context, options, ct);
+        await foreach (var _ in stream.WithCancellation(CancellationToken.None))
+        {
+        }
+        return await stream.Result;
+    }
+
+    /// <summary>发给模型的消息：图片数据在这里才从文件读回，请求结束后即可回收。</summary>
+    private Message[] ForModel(IEnumerable<Message> messages) => messages.Select(m => m switch
+    {
+        UserMessage user => user.ForModel(Model.SupportsImages),
+        ToolResultMessage result => result.ForModel(),
+        _ => m,
+    }).ToArray();
 
     private async Task<IReadOnlyList<Message>> WithContextUpdatesAsync(IReadOnlyList<UserMessage> prompts, CancellationToken ct)
     {
@@ -269,8 +544,7 @@ public sealed class Agent : IAgentLoop
     private async Task<AssistantMessage> StreamAssistantAsync(List<Message> newMessages, CancellationToken ct)
     {
         var messageId = NewId();
-        var messages = Messages.Select(m => m is UserMessage user ? user.ForModel(Model.SupportsImages) : m).ToArray();
-        var context = new LlmContext(SystemPrompt, messages, Tools.Select(t => t.ToDefinition()).ToArray());
+        var context = new LlmContext(SystemPrompt, ForModel(Messages), Tools.Select(t => t.ToDefinition()).ToArray());
         var options = new StreamOptions
         {
             ApiKey = GetApiKey?.Invoke(Model.Provider),
@@ -421,6 +695,7 @@ public sealed class Agent : IAgentLoop
     private async Task AppendAsync(Message message, List<Message> newMessages, CancellationToken ct, string? messageId = null)
     {
         var id = messageId ?? NewId();
+        message = Offload?.Invoke(message) ?? message;
         if (messageId is null)
         {
             await EmitAsync(new MessageStartEvent(id, message), ct);

@@ -22,3 +22,20 @@ public sealed record MessageEndEvent(string MessageId, Message Message) : AgentE
 public sealed record ToolExecutionStartEvent(string ToolCallId, string ToolName, string ArgumentsJson) : AgentEvent;
 public sealed record ToolExecutionUpdateEvent(string ToolCallId, string ToolName, AgentToolResult Partial) : AgentEvent;
 public sealed record ToolExecutionEndEvent(string ToolCallId, string ToolName, AgentToolResult Result, TimeSpan Duration) : AgentEvent;
+
+/// <summary>开始压缩上下文（docs/design/compaction.md §5）。</summary>
+public sealed record CompactionStartEvent(Compaction.CompactionTrigger Trigger, long PreTokens) : AgentEvent;
+
+/// <summary>
+/// 压缩结束。成功时 <see cref="Replaced"/> 为被替换掉的旧历史（会话据此保留显示用的完整记录），随后追加 Result.Messages；
+/// 失败时 Error 为原因，历史不变。
+/// </summary>
+public sealed record CompactionEndEvent(
+    Compaction.CompactionTrigger Trigger,
+    long PreTokens,
+    Compaction.CompactionResult? Result,
+    string? Error,
+    IReadOnlyList<Message> Replaced) : AgentEvent;
+
+/// <summary>本会话停用了自动压缩（连续失败、反复触发等，docs/design/compaction.md §10）。</summary>
+public sealed record CompactionSuspendedEvent(string Reason) : AgentEvent;

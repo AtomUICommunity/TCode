@@ -48,7 +48,14 @@ public sealed class FakeWireApi : IWireApi
                 builder.EndBlock(thinking);
             }
 
-            if (last is UserMessage mcpUser && McpCall(mcpUser, context) is { } mcp)
+            if (last is UserMessage summaryUser && IsSummaryRequest(summaryUser))
+            {
+                // 压缩上下文的摘要请求（docs/design/compaction.md §7.1）：给一段简短的结构化摘要
+                var text = builder.BeginText();
+                await EmitAsync(builder, text, FakeSummary(context), ct);
+                builder.EndBlock(text);
+            }
+            else if (last is UserMessage mcpUser && McpCall(mcpUser, context) is { } mcp)
             {
                 // 开发 / 测试用：“mcp:<工具名> <JSON 参数>” 直接调用该 MCP 工具
                 var call = builder.BeginToolCall($"call_{Guid.NewGuid():N}"[..20], mcp.Name);
@@ -122,6 +129,27 @@ public sealed class FakeWireApi : IWireApi
         var name = space < 0 ? rest : rest[..space];
         var args = space < 0 ? "{}" : rest[(space + 1)..].Trim();
         return context.Tools.Any(t => t.Name == name) ? (name, args) : null;
+    }
+
+    private static bool IsSummaryRequest(UserMessage user) =>
+        user.Content.OfType<TextContent>().Any(t => t.Text.Contains("Your task is to create a detailed summary of the conversation so far", StringComparison.Ordinal));
+
+    private static string FakeSummary(LlmContext context)
+    {
+        var asks = context.Messages.OfType<UserMessage>().Where(u => u.Source is null)
+            .Select(u => string.Concat(u.Content.OfType<TextContent>().Select(t => t.Text)).Trim())
+            .Where(t => t.Length > 0 && !t.Contains("Your task is to create a detailed summary", StringComparison.Ordinal))
+            .Select(t => t.Length > 80 ? t[..80] + "…" : t)
+            .ToArray();
+        return $"""
+            <analysis>Fake Provider：不做真正的分析。</analysis>
+            <summary>
+            1. Primary Request and Intent: {(asks.Length == 0 ? "（无）" : asks[^1])}
+            6. All user messages:
+            {string.Join("\n", asks.Select(a => $"   - {a}"))}
+            8. Current Work: 这是 Fake Provider 生成的模拟摘要。
+            </summary>
+            """;
     }
 
     private static bool WantsTask(UserMessage user)

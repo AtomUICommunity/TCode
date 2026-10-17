@@ -22,6 +22,10 @@ public sealed record SessionEventNotification(string SessionId, long Seq, Sessio
 [JsonDerivedType(typeof(ToolExecutionUpdated), "toolExecutionUpdated")]
 [JsonDerivedType(typeof(ToolExecutionEnded), "toolExecutionEnded")]
 [JsonDerivedType(typeof(CommandsChanged), "commandsChanged")]
+[JsonDerivedType(typeof(CompactionStarted), "compactionStarted")]
+[JsonDerivedType(typeof(CompactionEnded), "compactionEnded")]
+[JsonDerivedType(typeof(CompactionSuspended), "compactionSuspended")]
+[JsonDerivedType(typeof(BackgroundTasksChanged), "backgroundTasksChanged")]
 public abstract record SessionEvent;
 
 public sealed record AgentStarted : SessionEvent;
@@ -60,3 +64,18 @@ public sealed record ToolExecutionUpdated(string ToolCallId, string ToolName, st
 /// <param name="DetailsJson">工具给 UI 的结构化数据（例如 diff），格式由工具约定。</param>
 public sealed record ToolExecutionEnded(string ToolCallId, string ToolName, bool IsError, string ResultText, double DurationMs,
     string? DetailsJson = null) : SessionEvent;
+
+/// <summary>开始压缩上下文（docs/design/compaction.md §12）。Trigger：manual / auto / reactive。</summary>
+public sealed record CompactionStarted(string Trigger, long PreTokens) : SessionEvent;
+
+/// <summary>压缩结束：成功时 Error 为 null，随后到达摘要消息（Source = compact-summary）；失败时历史不变。</summary>
+public sealed record CompactionEnded(string Trigger, long PreTokens, long? PostTokens, string? Error) : SessionEvent;
+
+/// <summary>本会话停用了自动压缩（连续失败、反复触发等）。</summary>
+public sealed record CompactionSuspended(string Reason) : SessionEvent;
+
+/// <summary>后台任务（shell / 后台子 Agent）的当前列表：启动、结束、停止时整体推送，界面据此刷新任务球。</summary>
+public sealed record BackgroundTasksChanged(IReadOnlyList<BackgroundTaskDto> Tasks) : SessionEvent;
+
+/// <summary>Type：bash / agent；Status：running / completed / failed / stopped。</summary>
+public sealed record BackgroundTaskDto(string Id, string Type, string Description, string Status);

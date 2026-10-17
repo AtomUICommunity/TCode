@@ -42,7 +42,10 @@ public abstract record ToolDetails
 
 /// <param name="Diff">unified diff。</param>
 /// <param name="Created">新建的文件。</param>
-public sealed record DiffDetails(string Path, string Diff, int Added, int Removed, int? FirstChangedLine, bool Created = false) : ToolDetails;
+/// <param name="Before">改动前的完整文本（LF，不含 BOM）；新建文件或超过快照上限时为 null。用于撤销。</param>
+/// <param name="AfterSha256">改动后文件字节的 SHA-256（小写十六进制）。撤销前用它检测文件是否又被改过。</param>
+public sealed record DiffDetails(string Path, string Diff, int Added, int Removed, int? FirstChangedLine, bool Created = false,
+    string? Before = null, string? AfterSha256 = null) : ToolDetails;
 
 /// <param name="OutputPath">完整输出所在的文件（输出被截断或后台运行时）。</param>
 public sealed record CommandDetails(string Command, int? ExitCode, bool TimedOut = false, string? OutputPath = null, string? TaskId = null)

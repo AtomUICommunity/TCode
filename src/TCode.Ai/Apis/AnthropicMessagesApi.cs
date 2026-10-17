@@ -43,7 +43,7 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
             }
             body["system"] = new JsonArray((JsonNode)block);
         }
-        if (compat.SupportsCacheControl)
+        if (compat.SupportsCacheControl && !options.SkipCacheWrite)
         {
             // 顶层自动缓存：断点随对话尾部移动（规格 §8.3）。
             body["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
@@ -469,6 +469,8 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
             {
                 throw new ProviderException("Stream ended before message_stop.", isRetryable: true);
             }
+            // 输出撞上模型窗口：按截断处理，同时标记超窗，Agent 在下一次请求前压缩（docs/design/compaction.md §9）
+            Builder.ContextOverflow = _stopReason == "model_context_window_exceeded";
             Builder.StopReason = _stopReason switch
             {
                 "tool_use" => StopReason.ToolUse,

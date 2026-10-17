@@ -18,6 +18,8 @@ public enum ToolCategory
     Mcp,
     /// <summary>加载 skill（内置 Agent 的 skill、Claude 的 Skill）。</summary>
     Skill,
+    /// <summary>向用户提问（ask_user、Claude AskUserQuestion、Codex request_user_input）：转录里显示为独立的问答卡片。</summary>
+    Question,
     Other,
 }
 
@@ -39,6 +41,7 @@ public static class ToolPresentation
         "webfetch" or "web_fetch" or "websearch" or "web_search" or "fetch" => ToolCategory.Fetch,
         "task" or "agent" => ToolCategory.Task,
         "skill" => ToolCategory.Skill,
+        "ask_user" or "askuserquestion" or "request_user_input" => ToolCategory.Question,
         "task_create" or "task_update" or "task_get" or "task_list" or "todowrite" or "update_plan" or "taskcreate" or "taskupdate"
             => ToolCategory.Plan,
         _ => ToolCategory.Other,
@@ -55,6 +58,7 @@ public static class ToolPresentation
         ToolCategory.Plan => LucideKind.ListChecks,
         ToolCategory.Mcp => LucideKind.Plug,
         ToolCategory.Skill => LucideKind.Sparkles,
+        ToolCategory.Question => LucideKind.MessageCircleQuestion,
         _ => LucideKind.Wrench,
     };
 
@@ -70,6 +74,7 @@ public static class ToolPresentation
         ToolCategory.Plan => Strings.Get(TCodeLangResourceKind.StepPlan),
         ToolCategory.Mcp => McpLabel(toolName),
         ToolCategory.Skill => Strings.Get(TCodeLangResourceKind.StepSkill),
+        ToolCategory.Question => Strings.Get(TCodeLangResourceKind.StepQuestion),
         _ => toolName,
     };
 

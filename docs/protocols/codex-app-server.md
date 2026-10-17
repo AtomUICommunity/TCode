@@ -478,6 +478,19 @@ params：`{threadId, turnId, itemId, isBlocking: bool, questions: ToolRequestUse
 
 response：`{answers: {<question.id>: {answers: string[]}}}`。答案的 key 用**线上的 question id**，选项题回填 `label` [Schema；Zeron `mod.rs:2066-2090`]。用户取消时回 `{"answers":{}}`。
 
+补充（codex-cli 0.163.0 与 `rust-v0.163.0` 源码，2026-10-18 核对；TCode 实现见 docs/design/ask-user.md §8）：
+
+- **门控**：模型侧的 `request_user_input` 工具默认注册（`tools.experimental_request_user_input.enabled` 默认为 true），但调用时只有满足以下任一条件才可用，否则模型收到 `request_user_input is unavailable in Default mode`：
+  - 协作模式为 Plan。设置 Plan 要用 `turn/start.collaborationMode`，这是实验字段，需要 `experimentalApi: true`。
+  - 打开了特性 `default_mode_request_user_input`（UnderDevelopment 阶段，默认关闭）。
+  - 结论：TCode 用 `experimentalApi:false`，**只有用户在自己的 config 里打开该特性时才会收到这个请求**。TCode 照常处理，但不主动开启。
+- **模型侧约定**：1–3 个问题；每题 `{id (snake_case), header (≤12 字符), question, options: 2–3 个 {label, description}}`；推荐项放第一个并加 “(Recommended)”；不写 “Other”；只有根线程可用。`isOther` 由 Codex 强制为 true，`isSecret` 保持 false。
+- **`isBlocking`**：Plan 模式下为 true。非阻塞的请求可能由客户端自动结束；`autoResolutionMs` 已弃用。
+- **回答约定**（与 Codex TUI 一致）：选中的 label 原样放入；用户自己输入的文本写成 `"user_note: <文本>"` 追加在后面；未回答的问题给空列表。TCode 拒绝回答时每个问题都给空列表。
+- **模型看到的结果**：回答的 JSON 原文（`{"answers":{…}}`）；被取消时是 `request_user_input was cancelled before receiving a response`。
+- **相关信号**：`serverRequest/resolved`；`thread/status/changed` 的 `activeFlags` 含 `waitingOnUserInput`。这个请求**没有对应的 ThreadItem**，TCode 在转录里合成一个 `request_user_input` 工具调用。
+- **非阻塞变体** `request_user_input_async`：只在模型目录的 `experimental_supported_tools` 列出时提供，以 `agentMessage` 条目（`delivery:"async"`，带 `questions`）出现，立即返回 `{"accepted":true}`，用户在下一条普通消息里回答，不产生服务端请求。TCode 暂不特别处理。
+
 ### 6.6 `mcpServer/elicitation/request`
 
 params：`{threadId, serverName, turnId?}`，再加上下面几种 mode 之一 [Schema]：

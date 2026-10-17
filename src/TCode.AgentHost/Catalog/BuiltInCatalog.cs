@@ -10,6 +10,8 @@ public sealed record CatalogModel
     public string? Description { get; init; }
     public int? ContextWindow { get; init; }
     public int? MaxTokens { get; init; }
+    /// <summary>新会话默认的上下文预算（TCode 补充，models.dev 没有）。</summary>
+    public int? DefaultContextWindow { get; init; }
     public bool Reasoning { get; init; }
     public List<string>? Efforts { get; init; }
     public bool CanDisableThinking { get; init; }
@@ -245,6 +247,7 @@ public sealed class BuiltInCatalog
         Patch("openai", p => p with { Featured = ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-5.5"] });
         Patch("deepseek", p => p with { Featured = ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"] });
         Patch("lmstudio", p => p with { KeyOptional = true });
+        ApplyDefaultContextWindows(result);
         // models.dev 只收录了 Ollama Cloud；本地 Ollama 的模型由用户在 settings.json 中列出
         result.TryAdd("ollama", new CatalogProvider
         {
@@ -254,6 +257,43 @@ public sealed class BuiltInCatalog
             KeyOptional = true,
         });
         return result;
+    }
+
+    /// <summary>
+    /// 单独设置默认上下文预算的模型（其余模型用全局默认值）。按模型 id 匹配所有厂商，
+    /// 代理与聚合平台的 “openai/gpt-6.1-sol”、“gpt-6.1-sol@eu” 也算同一模型。
+    /// </summary>
+    private static readonly Dictionary<string, int> DefaultContextWindows = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["gpt-6.1-sol"] = 500_000,
+    };
+
+    private static void ApplyDefaultContextWindows(Dictionary<string, CatalogProvider> providers)
+    {
+        foreach (var (id, provider) in providers.ToArray())
+        {
+            Dictionary<string, CatalogModel>? models = null;
+            foreach (var (modelId, model) in provider.Models)
+            {
+                if (model.DefaultContextWindow is null && DefaultContextWindows.TryGetValue(BaseModelId(modelId), out var window))
+                {
+                    models ??= new Dictionary<string, CatalogModel>(provider.Models, StringComparer.Ordinal);
+                    models[modelId] = model with { DefaultContextWindow = window };
+                }
+            }
+            if (models is not null)
+            {
+                providers[id] = provider with { Models = models };
+            }
+        }
+    }
+
+    /// <summary>去掉路由前缀（“openai/”）和区域、变体后缀（“@eu”、“:free”）。</summary>
+    internal static string BaseModelId(string modelId)
+    {
+        var id = modelId[(modelId.LastIndexOf('/') + 1)..];
+        var end = id.IndexOfAny(['@', ':']);
+        return end > 0 ? id[..end] : id;
     }
 }
 

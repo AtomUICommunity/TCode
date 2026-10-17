@@ -1,3 +1,4 @@
+using TCode.Agent.Diff;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -136,6 +137,7 @@ public sealed class EditTool(ToolContext context) : IAgentTool
         context.Files.Record(path, output);
 
         var diff = LineDiff.Compute(file.Text, updated, path);
+        var snapshot = bytes.Length <= FileRevert.MaxSnapshotBytes ? file.Text : null;
         var message = $"Replaced {edits.Count} block(s) in {path}.";
         if (context.NestedInstructionsFor(path) is { } nested)
         {
@@ -143,7 +145,8 @@ public sealed class EditTool(ToolContext context) : IAgentTool
         }
         return AgentToolResult.Text(message) with
         {
-            Details = new DiffDetails(path, diff.UnifiedDiff, diff.Added, diff.Removed, diff.FirstChangedLine).ToJson(),
+            Details = new DiffDetails(path, diff.UnifiedDiff, diff.Added, diff.Removed, diff.FirstChangedLine,
+                Before: snapshot, AfterSha256: FileRevert.Sha256(output)).ToJson(),
         };
     }
 

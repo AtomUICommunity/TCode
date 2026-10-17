@@ -5,6 +5,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
+using Avalonia.Styling;
 using TCode.Desktop.ViewModels;
 using TCode.Terminal.Avalonia;
 
@@ -23,6 +24,7 @@ public partial class TerminalTabView : UserControl
         Terminal.SizeChanged += OnSizeChanged;
         Loaded += (_, _) => Terminal.Focus();
         DataContextChanged += OnDataContextChanged;
+        ActualThemeVariantChanged += (_, _) => _attached?.SetDarkTheme(IsDark);
         SearchBox.KeyDown += OnSearchKeyDown;
     }
 
@@ -54,6 +56,8 @@ public partial class TerminalTabView : UserControl
         SearchBox.SelectAll();
     }
 
+    private bool IsDark => ActualThemeVariant == ThemeVariant.Dark || ActualThemeVariant?.InheritVariant == ThemeVariant.Dark;
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_attached is { } previous)
@@ -79,6 +83,7 @@ public partial class TerminalTabView : UserControl
             return data is null ? null : await data.TryGetTextAsync();
         };
         _attached.OpenLink = uri => TopLevel.GetTopLevel(this)?.Launcher.LaunchUriAsync(uri) ?? Task.CompletedTask;
+        _attached.SetDarkTheme(IsDark);  // 会话创建（首次布局）之前确定调色板
         if (Bounds.Size is { Width: > 0, Height: > 0 } size)
         {
             Apply(size);

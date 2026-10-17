@@ -1,12 +1,20 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using TCode.Agent.Diff;
 using TCode.Ai.Messages;
 using TCode.Rpc;
 using TCode.Runtimes.Json;
 
 namespace TCode.Runtimes.Acp;
+
+internal static class AcpDiffLimits
+{
+    /// <summary>与 TCode.Agent.Coding.Tools.Files.FileRevert.MaxSnapshotBytes 一致。</summary>
+    public const int MaxSnapshotBytes = 512 * 1024;
+}
 
 /// <summary>
 /// 一个 ACP 会话 = 一个 Agent 进程（规格 docs/protocols/acp-v1.md）。
@@ -92,6 +100,11 @@ internal sealed class AcpSession : IRuntimeSession
                 w.WriteBoolean("writeTextFile", false);
                 w.WriteEndObject();
                 w.WriteBoolean("terminal", false);
+                // 只声明 form：URL 模式需要的安全打开方式 TCode 暂不提供（规格 §11）
+                w.WriteStartObject("elicitation");
+                w.WriteStartObject("form");
+                w.WriteEndObject();
+                w.WriteEndObject();
                 w.WriteStartObject("auth");
                 w.WriteBoolean("terminal", false);
                 w.WriteEndObject();
@@ -470,9 +483,37 @@ internal sealed class AcpSession : IRuntimeSession
     private Task<JsonElement?> OnRequestAsync(string method, JsonElement? parameters, CancellationToken ct) => method switch
     {
         "session/request_permission" => RequestPermissionAsync(parameters ?? default, ct),
-        "elicitation/create" => throw new RpcRemoteException(JsonRpcConnection.InvalidParams, "elicitation mode not supported"),
+        "elicitation/create" => ElicitAsync(parameters ?? default, ct),
         _ => throw new RpcRemoteException(JsonRpcConnection.MethodNotFound, "Method not found"),
     };
+
+    /// <summary>
+    /// elicitation/create（规格 §11）：form 模式交给 TCode 的表单卡片（与 MCP elicitation 相同）；
+    /// 其他模式没有声明，按规范回复 -32602。Agent 取消请求或轮次中止时回复 cancel。
+    /// </summary>
+    private async Task<JsonElement?> ElicitAsync(JsonElement p, CancellationToken ct)
+    {
+        if ((p.Str("mode") ?? "form") != "form")
+        {
+            throw new RpcRemoteException(JsonRpcConnection.InvalidParams, "elicitation mode not supported");
+        }
+        var schema = p.Obj("requestedSchema")?.GetRawText();
+        var result = await _host.RequestElicitationAsync(new RuntimeElicitationRequest(p.Str("message") ?? "", schema), ct);
+        return JsonBuilder.Object(w =>
+        {
+            var action = result.Action is "accept" or "decline" ? result.Action : "cancel";
+            w.WriteString("action", action);
+            if (action == "accept" && result.ContentJson is { Length: > 0 } content)
+            {
+                using var doc = JsonDocument.Parse(content);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    w.WritePropertyName("content");
+                    doc.RootElement.WriteTo(w);
+                }
+            }
+        });
+    }
 
     private static readonly JsonElement CancelledOutcome = JsonBuilder.Parse("""{"outcome":{"outcome":"cancelled"}}""");
 
@@ -847,22 +888,57 @@ internal sealed class AcpSession : IRuntimeSession
             return builder.ToString();
         }
 
-        /// <summary>界面用的 diff（保留曾出现过的最后一组 diff，避免被后续只含文本的更新冲掉）。</summary>
+        /// <summary>
+        /// 界面用的 diff（保留曾出现过的最后一组 diff，避免被后续只含文本的更新冲掉）。
+        /// 结构与内置 edit / write 相同（kind = diff），变更面板才能解析并撤销；一次工具调用通常只改一个文件，多个时只取第一个。
+        /// </summary>
         public string? Details()
         {
-            if (LastDiffs is not { Length: > 0 } diffs)
+            if (LastDiffs is not { Length: > 0 } diffs || diffs[0].Str("path") is not { } path)
             {
                 return null;
             }
+            var oldText = diffs[0].Str("oldText");
+            var created = oldText is null;
+            // 快照与内置工具一致：LF 文本，超过上限则不保存（不可撤销）
+            var before = oldText is null ? null : oldText.Replace("\r\n", "\n", StringComparison.Ordinal);
+            if (before is not null && Encoding.UTF8.GetByteCount(before) > AcpDiffLimits.MaxSnapshotBytes)
+            {
+                before = null;
+            }
+            var diff = LineDiff.Compute(oldText ?? "", diffs[0].Str("newText") ?? "", path);
+            var after = FingerprintOnDisk(path);
             return JsonBuilder.Object(w =>
             {
-                w.WriteStartArray("diffs");
-                foreach (var d in diffs)
+                w.WriteString("kind", "diff");
+                w.WriteString("path", path);
+                w.WriteString("diff", diff.UnifiedDiff);
+                w.WriteNumber("added", diff.Added);
+                w.WriteNumber("removed", diff.Removed);
+                if (diff.FirstChangedLine is { } line)
                 {
-                    d.WriteTo(w);
+                    w.WriteNumber("firstChangedLine", line);
                 }
-                w.WriteEndArray();
+                w.WriteBoolean("created", created);
+                if (before is not null)
+                {
+                    w.WriteString("before", before);
+                }
+                if (after is not null)
+                {
+                    w.WriteString("afterSha256", after);
+                }
             }).GetRawText();
+        }
+
+        /// <summary>改动完成时磁盘上文件的 SHA-256（与 FileRevert 比较的是同一种指纹）；文件不存在时为 null，此时不可撤销。</summary>
+        private static string? FingerprintOnDisk(string path)
+        {
+            if (!Path.IsPathFullyQualified(path) || !File.Exists(path))
+            {
+                return null;
+            }
+            return Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
         }
     }
 }

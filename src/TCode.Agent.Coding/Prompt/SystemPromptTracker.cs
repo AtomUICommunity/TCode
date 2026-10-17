@@ -55,6 +55,21 @@ public sealed class SystemPromptTracker
             ? new(store, workspace, tools, initial, snapshot.SystemPrompt ?? initial, extra)
             : Create(store, workspace, tools, model, extra);
 
+    /// <summary>
+    /// 压缩后重新生成开头的系统提示（docs/design/compaction.md §7.3）：之前累积的补丁合并进一份新的冻结提示，
+    /// 写入新的系统提示记录（会话文件中排在压缩记录之后，恢复时作为新的开头）。
+    /// </summary>
+    public async ValueTask<string> RebaseAsync(IReadOnlyList<PromptSection> sections, CancellationToken cancellationToken)
+    {
+        await _store.AppendSystemPromptAsync(sections, cancellationToken);
+        _initial = sections;
+        _recorded = sections;
+        return InitialPrompt;
+    }
+
+    /// <summary>按当前环境与动态节计算的系统提示（不记录）。</summary>
+    public IReadOnlyList<PromptSection> Current(ModelInfo model) => SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra);
+
     public async ValueTask<IReadOnlyList<Message>> UpdatesAsync(ModelInfo model, CancellationToken cancellationToken)
     {
         var current = SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra);

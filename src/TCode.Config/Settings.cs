@@ -36,6 +36,9 @@ public sealed record TCodeSettings
     /// <summary>应用内更新（docs/design/auto-update.md §8）。</summary>
     public UpdateSettings? Update { get; init; }
 
+    /// <summary>内置 Agent 自动压缩上下文（默认 true，docs/design/compaction.md §4）；关闭后仍可用 /compact 手动压缩。</summary>
+    public bool? AutoCompact { get; init; }
+
     /// <summary>MCP 服务器（原样保留，按项单独解析，一项出错不影响其他项；见 <see cref="McpServerConfig.ParseServers"/>）。</summary>
     public JsonObject? McpServers { get; init; }
 }
@@ -98,6 +101,8 @@ public sealed record ModelSettings
     public string? Name { get; init; }
     public string? Description { get; init; }
     public int? ContextWindow { get; init; }
+    /// <summary>新会话默认的上下文预算；省略时用目录值或全局默认（272K）。</summary>
+    public int? DefaultContextWindow { get; init; }
     public int? MaxTokens { get; init; }
     public bool? Reasoning { get; init; }
     public List<string>? Efforts { get; init; }

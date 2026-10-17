@@ -72,6 +72,34 @@ public sealed class ModelCatalogTests : IDisposable
     }
 
     [Fact]
+    public void ContextWindows_DefaultBudget_PerModelOverride_AndUserSetting()
+    {
+        var catalog = Load("""
+            { "providers": {
+                "anthropic": { "apiKey": "sk-ant-test" },
+                "openai": { "apiKey": "sk-test", "models": { "gpt-6.1-sol": {}, "gpt-6-luna": { "defaultContextWindow": 400000 } } },
+                "openrouter": { "apiKey": "sk-or", "models": { "openai/gpt-6.1-sol": {} } } } }
+            """);
+        int[] Windows(string provider, string id) => SessionOptions.ContextWindows(catalog.Models.Single(m => m.Provider == provider && m.Id == id)).ToArray();
+
+        Assert.Equal([272_000, 1_000_000], Windows("anthropic", "claude-opus-5-5"));
+        // 单独指定的模型：按去掉路由前缀的 id 匹配所有厂商
+        Assert.Equal([500_000, 1_050_000], Windows("openai", "gpt-6.1-sol"));
+        Assert.Equal([500_000, 1_050_000], Windows("openrouter", "openai/gpt-6.1-sol"));
+        // settings.json 覆盖
+        Assert.Equal([400_000, 1_050_000], Windows("openai", "gpt-6-luna"));
+        // 模型窗口不超过默认预算：只有一档
+        Assert.Equal([128_000], SessionOptions.ContextWindows(new TCode.Ai.Models.ModelInfo { Id = "m", Name = "m", Provider = "p", Api = "chat", ContextWindow = 128_000 }));
+    }
+
+    [Theory]
+    [InlineData("gpt-6.1-sol", "gpt-6.1-sol")]
+    [InlineData("openai/gpt-6.1-sol", "gpt-6.1-sol")]
+    [InlineData("gpt-6.1-sol@eu", "gpt-6.1-sol")]
+    [InlineData("auto/openai/gpt-6.1-sol:free", "gpt-6.1-sol")]
+    public void BaseModelId_StripsRoutingPrefixAndSuffix(string id, string expected) => Assert.Equal(expected, BuiltInCatalog.BaseModelId(id));
+
+    [Fact]
     public void SettingsWithoutProviders_Loads()
     {
         // 迁移 desktop.json 后的典型文件：只有语言与主题

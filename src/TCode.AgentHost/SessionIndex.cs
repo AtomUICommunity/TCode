@@ -100,12 +100,12 @@ public sealed class SessionIndex(ILogger<SessionIndex> logger)
     {
         try
         {
-            var snapshot = SessionStore.Read(file.FullName);
+            var snapshot = SessionStore.ReadSummary(file.FullName);
             var modelRef = snapshot.ModelId is null ? null
                 : snapshot.ModelProvider is null ? snapshot.ModelId
                 : $"{snapshot.ModelProvider}/{snapshot.ModelId}";
             return new SessionIndexEntry(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks, snapshot.SessionId, snapshot.Cwd,
-                TitleOf(snapshot.Messages), snapshot.CustomTitle, snapshot.IsPinned, modelRef, snapshot.Runtime, snapshot.NativeSessionId);
+                TitleOf(snapshot.AllMessages), snapshot.CustomTitle, snapshot.IsPinned, modelRef, snapshot.Runtime, snapshot.NativeSessionId);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {

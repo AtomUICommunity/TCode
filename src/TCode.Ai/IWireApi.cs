@@ -19,6 +19,11 @@ public sealed record StreamOptions
     public bool FastMode { get; init; }
     /// <summary>用作 prompt_cache_key / 会话亲和头。</summary>
     public string? SessionId { get; init; }
+    /// <summary>
+    /// 只读缓存、不写入新的缓存断点（一次性的分叉请求，例如压缩摘要）：Anthropic 不加随尾部移动的顶层 cache_control，
+    /// 系统提示上的断点保留（它已在缓存中，只会命中）。
+    /// </summary>
+    public bool SkipCacheWrite { get; init; }
 }
 
 /// <summary>

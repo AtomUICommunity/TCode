@@ -22,6 +22,9 @@ public sealed class AppTray
     private readonly MainWindowViewModel _main;
     private readonly TrayIcon _icon;
 
+    /// <summary>托盘菜单只创建一次：Avalonia.Native 会把它导出为原生菜单，换成另一个实例时更新会失败（“menu being updated does not match”）。</summary>
+    private readonly NativeMenu _menu = new();
+
     public AppTray(Application app, IClassicDesktopStyleApplicationLifetime desktop, Window window, UserSettingsService settings, UpdatesViewModel updates,
         MainWindowViewModel main)
     {
@@ -34,7 +37,7 @@ public sealed class AppTray
         {
             Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://TCode/Assets/app-logo.png"))),
             ToolTipText = "TCode",
-            Menu = new NativeMenu(),
+            Menu = _menu,
         };
         _icon.Clicked += (_, _) => ShowWindow();
         TrayIcon.SetIcons(app, [_icon]);
@@ -86,12 +89,11 @@ public sealed class AppTray
 
     private void Rebuild()
     {
-        var menu = new NativeMenu();
+        _menu.Items.Clear();
         foreach (var item in BuildItems(_updates))
         {
-            menu.Items.Add(item.Text is null ? new NativeMenuItemSeparator() : ToNative(item));
+            _menu.Items.Add(item.Text is null ? new NativeMenuItemSeparator() : ToNative(item));
         }
-        _icon.Menu = menu;
     }
 
     private NativeMenuItem ToNative(TrayItem item)

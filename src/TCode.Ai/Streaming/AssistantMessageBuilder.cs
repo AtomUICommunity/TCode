@@ -22,6 +22,8 @@ public sealed class AssistantMessageBuilder
     public Usage Usage { get; set; } = Usage.Empty;
     public StopReason StopReason { get; set; } = StopReason.Pending;
     public string? ResponseId { get; set; }
+    /// <summary>上下文超窗（例如 Anthropic 的 model_context_window_exceeded）；失败时还会按错误文案识别。</summary>
+    public bool ContextOverflow { get; set; }
 
     public void Start() => _stream.Push(new StartEvent());
 
@@ -50,6 +52,7 @@ public sealed class AssistantMessageBuilder
     {
         var block = _blocks[index];
         block.Buffer.Append(delta);
+        block.LastDeltaAt = System.Diagnostics.Stopwatch.GetTimestamp();
         _stream.Push(block.Kind switch
         {
             BlockKind.Text => new TextDeltaEvent(index, delta),
@@ -117,6 +120,7 @@ public sealed class AssistantMessageBuilder
     public void Fail(Exception exception, bool aborted)
     {
         StopReason = aborted ? StopReason.Aborted : StopReason.Error;
+        ContextOverflow |= !aborted && Messages.ContextOverflow.IsOverflowMessage(exception.Message);
         _stream.Push(new ErrorEvent(Build(aborted ? "Request aborted" : exception.Message)));
     }
 
@@ -129,6 +133,7 @@ public sealed class AssistantMessageBuilder
         StopReason = StopReason,
         ErrorMessage = error,
         ResponseId = ResponseId,
+        ContextOverflow = ContextOverflow,
     };
 
     private int Add(BlockState block)
@@ -154,11 +159,16 @@ public sealed class AssistantMessageBuilder
         public string? ToolCallId { get; init; }
         public string? ToolName { get; init; }
         public bool Ended { get; set; }
+        public long StartedAt { get; } = System.Diagnostics.Stopwatch.GetTimestamp();
+        public long LastDeltaAt { get; set; }
+
+        /// <summary>思考耗时：开始到最后一段增量（没有增量时为空）。</summary>
+        public long? DurationMs => LastDeltaAt == 0 ? null : (long)System.Diagnostics.Stopwatch.GetElapsedTime(StartedAt, LastDeltaAt).TotalMilliseconds;
 
         public ContentBlock ToContent() => Kind switch
         {
             BlockKind.Text => new TextContent(Buffer.ToString()) { ProviderState = ProviderState },
-            BlockKind.Thinking => new ThinkingContent(Buffer.ToString()) { Signature = Signature, Redacted = Redacted },
+            BlockKind.Thinking => new ThinkingContent(Buffer.ToString()) { Signature = Signature, Redacted = Redacted, DurationMs = DurationMs },
             _ => ToToolCall(),
         };
 

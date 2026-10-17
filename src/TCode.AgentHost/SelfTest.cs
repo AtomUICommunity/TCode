@@ -1,3 +1,4 @@
+using TCode.Agent.Diff;
 using System.Text.Json;
 using AngleSharp.Html.Parser;
 using TCode.Agent;

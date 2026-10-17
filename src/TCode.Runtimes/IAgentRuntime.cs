@@ -1,3 +1,4 @@
+using TCode.Agent.Questions;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
 
@@ -152,6 +153,20 @@ public interface IRuntimeHost
 {
     ValueTask<ApprovalDecision> RequestApprovalAsync(RuntimeApprovalRequest request, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 运行时自带的提问（Claude AskUserQuestion、Codex requestUserInput）交给 TCode 的问答面板（docs/design/ask-user.md §8）。
+    /// 不受权限档位影响；没有 UI 或失败时返回 Declined，轮次中止或请求被撤回时返回 Aborted。
+    /// </summary>
+    ValueTask<UserInputResult> RequestInputAsync(RuntimeInputRequest request, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(UserInputResult.Declined);
+
+    /// <summary>
+    /// 运行时请求结构化信息（ACP elicitation/create 的 form 模式），复用 MCP 表单卡片。
+    /// 没有 UI、失败、中止时返回 cancel。
+    /// </summary>
+    ValueTask<RuntimeElicitationResult> RequestElicitationAsync(RuntimeElicitationRequest request, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(RuntimeElicitationResult.Cancel);
+
     /// <summary>原生会话 id 确定或改变（例如恢复失败后新建）。</summary>
     void OnNativeSessionId(string nativeSessionId);
 
@@ -175,6 +190,19 @@ public interface IRuntimeSession : IAsyncDisposable
     /// <summary>运行中追加用户消息；返回 false 表示当前无法插入（调用方改为排队）。</summary>
     ValueTask<bool> SteerAsync(UserMessage message, CancellationToken cancellationToken);
 }
+
+/// <param name="SchemaJson">扁平对象 schema（requestedSchema）。</param>
+public sealed record RuntimeElicitationRequest(string Message, string? SchemaJson);
+
+/// <param name="Action">accept / decline / cancel。</param>
+/// <param name="ContentJson">accept 时的表单内容（JSON 对象）。</param>
+public sealed record RuntimeElicitationResult(string Action, string? ContentJson = null)
+{
+    public static RuntimeElicitationResult Cancel { get; } = new("cancel");
+}
+
+/// <param name="ToolCallId">对应的工具调用（Codex 为合成的工具项 id）。</param>
+public sealed record RuntimeInputRequest(string ToolCallId, IReadOnlyList<UserQuestion> Questions);
 
 public enum ApprovalKind
 {

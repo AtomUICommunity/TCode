@@ -77,6 +77,9 @@ public sealed class AgentHostServerProxy(JsonRpcConnection rpc) : IAgentHostServ
     public Task AbortAsync(string sessionId, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.Abort, new SessionIdParams(sessionId), J.SessionIdParams, cancellationToken);
 
+    public Task CompactAsync(string sessionId, string? instructions, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.Compact, new CompactParams(sessionId, instructions), J.CompactParams, cancellationToken);
+
     public Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.SetModel, new SetModelParams(sessionId, modelId), J.SetModelParams, J.SessionOptionsDto, cancellationToken);
 
@@ -112,6 +115,9 @@ public sealed class AgentHostServerProxy(JsonRpcConnection rpc) : IAgentHostServ
 
     public Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.SearchFiles, request, J.FileSearchRequest, J.FileSearchResultDto, cancellationToken);
+
+    public Task<RevertFileResult> RevertFileAsync(RevertFileRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.RevertFile, request, J.RevertFileRequest, J.RevertFileResult, cancellationToken);
 
     public Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.ListAssets, new AssetsParams(cwd), J.AssetsParams, J.AgentAssetsDto, cancellationToken);
@@ -149,6 +155,7 @@ public static class AgentHostServerDispatcher
         rpc.AddRequestHandler(RpcMethods.ForkSession, j.SessionFileParams, j.OpenSessionResult, (p, ct) => server.ForkSessionAsync(p.FilePath, ct));
         rpc.AddRequestHandler(RpcMethods.Prompt, j.PromptRequest, j.PromptResult, server.PromptAsync);
         rpc.AddRequestHandler(RpcMethods.Abort, j.SessionIdParams, (p, ct) => server.AbortAsync(p.SessionId, ct));
+        rpc.AddRequestHandler(RpcMethods.Compact, j.CompactParams, (p, ct) => server.CompactAsync(p.SessionId, p.Instructions, ct));
         rpc.AddRequestHandler(RpcMethods.SetModel, j.SetModelParams, j.SessionOptionsDto, (p, ct) => server.SetModelAsync(p.SessionId, p.ModelId, ct));
         rpc.AddRequestHandler(RpcMethods.SetOptions, j.SetOptionsParams, j.SessionOptionsDto, (p, ct) => server.SetOptionsAsync(p.SessionId, p.Options, ct));
         rpc.AddRequestHandler(RpcMethods.CloseSession, j.SessionIdParams, (p, ct) => server.CloseSessionAsync(p.SessionId, ct));
@@ -161,6 +168,7 @@ public static class AgentHostServerDispatcher
         rpc.AddRequestHandler(RpcMethods.McpTrust, j.McpTrustParams, (p, ct) => server.TrustMcpServerAsync(p.Key, p.Cwd, p.Trusted, ct));
         rpc.AddRequestHandler(RpcMethods.McpCatalog, j.McpCwdParams, j.McpCatalogDto, (p, ct) => server.GetMcpCatalogAsync(p.Cwd, ct));
         rpc.AddRequestHandler(RpcMethods.SearchFiles, j.FileSearchRequest, j.FileSearchResultDto, server.SearchFilesAsync);
+        rpc.AddRequestHandler(RpcMethods.RevertFile, j.RevertFileRequest, j.RevertFileResult, server.RevertFileAsync);
         rpc.AddRequestHandler(RpcMethods.ListAssets, j.AssetsParams, j.AgentAssetsDto, (p, ct) => server.ListAssetsAsync(p.Cwd, ct));
     }
 }
@@ -190,6 +198,9 @@ public sealed class AgentHostClientProxy(JsonRpcConnection rpc) : IAgentHostClie
 
     public void OnAssetsChanged(AssetsChangedNotification notification) =>
         rpc.Notify(RpcMethods.AssetsChanged, notification, J.AssetsChangedNotification);
+
+    public Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.RequestInput, request, J.UserInputRequest, J.UserInputResponse, cancellationToken);
 }
 
 /// <summary>UI 侧：把 Host 发来的通知与请求分发到 <see cref="IAgentHostClient"/> 实现。</summary>
@@ -205,5 +216,6 @@ public static class AgentHostClientDispatcher
         rpc.AddRequestHandler(RpcMethods.McpElicit, j.McpElicitRequest, j.McpElicitResponse, client.RequestMcpElicitationAsync);
         rpc.AddRequestHandler(RpcMethods.McpOpenUrl, j.McpOpenUrlRequest, j.McpOpenUrlResponse, client.OpenMcpUrlAsync);
         rpc.AddNotificationHandler(RpcMethods.AssetsChanged, j.AssetsChangedNotification, client.OnAssetsChanged);
+        rpc.AddRequestHandler(RpcMethods.RequestInput, j.UserInputRequest, j.UserInputResponse, client.RequestUserInputAsync);
     }
 }

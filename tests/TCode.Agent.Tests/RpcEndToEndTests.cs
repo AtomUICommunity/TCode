@@ -72,6 +72,21 @@ public sealed class RpcEndToEndTests
             Assert.Contains(seen, e => e is TextDelta);
             Assert.Contains(seen, e => e is ThinkingDelta);
             Assert.Contains(seen, e => e is ToolExecutionEnded { IsError: false, ToolName: "ls" });
+
+            // 压缩上下文（docs/design/compaction.md §12）：作为一次运行执行，事件与摘要消息经 RPC 到达
+            await server.CompactAsync(session.SessionId, "keep file names");
+            var compaction = new List<SessionEvent>();
+            await foreach (var n in client.Events.Reader.ReadAllAsync(timeout.Token))
+            {
+                compaction.Add(n.Event);
+                if (n.Event is AgentEnded)
+                {
+                    break;
+                }
+            }
+            Assert.Contains(compaction, e => e is CompactionStarted { Trigger: "manual" });
+            Assert.Contains(compaction, e => e is CompactionEnded { Error: null, PostTokens: > 0 });
+            Assert.Contains(compaction, e => e is MessageStarted { Source: "compact-summary" });
             var listed = Assert.Single(await server.ListSessionsAsync(cwd));
             Assert.Equal(session.SessionId, listed.SessionId);
             Assert.Equal("看看目录里有哪些文件", listed.Title);
@@ -80,7 +95,9 @@ public sealed class RpcEndToEndTests
             // 已打开的会话直接返回同一个实例，历史含工具调用与结果
             var reopened = await server.OpenSessionAsync(listed.FilePath);
             Assert.Equal(session.SessionId, reopened.Session.SessionId);
+            // 压缩前的消息仍在显示用的历史中
             Assert.Contains(reopened.History, m => m.Blocks.Any(b => b is HistoryToolResult { ToolName: "ls" }));
+            Assert.Contains(reopened.History, m => m.Source == "compact-summary");
 
             // 关闭后从文件恢复：参数沿用最后一次设置
             await server.CloseSessionAsync(session.SessionId);
@@ -91,12 +108,13 @@ public sealed class RpcEndToEndTests
             Assert.Equal(reopened.History.Count, restored.History.Count);
             await server.CloseSessionAsync(restored.Session.SessionId);
 
-            // 历史分页：打开时只取最近 1 轮（本会话只有 1 轮，因此从 0 开始）
+            // 历史分页：打开时只取最近 1 轮。压缩摘要开始新的一轮，之前的 1 轮（4 条消息）按需加载
             var paged = await server.OpenSessionAsync(listed.FilePath, 1);
-            Assert.Equal(0, paged.HistoryStart);
-            Assert.Equal(restored.History.Count, paged.History.Count);
+            Assert.Equal(4, paged.HistoryStart);
+            Assert.Equal("compact-summary", Assert.Single(paged.History).Source);
             var earlier = await server.GetHistoryAsync(paged.Session.SessionId, paged.HistoryStart, 10);
-            Assert.Empty(earlier.History);
+            Assert.Equal(0, earlier.Start);
+            Assert.Equal(restored.History.Count - 1, earlier.History.Count);
             await server.CloseSessionAsync(paged.Session.SessionId);
 
             // 会话管理：分页、重命名、置顶、在新会话中继续、删除
@@ -124,6 +142,29 @@ public sealed class RpcEndToEndTests
             var left = Assert.Single((await server.QuerySessionsAsync(cwd, 0, 10)).Items);
             Assert.Equal(fork.Session.SessionId, left.SessionId);
             await Assert.ThrowsAsync<RpcRemoteException>(() => server.DeleteSessionAsync("/etc/hosts"));
+
+            // 提问（docs/design/ask-user.md §6）：input/request 的请求与回答经 RPC 往返（含 AOT 版 Host 的序列化）
+            var asking = await server.CreateSessionAsync(new CreateSessionRequest(cwd, models[0].Ref));
+            await server.PromptAsync(new PromptRequest(asking.SessionId,
+                """mcp:ask_user {"questions":[{"question":"Which DB?","header":"Database","options":[{"label":"Postgres","description":"Full"},{"label":"SQLite","description":"Small"}]}]}"""));
+            var asked = new List<SessionEvent>();
+            await foreach (var n in client.Events.Reader.ReadAllAsync(timeout.Token))
+            {
+                if (n.SessionId != asking.SessionId)
+                {
+                    continue;
+                }
+                asked.Add(n.Event);
+                if (n.Event is AgentEnded)
+                {
+                    break;
+                }
+            }
+            var question = Assert.Single(client.Questions);
+            Assert.Equal(("builtin", "Which DB?", 2), (question.Source, question.Questions[0].Question, question.Questions[0].Options.Count));
+            var ended = Assert.Single(asked.OfType<ToolExecutionEnded>(), e => e.ToolName == "ask_user");
+            Assert.Contains("\"status\":\"answered\"", ended.DetailsJson);
+            Assert.Contains("\"selected\":[\"Postgres\"]", ended.DetailsJson);
         }
         finally
         {
@@ -161,5 +202,15 @@ public sealed class RpcEndToEndTests
 
         public Task<McpOpenUrlResponse> OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(new McpOpenUrlResponse(false));
+
+        public List<UserInputRequest> Questions { get; } = [];
+
+        /// <summary>每个问题选第一个选项。</summary>
+        public Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default)
+        {
+            Questions.Add(request);
+            return Task.FromResult(new UserInputResponse(UserInputResponse.Answered,
+                request.Questions.Select(q => new UserAnswerDto(q.Id, [q.Options[0].Label])).ToList()));
+        }
     }
 }

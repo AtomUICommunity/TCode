@@ -38,6 +38,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
   "theme": "system",                // system | dark | light
   "reduceMotion": false,            // true：关闭界面动画（macOS 系统的“减少动态效果”同样生效）
   "closeToTray": true,              // false：关闭窗口即退出；默认隐藏到系统托盘，会话继续运行
+  "autoCompact": true,              // 内置 Agent 接近上下文预算时自动压缩；false 时仍可用 /compact 手动压缩
   "originalImages": false,          // true：Markdown 图片按原始清晰度显示；默认按显示尺寸压缩解码以节省内存，点击图片查看的始终是原图
 
   "providers": {
@@ -125,6 +126,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 | `name` | string | 模型 id | 显示名称 |
 | `description` | string | — | 选择器中的一句话说明 |
 | `contextWindow` | int | 128000 | 上下文窗口 |
+| `defaultContextWindow` | int | 272000（gpt-6.1-sol 为 500000） | 新会话默认的上下文预算。模型窗口更大时，选择器提供“默认预算 / 模型最大窗口”两档；预算也是自动压缩的依据 |
 | `maxTokens` | int | 16384 | 单次输出上限 |
 | `reasoning` | bool | false | 是否为推理模型 |
 | `efforts` | string[] | 按协议推导 | 可选的 effort 档位：`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` 的子集 |
@@ -222,7 +224,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
   | `limit.context` / `limit.output` | `contextWindow` / `maxTokens` |
   | `modalities.input` 含 `image` | `images` |
 
-- **TCode 补充**（`BuiltInCatalog.Overlay`）：各厂商的推荐模型、一句话说明、fast mode，以及 models.dev 没有覆盖的默认 Base URL。
+- **TCode 补充**（`BuiltInCatalog.Overlay`）：各厂商的推荐模型、一句话说明、fast mode、个别模型的默认上下文预算（`DefaultContextWindows` 表，按去掉路由前缀与 `@`/`:` 后缀的模型 id 匹配所有厂商），以及 models.dev 没有覆盖的默认 Base URL。
 - **优先级**：目录 → TCode 补充 → `settings.json`，后者覆盖前者。
 
 ### 3.1 更新目录（手动）

@@ -197,7 +197,8 @@
                     <StackPanel>
                         <TextBlock Classes="tertiary" Text="{Binding Completion.EmptyText}" Margin="8,6" IsVisible="{Binding Completion.HasEmptyText}" />
                         <ScrollViewer x:Name="CompletionScroll" MaxHeight="248" HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl x:Name="CompletionList" ItemsSource="{Binding Completion.Items}">
+                            <!-- 右侧留出滚动条的位置，滚动条浮在内容上会盖住来源列 -->
+                            <ItemsControl x:Name="CompletionList" ItemsSource="{Binding Completion.Items}" Margin="0,0,10,0">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="completion:CompletionItemViewModel">
                                         <Button Theme="{StaticResource TCode.RowButton}" Classes.selected="{Binding IsHighlighted}" MinHeight="30" Focusable="False"

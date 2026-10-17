@@ -371,9 +371,9 @@ public sealed class UpdateTests
         var win = UpdateInstaller.WindowsStartInfo(@"C:\u\TCode-2.0.0-win-x64-setup.exe");
         Assert.True(win.UseShellExecute);
         Assert.Equal(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/UPDATE=1"], win.ArgumentList);
-        var mac = UpdateInstaller.MacStartInfo("/u/TCode-2.0.0-osx-arm64.pkg");
+        var mac = UpdateInstaller.MacStartInfo("/Applications/TCode.app");
         Assert.Equal("/usr/bin/open", mac.FileName);
-        Assert.Equal(["-a", "Installer", "/u/TCode-2.0.0-osx-arm64.pkg"], mac.ArgumentList);
+        Assert.Equal(["-n", "/Applications/TCode.app"], mac.ArgumentList);
     }
 
     [Fact]
@@ -409,12 +409,12 @@ public sealed class UpdateTests
         Assert.Equal("new", File.ReadAllText(Path.Combine(install + ".new", "TCode")));
 
         // 新版本启动失败：恢复原状
-        Assert.Throws<InvalidOperationException>(() => UpdateInstaller.SwapLinux(install, _ => throw new InvalidOperationException()));
+        Assert.Throws<InvalidOperationException>(() => UpdateInstaller.Swap(install, _ => throw new InvalidOperationException()));
         Assert.Equal("old", File.ReadAllText(Path.Combine(install, "TCode")));
         Assert.True(Directory.Exists(install + ".new"));
 
         string? started = null;
-        UpdateInstaller.SwapLinux(install, dir => started = dir);
+        UpdateInstaller.Swap(install, dir => started = dir);
         Assert.Equal(install, started);
         Assert.Equal("new", File.ReadAllText(Path.Combine(install, "TCode")));
         Assert.Equal("old", File.ReadAllText(Path.Combine(install + ".old", "TCode")));
@@ -427,6 +427,55 @@ public sealed class UpdateTests
         await Tar(source, archive);
         await Assert.ThrowsAsync<UpdateFeedException>(() => UpdateInstaller.ExtractLinuxAsync(install, archive, default, selfTest: false));
         Assert.False(Directory.Exists(install + ".new"));
+    }
+
+    [Fact]
+    public async Task Mac_ExtractSwapAndRollback()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+        var root = Directory.CreateTempSubdirectory("tcode-mac-").FullName;
+        var bundle = Path.Combine(root, "TCode.app");
+        WriteBundle(bundle, "old");
+        var source = Path.Combine(root, "src", "TCode.app");
+        WriteBundle(source, "new");
+        var archive = Path.Combine(root, "update.zip");
+        await Ditto(source, archive);
+
+        // 当前 .app 未签名（测试中没有 Team），只检查结构；与发布版的签名校验无关
+        await UpdateInstaller.ExtractMacAsync(bundle, archive, default, selfTest: false);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(bundle + ".new", "Contents", "MacOS", "TCode")));
+
+        string? started = null;
+        UpdateInstaller.Swap(bundle, path => started = path);
+        Assert.Equal(bundle, started);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(bundle, "Contents", "MacOS", "TCode")));
+        UpdateInstaller.CleanupLeftovers(new InstallTarget.MacApp(bundle));
+        Assert.False(Directory.Exists(bundle + ".old"));
+
+        // 顶层不是 .app 的包被拒绝
+        var plain = Path.Combine(root, "plain", "TCode");
+        WriteBundle(plain, "new");
+        File.Delete(archive);
+        await Ditto(plain, archive);
+        await Assert.ThrowsAsync<UpdateFeedException>(() => UpdateInstaller.ExtractMacAsync(bundle, archive, default, selfTest: false));
+        Assert.False(Directory.Exists(bundle + ".new"));
+    }
+
+    /// <summary>与 tools/release/package-macos.sh 相同的打包方式：ditto -c -k --keepParent。</summary>
+    private static async Task Ditto(string bundle, string archive)
+    {
+        using var process = System.Diagnostics.Process.Start("/usr/bin/ditto", ["-c", "-k", "--keepParent", bundle, archive])!;
+        await process.WaitForExitAsync();
+        Assert.Equal(0, process.ExitCode);
+    }
+
+    private static void WriteBundle(string bundle, string content)
+    {
+        WriteTree(Path.Combine(bundle, "Contents", "MacOS"), content);
+        File.WriteAllText(Path.Combine(bundle, "Contents", "Info.plist"), "<plist/>");
     }
 
     /// <summary>与 tools/release/package-linux.sh 相同的打包方式：tar -C &lt;dir&gt; -czf &lt;archive&gt; TCode。</summary>

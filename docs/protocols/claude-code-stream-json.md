@@ -341,7 +341,22 @@ TCode 发送：
 - **CLI 会一直阻塞等待应答**，没有超时。[Doc:agent-sdk/user-input "The callback can stay pending indefinitely"] 每个 `can_use_tool` 都必须得到应答或被 `control_cancel_request` 撤回。
 - 读循环不能被审批阻塞：收到请求后交给后台任务去等 UI，读循环继续处理后续帧（期间可能有子 Agent 帧、`tool_progress`、取消请求）。[zeron:mod.rs `handle_control_request` 用 `tokio::spawn`；Py:query.py `_spawn_control_request_handler`]
 - 自动放行的调用（allow 规则、`acceptEdits`、`bypassPermissions` 等）**不会**发 `can_use_tool`。[Doc:agent-sdk/user-input]
-- `AskUserQuestion` **总是**走 `can_use_tool`：它是提问而不是审批，TCode 走 `input/request`，用户回答后以 allow 回复，`updatedInput` = 原 `input` 加 `answers`（键为问题文本，值为所选选项的 `label`；多选为 label 数组或用 `", "` 连接）。[Doc:agent-sdk/user-input；zeron:mod.rs `updated_input_with_answers`]
+- `AskUserQuestion` **总是**走 `can_use_tool`：它是提问而不是审批，TCode 走 `input/request`，用户回答后以 allow 回复，`updatedInput` = 原 `input` 加 `answers`（键为问题文本，值为所选选项的 `label`；多选为 label 数组或用 `", "` 连接）。[Doc:agent-sdk/user-input；zeron:mod.rs `updated_input_with_answers`] 细节见下面的 §6.1.1。
+
+#### 6.1.1 `AskUserQuestion` 的完整约定（CLI 2.1.302，2026-10-18 核对；TCode 实现见 docs/design/ask-user.md §8）
+
+- **启用条件**：`-p` 模式下只有设置了 `--permission-prompt-tool` 且不为 `none` 时才启用（TCode 传 `stdio`）。子 Agent 里不可用。[Doc:agent-sdk/user-input Limitations；CLI 包]
+- **请求**：`can_use_tool` 带 `requires_user_interaction: true`。工具的 `checkPermissions` 总是返回 `ask`，所以任何权限模式（包括 `bypassPermissions`）下都会发来。
+- **input**：`{questions: [{question, header, options: [{label, description, preview?}], multiSelect}], metadata?}`。限制：1–4 个问题、每题 2–4 个选项、`header` 不超过 12 字符、问题文本互不相同、同一题内 label 互不相同。模型被告知不要自己加“Other”。
+  - `preview` 只在设置了 `CLAUDE_CODE_QUESTION_PREVIEW_FORMAT=markdown|html` 时出现。`CLAUDE_CODE_ENTRYPOINT` 以 `sdk-` 开头时没有默认值，TCode 用 `sdk-cli`，所以**没有 preview**。
+  - 扩展形态（`CLAUDE_CODE_QUESTION_EXTENDED`：顶层 `title`，每题 `kind: choice|text|number` 等）和 `CLAUDE_CODE_QUESTION_OPTIONAL_DESCRIPTIONS` TCode 都**不开启**。
+- **回答**：`{"behavior":"allow","updatedInput":{…原 input…,"answers":{"<问题原文>":"<值>"}},"toolUseID":…}`。
+  - 值：单选为 label；多选用 `", "` 连接（label 本身含 `", "` 或 `"` 时加引号，与 CLI 的编码一致；直接传数组时 CLI 会用 `","` 连接，没有空格）；用户自己输入的文本原样作为值。
+  - 还可以带 `annotations`（`{<问题>: {notes, preview}}`）、`response`（用一段自由文字代替回答）、`followUp`。TCode 不发送这些字段。
+  - 本地 stdio 会话里非空 `updatedInput` 直接替换 input；托管 / 远程会话的严格模式只接受新增 `answers`、`annotations`、`response`、`followUp`，其他改动会被拒绝。TCode 只追加 `answers`，两种模式都能通过。
+- **拒绝回答**：`{"behavior":"deny","message":…}`，message 作为工具错误交给模型。TCode 使用 ask-user.md §5.4 的拒绝文本。
+- **模型看到的结果**：`Your questions have been answered: "Q"="A", …. You can now continue with these answers in mind.`；有不属于选项的答案时是 `The user answered: …. Read the answers carefully …`；全部未答时是 `The user did not answer the questions.`。
+- **超时**：设置项 `askUserQuestionTimeout`（`60s`/`5m`/`10m`/`never`，默认 `never`）。触发时结果带 `afkTimeoutMs`。TCode 不设置。
 
 应答格式（`response.response`）：
 
@@ -913,7 +928,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 - [ ] allow 应答总是带 `updatedInput`（未修改时回传原 input）。
 - [ ] "本会话允许"把建议的 `destination` 改写为 `session`；`suppress_always_allow_rule` 时隐藏该选项；`default_to_no` 时默认拒绝。
 - [ ] 任何异常（UI 断开、超时、会话关闭）都回 `deny`，绝不默认放行。
-- [ ] `AskUserQuestion` 走 `input/request`，以 allow + `updatedInput.answers`（键为问题文本，值为 label）回复。
+- [x] `AskUserQuestion` 走 `input/request`，以 allow + `updatedInput.answers`（键为问题文本，值为 label）回复；拒绝回答时 deny（§6.1.1）。
 - [ ] `decision_reason` 显示前清洗 ANSI 转义。
 
 **消息与事件**

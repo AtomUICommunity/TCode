@@ -343,6 +343,7 @@ public sealed class ModelCatalog
             SupportsFastMode = user?.FastMode ?? catalog?.FastMode ?? false,
             ContextWindow = user?.ContextWindow ?? catalog?.ContextWindow ?? DefaultContextWindow,
             MaxTokens = user?.MaxTokens ?? catalog?.MaxTokens ?? DefaultMaxTokens,
+            DefaultContextWindow = user?.DefaultContextWindow ?? catalog?.DefaultContextWindow,
             Compat = compat.Count == 0 ? null : compat.Deserialize(CompatJsonContext.Default.ModelCompat),
         };
     }

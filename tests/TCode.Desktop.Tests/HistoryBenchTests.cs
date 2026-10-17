@@ -69,7 +69,8 @@ public sealed class HistoryBenchTests
             var markdown = transcript.Entries.OfType<StreamMark.Avalonia.Transcript.MarkdownEntry>().ToList();
             var parsed = markdown.Count(m => m.IsParsed);
             File.AppendAllText(Path.Combine(Path.GetTempPath(), "tcode-bench.txt"), $" parsed={parsed}/{markdown.Count}");
-            Assert.Equal(40, markdown.Count);
+            // 每轮只有最后一段正文是 Markdown 条目，中间的正文与工具收进工作空间（纯文本 / 步骤行）
+            Assert.Equal(20, markdown.Count);
             Assert.InRange(parsed, 1, 20);
             Assert.True(markdown[^1].IsParsed, "the newest message is visible and parsed");
 

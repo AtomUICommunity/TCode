@@ -75,16 +75,38 @@ public sealed class ActivityGroupSnapshotTests
                 new MessageEnded("m4", "assistant", "Stop", null, new UsageDto(1200, 300, 8000, 0)), new AgentEnded());
             await Settle();
             Assert.False(group.IsActive);
-            Assert.False(group.IsExpanded);
+            // 一轮结束：中间的思考、工具与正文收进“已工作”工作空间组，默认收起，最后一段正文留在外面
+            var done = FindGroup(window);
+            Assert.True(done.IsTurnWork);
+            Assert.False(done.IsExpanded);
+            Assert.StartsWith("已工作 ", done.Summary);
+            Assert.Equal(7, done.Steps.Count);
             HeadlessApp.Save(window, "activity-done");
 
-            // 手动展开组，再展开一条命令与一段思考
-            group.ToggleCommand.Execute(null);
-            ((ToolCallBlockViewModel)group.Steps[1]).ToggleCommand.Execute(null);
-            ((ThinkingBlockViewModel)group.Steps[3]).ToggleCommand.Execute(null);
+            // 手动展开工作空间，再展开一条命令与一段思考
+            done.ToggleCommand.Execute(null);
+            ((ToolCallBlockViewModel)done.Steps[2]).ToggleCommand.Execute(null);
+            ((ThinkingBlockViewModel)done.Steps[5]).ToggleCommand.Execute(null);
             await Settle();
-            Assert.True(group.IsExpanded);
+            Assert.True(done.IsExpanded);
             HeadlessApp.Save(window, "activity-expanded");
+
+            // 思考行右侧：耗时 · 估算 token 数
+            var thought = (ThinkingBlockViewModel)done.Steps[5];
+            Assert.Matches(@"^\d+ 秒 · 约 \d+ tokens$", thought.Stats);
+
+            // 步骤行悬停只提亮文字，不填充背景
+            var row = window.GetVisualDescendants().OfType<ToolStepView>().First()
+                .GetVisualDescendants().OfType<Avalonia.Controls.Button>().First();
+            ((Avalonia.Controls.IPseudoClasses)row.Classes).Set(":pointerover", true);
+            await Task.Delay(300);
+            await Settle();
+            Assert.Equal(Avalonia.Media.Colors.Transparent, ((Avalonia.Media.ISolidColorBrush)row.Background!).Color);
+            Assert.True(row.TryFindResource("TCode.TextPrimary", row.ActualThemeVariant, out var primary));
+            Assert.Equal(((Avalonia.Media.ISolidColorBrush)primary!).Color,
+                ((Avalonia.Media.ISolidColorBrush)row.Foreground!).Color);
+            HeadlessApp.Save(window, "activity-hover");
+            ((Avalonia.Controls.IPseudoClasses)row.Classes).Set(":pointerover", false);
 
             // 向上滚动离开底部：浮出“回到底部”，点击后回到底部并隐藏
             var transcript = window.FindControl<StreamMark.Avalonia.Transcript.TranscriptView>("Transcript")!;

@@ -81,9 +81,10 @@ public sealed class AcpFixtureTests
                 Assert.Equal("Edited /Users/dev/project/src/config.json", Assert.IsType<TextContent>(Assert.Single(result.Content)).Text);
             },
             a => Assert.Equal("Debug mode is now enabled.", Assert.IsType<TextContent>(Assert.Single(Assert.IsType<AssistantMessage>(a).Content)).Text));
-        // diff 保留在 Details 中（completed 更新省略了 content）
+        // diff 保留在 Details 中（completed 更新省略了 content），结构与内置 edit 相同，界面可解析并撤销
         var end = Assert.Single(events.OfType<ToolExecutionEndEvent>());
-        Assert.Contains("newText", end.Result.Details);
+        Assert.Contains("\"kind\":\"diff\"", end.Result.Details);
+        Assert.Contains("\"path\":\"/Users/dev/project/src/config.json\"", end.Result.Details);
         Assert.Single(events.OfType<ToolExecutionStartEvent>());
     }
 
@@ -211,16 +212,23 @@ public sealed class AcpFixtureTests
     public async Task UnknownAgentRequests_GetMethodNotFound_AndElicitationInvalidParams()
     {
         var peer = new ScriptedPeer();
-        var session = new AcpSession(peer.ClientInput, peer.ClientOutput, Agent, new RecordingHost());
+        var host = new RecordingHost();
+        var session = new AcpSession(peer.ClientInput, peer.ClientOutput, Agent, host);
         var start = session.StartAsync(Cwd, null, CancellationToken.None);
         await peer.RunAsync(TranscriptFixture.Load(Spec, "### A.1 夹具 A").Take(4));
         await start.WaitAsync(TimeSpan.FromSeconds(15));
         await peer.RunAsync([
             new TranscriptLine(false, """{"jsonrpc":"2.0","id":7,"method":"fs/read_text_file","params":{"sessionId":"sess_7f3a9c","path":"/x"}}"""),
             new TranscriptLine(true, """{"jsonrpc":"2.0","id":7,"error":{"code":-32601,"message":"Method not found"}}"""),
-            new TranscriptLine(false, """{"jsonrpc":"2.0","id":"e1","method":"elicitation/create","params":{}}"""),
+            // 只声明了 form：url 模式按规范回复 -32602
+            new TranscriptLine(false, """{"jsonrpc":"2.0","id":"e1","method":"elicitation/create","params":{"sessionId":"sess_7f3a9c","mode":"url","elicitationId":"x","url":"https://example.com","message":"Sign in"}}"""),
             new TranscriptLine(true, """{"jsonrpc":"2.0","id":"e1","error":{"code":-32602,"message":"elicitation mode not supported"}}"""),
+            // form 模式交给宿主的表单卡片（docs/design/ask-user.md §8）
+            new TranscriptLine(false, """{"jsonrpc":"2.0","id":"e2","method":"elicitation/create","params":{"sessionId":"sess_7f3a9c","mode":"form","message":"How should I approach this?","requestedSchema":{"type":"object","properties":{"strategy":{"type":"string","enum":["conservative","balanced"]}},"required":["strategy"]}}}"""),
+            new TranscriptLine(true, """{"jsonrpc":"2.0","id":"e2","result":{"action":"accept","content":{"strategy":"balanced"}}}"""),
         ]);
+        Assert.Equal("How should I approach this?", host.Elicitation?.Message);
+        Assert.Contains("\"conservative\"", host.Elicitation?.SchemaJson);
         await session.DisposeAsync();
     }
 
@@ -273,5 +281,12 @@ public sealed class AcpFixtureTests
         public void OnNativeSessionId(string nativeSessionId) => SessionIds.Add(nativeSessionId);
         public IReadOnlyList<RuntimeCommand>? Commands { get; private set; }
         public void OnCommands(IReadOnlyList<RuntimeCommand> commands) => Commands = commands;
+        public RuntimeElicitationRequest? Elicitation { get; private set; }
+
+        public ValueTask<RuntimeElicitationResult> RequestElicitationAsync(RuntimeElicitationRequest request, CancellationToken cancellationToken)
+        {
+            Elicitation = request;
+            return ValueTask.FromResult(new RuntimeElicitationResult("accept", """{"strategy":"balanced"}"""));
+        }
     }
 }

@@ -518,6 +518,8 @@ RolePlan	Plan	Plan
 RolePlanDesc	Investigates and writes a plan; read-only	调查后给出实施计划，只读
 RoleCycleHint	Shift+Tab to switch	Shift+Tab 切换
 BuiltinRoleDescription	Choose the mode	切换模式
+BuiltinInitDescription	Create or update AGENTS.md with the model	让模型新建或更新 AGENTS.md
+BuiltinCommitDescription	Have the model commit the changes	让模型提交当前改动，提交信息附带模型 ID
 RoleModelUnavailableFormat	The mode's model {0} is not available	该模式指定的模型 {0} 不可用
 RoleAcp	ACP	ACP
 RoleAcpDesc	Designs the plan and delegates the work to subagents	设计方案、拆分任务，交给子 Agent 执行
@@ -610,3 +612,54 @@ CloseToTrayHint	Closing the window hides TCode to the system tray and keeps sess
 UpdateCheckFailedFormat	Check failed: {0}	检查失败：{0}
 UpdatePrereleaseLabel	Receive pre-release updates	接收预发布版本更新
 UpdatePrereleaseHint	Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.	也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。
+ChangesFilesChanged	{0} files changed	{0} 个文件已更改
+ChangesRevert	Revert	撤销
+ChangesReview	Review	审查
+ChangesOpen	Open	打开
+ChangesRevertFailed	Revert failed: {0}	撤销失败：{0}
+ChangesNoSnapshot	The file was too large to keep a snapshot; this change cannot be reverted	文件过大，未保存改动前的内容，此改动无法撤销
+ChangesEmpty	No file changes in this session	本会话还没有文件改动
+ChangesSelectFile	Select a file to see its changes	选择一个文件查看改动
+ChangesReverted	Reverted	已撤销
+ChangesRevertFailedNoHost	Not connected to the agent host	未连接到 Agent 宿主
+BuiltinCompactDescription	Compact the conversation context (add instructions after /compact to choose what to keep)	压缩对话上下文（可在 /compact 后写摘要重点）
+CompactionRunning	Compacting context…	正在压缩上下文…
+CompactionDoneFormat	Context compacted · {0} → {1}	上下文已压缩 · {0} → {1}
+CompactionDone	Context compacted	上下文已压缩
+CompactionFailedFormat	Compaction failed: {0}	压缩失败：{0}
+CompactionSuspendedFormat	Auto-compact disabled: {0}	已停用自动压缩：{0}
+CompactionUnavailable	Compaction is only available for the built-in agent.	只有内置 Agent 支持压缩上下文。
+ContextUsageWarnFormat	{0} · Context nearly full, auto-compact soon · /compact to compact now	{0} · 上下文即将用满，稍后自动压缩 · 可用 /compact 立即压缩
+WorkedFor	Worked for {0}	已工作 {0}
+DurationHM	{0}h {1}m	{0} 小时 {1} 分
+DurationMS	{0}m {1}s	{0} 分 {1} 秒
+DurationS	{0}s	{0} 秒
+ThinkingTokensFormat	~{0} tokens	约 {0} tokens
+ExploreTitle	Explore	查阅
+ExploreSearchCount	{0} search	{0} 搜索
+ExploreFileCount	{0} file	{0} 文件
+TaskOrbTip	Background tasks	后台任务
+TaskSectionAgents	Agents	Agent
+TaskSectionShells	Shells	Shell
+TaskSectionTasks	Tasks	任务清单
+QuestionTitle	TCode asks	TCode 提问
+QuestionTitleFormat	{0} asks	{0} 提问
+QuestionOther	Other	其他
+QuestionOtherPlaceholder	Type your own answer…	输入你自己的答案…
+QuestionSecretPlaceholder	Type the answer (hidden)…	输入答案（不显示）…
+QuestionReviewTab	Submit	提交
+QuestionReviewTitle	Review your answers	检查你的回答
+QuestionNext	Next	下一题
+QuestionSubmit	Submit	提交
+QuestionDecline	Decline	拒绝回答
+QuestionUnanswered	Not answered	未回答
+QuestionUnansweredFormat	{0} unanswered	{0} 个问题未回答
+QuestionAllAnswered	All questions answered	已全部回答
+QuestionHints	↑↓ choose · 1-9 pick · ←→ switch question	↑↓ 选择 · 1-9 直接选 · ←→ 切换问题
+QuestionStopTip	Stop the turn	停止本轮
+QuestionWaiting	Waiting for your answer…	等待回答…
+QuestionAnswered	Answered	已回答
+QuestionDeclined	Declined	已拒绝回答
+QuestionAborted	Stopped	已中止
+StepQuestion	Question	提问
+SessionWaitingForYou	Waiting for you	等待你的操作

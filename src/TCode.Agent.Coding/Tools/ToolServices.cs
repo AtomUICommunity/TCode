@@ -1,4 +1,5 @@
 using TCode.Agent.Coding.Tools.Agents;
+using TCode.Agent.Coding.Tools.Questions;
 using TCode.Agent.Coding.Tools.Web;
 
 namespace TCode.Agent.Coding.Tools;
@@ -19,4 +20,7 @@ public sealed record ToolServices
 
     /// <summary>为会话创建动态工具来源（MCP；null 表示没有）。每个会话（含子 Agent）各创建一个，会话关闭时释放。</summary>
     public Func<ToolContext, IDynamicToolSource>? DynamicTools { get; init; }
+
+    /// <summary>向用户提问（null 表示不提供 ask_user；子 Agent 总是 null）。</summary>
+    public IUserInputService? UserInput { get; init; }
 }

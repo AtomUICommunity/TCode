@@ -50,6 +50,15 @@ public sealed class ToolContext(WorkspaceRoots workspace, string sessionId, Back
     /// <summary>读过的文件（先读后改、过期检测）。</summary>
     public FileStateTracker Files { get; } = new();
 
+    /// <summary>压缩后重新按需加载子目录的上下文文件（之前附在工具结果里的已被摘要替换）。</summary>
+    public void ResetNestedInstructions()
+    {
+        lock (_gate)
+        {
+            _nestedContextFiles.Clear();
+        }
+    }
+
     /// <summary>
     /// 子目录的上下文文件按需加载：访问 cwd 子目录中的文件时，返回途中尚未加载过的 AGENTS.md 等，
     /// 作为 &lt;system-reminder&gt; 附在工具结果后面。cwd 及其上级的文件已在系统提示中，不再重复。

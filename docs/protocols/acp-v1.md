@@ -18,7 +18,7 @@
 | **[本机]** | 在本机只读检查得到：`cursor-agent` 2026.08.11-e8db854 的安装包（`~/.local/share/cursor-agent/versions/2026.08.11-e8db854/*.js`，只做 grep，未启动 ACP 会话）、`cursor-agent --version/--help` 的输出、VS Code Copilot Chat 扩展放在 PATH 上的 `copilot` 包装脚本 |
 | **[待核实]** | 一手资料没有覆盖，取自经验或推断 |
 
-稳定性时间线（[CL]）：`session/list` 与 `session_info_update` 在 0.11.1 稳定；`session/resume`、`session/close` 在 0.12.2；`logout` 在 0.13.3；`additionalDirectories` 在 0.13.5；`messageId`、`usage_update`、`session/delete` 在 0.13.6；1.0.0 定版；`model_config` 分类在 1.1.0；`$/cancel_request` 在 1.2.0；`boolean` 配置项在 1.3.0；elicitation 在 1.6.0；terminal 认证在 1.7.0；tool call `name` 在 1.8.0；`notice` 与 compaction 在 1.11.0。旧 Agent 可能不发送这些较新的字段，TCode 必须把它们全部当作可选。
+稳定性时间线（[CL]）：`session/list` 与 `session_info_update` 在 0.11.1 稳定；`session/resume`、`session/close` 在 0.12.2；`logout` 在 0.13.3；`additionalDirectories` 在 0.13.5；`messageId`、`usage_update`、`session/delete` 在 0.13.6；1.0.0 定版；`model_config` 分类在 1.1.0；`$/cancel_request` 在 1.2.0；`boolean` 配置项在 1.3.0；elicitation 与 terminal 认证在 1.7.0（schema-v1.21.0，2026-08-20，“stabilize elicitation (#1779)”）；tool call `name` 在 1.8.0；`notice` 与 compaction 在 1.11.0。旧 Agent 可能不发送这些较新的字段，TCode 必须把它们全部当作可选。
 
 ---
 
@@ -139,7 +139,7 @@ ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发
 TCode 发送的确切内容：
 
 ```json
-{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"<TCode 版本号>"}}}
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"<TCode 版本号>"}}}
 ```
 
 `clientInfo.name` 会被部分 Agent 用作宿主标识，例如 Cursor 把它放进 `x-cursor-host-app-name` 请求头 [本机]。固定使用 `tcode`。
@@ -732,13 +732,15 @@ TCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个�
 
 ## 11. Elicitation（结构化提问）
 
-1.6.0 起稳定 [CL]。Agent 通过 `elicitation/create` 向用户索取结构化信息，分 `form` 和 `url` 两种模式 [Doc:elicitation]。
+1.7.0 起稳定 [CL]。Agent 通过 `elicitation/create` 向用户索取结构化信息，分 `form` 和 `url` 两种模式 [Doc:elicitation]。
 
-**TCode 第一阶段不声明 `clientCapabilities.elicitation`**。规范要求 Agent 不得请求 Client 没有声明的模式 [Doc:elicitation]。如果仍然收到：
-- `elicitation/create`：回复 `{"code":-32602,"message":"elicitation mode not supported"}`（规范：请求未声明的模式时，返回 -32602 Invalid params）；
+**已实现第二阶段（2026-10-18，docs/design/ask-user.md §8）**：声明 `{"elicitation":{"form":{}}}`，form 请求交给 MCP 表单卡片。规范要求 Agent 不得请求 Client 没有声明的模式 [Doc:elicitation]。如果仍然收到：
+- 其他模式（`url`）的 `elicitation/create`：回复 `{"code":-32602,"message":"elicitation mode not supported"}`（规范：请求未声明的模式时，返回 -32602 Invalid params）；
 - `elicitation/complete` 通知：忽略。
 
-第二阶段（`input/request` 提问面板完成后）：
+补充：能力对象里某个模式的键存在且不为 null 才算声明了该模式，所以 `"elicitation":{}` 表示**不支持任何模式**（与 MCP 不同）。form 属性的类型：`string`（`title`、`minLength`、`maxLength`、`pattern`、`format`、`default`、`enum` 或 `oneOf:[{const,title}]`）、`number` / `integer`（`minimum`、`maximum`、`default`）、`boolean`（`default`）、`array` 多选（`items` 为 `{type:"string",enum}` 或 `{anyOf:[{const,title}]}`，加 `minItems`、`maxItems`、`default`）。`content` 的值可以是 string、int、number、bool 或 string[]，`content` 本身可省略或为 null。
+
+第二阶段的约定：
 - 只声明 `{"elicitation":{"form":{}}}`。
 - **不声明 `url`**：URL 模式要求做到以下几点，TCode 暂不具备：
   - 显示完整 URL 并取得同意；
@@ -1079,7 +1081,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.1 夹具 A：initialize → session/new → prompt（思考 + 正文）→ end_turn
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1109,7 +1111,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.2 夹具 B：tool_call（kind=edit，diff）→ 权限请求 → 允许一次 → completed
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1143,7 +1145,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.3 夹具 C：权限被拒绝
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1176,7 +1178,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.4 夹具 D：权限挂起时 session/cancel → cancelled
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1207,7 +1209,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.5 夹具 E：config options（分组的模型选择、思考深度、布尔项）+ set_config_option
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c","configOptions":[{"id":"mode","name":"Approval Mode","description":"Controls when the agent asks for permission","category":"mode","type":"select","currentValue":"default","options":[{"value":"default","name":"Default","description":"Ask before edits and commands"},{"value":"auto_edit","name":"Auto Edit","description":"Apply edits without asking"},{"value":"plan","name":"Plan","description":"Read-only planning"}]},{"id":"model","name":"Model","category":"model","type":"select","currentValue":"pro-2","options":[{"group":"recommended","name":"Recommended","options":[{"value":"pro-2","name":"Pro 2","description":"Most capable"},{"value":"flash-2","name":"Flash 2","description":"Fast and low cost"}]},{"group":"legacy","name":"Legacy","options":[{"value":"pro-1","name":"Pro 1"}]}]},{"id":"reasoning","name":"Thinking","category":"thought_level","type":"select","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"medium","name":"Medium"},{"value":"high","name":"High"}]},{"id":"fast","name":"Fast Mode","description":"Lower latency at higher cost","category":"model_config","type":"boolean","currentValue":false}]}}
@@ -1235,7 +1237,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.6 夹具 F：响应之前到达的通知 + 旧版 modes / set_mode
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_b20e41","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compress","description":"Summarize the conversation to save context"}]}}}
@@ -1255,7 +1257,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.7 夹具 G：auth_required → authenticate（白名单方法）→ 重试 session/new
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":true,"sse":true},"sessionCapabilities":{"list":{}}},"authMethods":[{"id":"cursor_login","name":"Cursor Login","description":"Authenticate using existing Cursor login credentials. Run 'cursor-agent login' first if not logged in."}],"agentInfo":{"name":"example-agent","version":"1.0.0"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Authentication required"}}

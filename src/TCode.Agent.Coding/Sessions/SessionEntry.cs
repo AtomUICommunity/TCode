@@ -18,6 +18,7 @@ namespace TCode.Agent.Coding.Sessions;
 [JsonDerivedType(typeof(SessionMetaEntry), "meta")]
 [JsonDerivedType(typeof(SystemPromptEntry), "systemPrompt")]
 [JsonDerivedType(typeof(TasksEntry), "tasks")]
+[JsonDerivedType(typeof(CompactionEntry), "compaction")]
 public abstract record SessionEntry
 {
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
@@ -53,6 +54,19 @@ public sealed record SystemPromptEntry(string Id, string? ParentId, IReadOnlyLis
 
 /// <summary>任务清单的全量快照（最后一条生效）。</summary>
 public sealed record TasksEntry(string Id, string? ParentId, IReadOnlyList<TCode.Agent.Coding.Tools.TaskItem> Tasks) : TreeEntry(Id, ParentId);
+
+/// <summary>
+/// 上下文压缩（docs/design/compaction.md §8.2）：此前的消息不再发给模型（仍保留供界面回看），
+/// 之后依次是新的开头系统提示和摘要 / 重新附加的两条用户消息。
+/// </summary>
+public sealed record CompactionEntry(string Id, string? ParentId, TCode.Agent.Compaction.CompactionTrigger Trigger, string Summary,
+    long PreTokens, long PostTokens, long DurationMs) : TreeEntry(Id, ParentId)
+{
+    public string? Instructions { get; init; }
+
+    /// <summary>摘要请求超长、丢弃了最早的部分历史后才成功。</summary>
+    public bool TruncatedForRetry { get; init; }
+}
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

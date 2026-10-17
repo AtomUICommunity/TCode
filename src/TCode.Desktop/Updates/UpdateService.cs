@@ -339,7 +339,7 @@ public sealed partial class UpdateService : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 启动安装程序（Linux：替换目录并启动新版本）。成功返回 true，调用方随后退出程序；失败时显示原因并返回 false。
+    /// 启动安装程序（macOS / Linux：替换安装位置并启动新版本）。成功返回 true，调用方随后退出程序；失败时显示原因并返回 false。
     /// 调用前应已确认运行中的会话、关闭 pty host（auto-update.md §7）。
     /// </summary>
     public bool Install()
@@ -387,11 +387,6 @@ public sealed partial class UpdateService : ObservableObject, IDisposable
         var record = _state.Current.Update;
         try
         {
-            // 用户在 Installer 里取消时 postinstall 不会运行，残留的标记会让以后手动安装 pkg 时也自动打开 TCode
-            if (OperatingSystem.IsMacOS() && File.Exists(UpdateInstaller.MacRelaunchMarker))
-            {
-                File.Delete(UpdateInstaller.MacRelaunchMarker);
-            }
             if (record.InstallingVersion is { } installing && SemVersion.TryParse(installing, out var installingVersion))
             {
                 record.InstallingVersion = null;
@@ -437,7 +432,7 @@ public sealed partial class UpdateService : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>从暂存目录恢复已下载的版本：重新验签清单、校验安装程序；Linux 还要确认 .new 目录仍在（不在就重新解压）。</summary>
+    /// <summary>从暂存目录恢复已下载的版本：重新验签清单、校验安装程序；macOS / Linux 还要确认 .new 目录仍在（不在就重新解压）。</summary>
     private async Task<(UpdateCandidate Candidate, string Path)?> LoadPendingAsync(SemVersion version)
     {
         var directory = Path.Combine(_updatesDirectory, version.ToString());
@@ -459,7 +454,7 @@ public sealed partial class UpdateService : ObservableObject, IDisposable
         {
             return null;
         }
-        if (Target is InstallTarget.LinuxDirectory linux && !Directory.Exists(UpdateInstaller.LinuxStagedDirectory(linux.InstallDirectory)))
+        if (UpdateInstaller.InstallPath(Target) is { } installPath && !Directory.Exists(UpdateInstaller.StagedDirectory(installPath)))
         {
             await UpdateInstaller.PrepareAsync(Target, path, CancellationToken.None);
         }
@@ -475,9 +470,9 @@ public sealed partial class UpdateService : ObservableObject, IDisposable
         _state.Current.Update.PendingVersion = null;
         _state.Save();
         CleanupDirectory(keep: null);
-        if (Target is InstallTarget.LinuxDirectory linux)
+        if (UpdateInstaller.InstallPath(Target) is { } installPath)
         {
-            UpdateInstaller.DeleteDirectory(UpdateInstaller.LinuxStagedDirectory(linux.InstallDirectory));
+            UpdateInstaller.DeleteDirectory(UpdateInstaller.StagedDirectory(installPath));
         }
     }
 

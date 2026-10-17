@@ -69,7 +69,8 @@
 
                         <!-- 模型列表 -->
                         <ScrollViewer MaxHeight="204" atom:ScrollViewer.IsLiteMode="True">
-                            <ItemsControl ItemsSource="{Binding VisibleModels}" Margin="4">
+                            <!-- 右侧留出滚动条的位置，滚动条浮在内容上会盖住收藏按钮 -->
+                            <ItemsControl ItemsSource="{Binding VisibleModels}" Margin="4,4,12,4">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ModelOptionViewModel">
                                         <Button Theme="{StaticResource TCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="32" Margin="0,1"
@@ -83,7 +84,7 @@
                                                     <TextBlock Text="{Binding Shortcut}" />
                                                 </Border>
                                                 <Button Grid.Column="3" Theme="{StaticResource TCode.RowButton}" Width="24" MinHeight="24" Padding="0"
-                                                        Margin="6,0,-4,0" HorizontalContentAlignment="Center"
+                                                        Margin="6,0,0,0" HorizontalContentAlignment="Center"
                                                         Foreground="{DynamicResource TCode.TextSecondary}"
                                                         Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).ToggleFavoriteCommand}"
                                                         CommandParameter="{Binding}">

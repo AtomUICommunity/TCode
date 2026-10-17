@@ -521,6 +521,8 @@
     <unit id="RolePlanDesc"><segment><source>Investigates and writes a plan; read-only</source><target state="translated">调查后给出实施计划，只读</target></segment></unit>
     <unit id="RoleCycleHint"><segment><source>Shift+Tab to switch</source><target state="translated">Shift+Tab 切换</target></segment></unit>
     <unit id="BuiltinRoleDescription"><segment><source>Choose the mode</source><target state="translated">切换模式</target></segment></unit>
+    <unit id="BuiltinInitDescription"><segment><source>Create or update AGENTS.md with the model</source><target state="translated">让模型新建或更新 AGENTS.md</target></segment></unit>
+    <unit id="BuiltinCommitDescription"><segment><source>Have the model commit the changes</source><target state="translated">让模型提交当前改动，提交信息附带模型 ID</target></segment></unit>
     <unit id="RoleModelUnavailableFormat"><segment><source>The mode's model {0} is not available</source><target state="translated">该模式指定的模型 {0} 不可用</target></segment></unit>
     <unit id="RoleAcp"><segment><source>ACP</source><target state="translated">ACP</target></segment></unit>
     <unit id="RoleAcpDesc"><segment><source>Designs the plan and delegates the work to subagents</source><target state="translated">设计方案、拆分任务，交给子 Agent 执行</target></segment></unit>
@@ -611,5 +613,56 @@
     <unit id="UpdateCheckFailedFormat"><segment><source>Check failed: {0}</source><target state="translated">检查失败：{0}</target></segment></unit>
     <unit id="UpdatePrereleaseLabel"><segment><source>Receive pre-release updates</source><target state="translated">接收预发布版本更新</target></segment></unit>
     <unit id="UpdatePrereleaseHint"><segment><source>Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.</source><target state="translated">也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。</target></segment></unit>
+    <unit id="ChangesFilesChanged"><segment><source>{0} files changed</source><target state="translated">{0} 个文件已更改</target></segment></unit>
+    <unit id="ChangesRevert"><segment><source>Revert</source><target state="translated">撤销</target></segment></unit>
+    <unit id="ChangesReview"><segment><source>Review</source><target state="translated">审查</target></segment></unit>
+    <unit id="ChangesOpen"><segment><source>Open</source><target state="translated">打开</target></segment></unit>
+    <unit id="ChangesRevertFailed"><segment><source>Revert failed: {0}</source><target state="translated">撤销失败：{0}</target></segment></unit>
+    <unit id="ChangesNoSnapshot"><segment><source>The file was too large to keep a snapshot; this change cannot be reverted</source><target state="translated">文件过大，未保存改动前的内容，此改动无法撤销</target></segment></unit>
+    <unit id="ChangesEmpty"><segment><source>No file changes in this session</source><target state="translated">本会话还没有文件改动</target></segment></unit>
+    <unit id="ChangesSelectFile"><segment><source>Select a file to see its changes</source><target state="translated">选择一个文件查看改动</target></segment></unit>
+    <unit id="ChangesReverted"><segment><source>Reverted</source><target state="translated">已撤销</target></segment></unit>
+    <unit id="ChangesRevertFailedNoHost"><segment><source>Not connected to the agent host</source><target state="translated">未连接到 Agent 宿主</target></segment></unit>
+    <unit id="BuiltinCompactDescription"><segment><source>Compact the conversation context (add instructions after /compact to choose what to keep)</source><target state="translated">压缩对话上下文（可在 /compact 后写摘要重点）</target></segment></unit>
+    <unit id="CompactionRunning"><segment><source>Compacting context…</source><target state="translated">正在压缩上下文…</target></segment></unit>
+    <unit id="CompactionDoneFormat"><segment><source>Context compacted · {0} → {1}</source><target state="translated">上下文已压缩 · {0} → {1}</target></segment></unit>
+    <unit id="CompactionDone"><segment><source>Context compacted</source><target state="translated">上下文已压缩</target></segment></unit>
+    <unit id="CompactionFailedFormat"><segment><source>Compaction failed: {0}</source><target state="translated">压缩失败：{0}</target></segment></unit>
+    <unit id="CompactionSuspendedFormat"><segment><source>Auto-compact disabled: {0}</source><target state="translated">已停用自动压缩：{0}</target></segment></unit>
+    <unit id="CompactionUnavailable"><segment><source>Compaction is only available for the built-in agent.</source><target state="translated">只有内置 Agent 支持压缩上下文。</target></segment></unit>
+    <unit id="ContextUsageWarnFormat"><segment><source>{0} · Context nearly full, auto-compact soon · /compact to compact now</source><target state="translated">{0} · 上下文即将用满，稍后自动压缩 · 可用 /compact 立即压缩</target></segment></unit>
+    <unit id="WorkedFor"><segment><source>Worked for {0}</source><target state="translated">已工作 {0}</target></segment></unit>
+    <unit id="DurationHM"><segment><source>{0}h {1}m</source><target state="translated">{0} 小时 {1} 分</target></segment></unit>
+    <unit id="DurationMS"><segment><source>{0}m {1}s</source><target state="translated">{0} 分 {1} 秒</target></segment></unit>
+    <unit id="DurationS"><segment><source>{0}s</source><target state="translated">{0} 秒</target></segment></unit>
+    <unit id="ThinkingTokensFormat"><segment><source>~{0} tokens</source><target state="translated">约 {0} tokens</target></segment></unit>
+    <unit id="ExploreTitle"><segment><source>Explore</source><target state="translated">查阅</target></segment></unit>
+    <unit id="ExploreSearchCount"><segment><source>{0} search</source><target state="translated">{0} 搜索</target></segment></unit>
+    <unit id="ExploreFileCount"><segment><source>{0} file</source><target state="translated">{0} 文件</target></segment></unit>
+    <unit id="TaskOrbTip"><segment><source>Background tasks</source><target state="translated">后台任务</target></segment></unit>
+    <unit id="TaskSectionAgents"><segment><source>Agents</source><target state="translated">Agent</target></segment></unit>
+    <unit id="TaskSectionShells"><segment><source>Shells</source><target state="translated">Shell</target></segment></unit>
+    <unit id="TaskSectionTasks"><segment><source>Tasks</source><target state="translated">任务清单</target></segment></unit>
+    <unit id="QuestionTitle"><segment><source>TCode asks</source><target state="translated">TCode 提问</target></segment></unit>
+    <unit id="QuestionTitleFormat"><segment><source>{0} asks</source><target state="translated">{0} 提问</target></segment></unit>
+    <unit id="QuestionOther"><segment><source>Other</source><target state="translated">其他</target></segment></unit>
+    <unit id="QuestionOtherPlaceholder"><segment><source>Type your own answer…</source><target state="translated">输入你自己的答案…</target></segment></unit>
+    <unit id="QuestionSecretPlaceholder"><segment><source>Type the answer (hidden)…</source><target state="translated">输入答案（不显示）…</target></segment></unit>
+    <unit id="QuestionReviewTab"><segment><source>Submit</source><target state="translated">提交</target></segment></unit>
+    <unit id="QuestionReviewTitle"><segment><source>Review your answers</source><target state="translated">检查你的回答</target></segment></unit>
+    <unit id="QuestionNext"><segment><source>Next</source><target state="translated">下一题</target></segment></unit>
+    <unit id="QuestionSubmit"><segment><source>Submit</source><target state="translated">提交</target></segment></unit>
+    <unit id="QuestionDecline"><segment><source>Decline</source><target state="translated">拒绝回答</target></segment></unit>
+    <unit id="QuestionUnanswered"><segment><source>Not answered</source><target state="translated">未回答</target></segment></unit>
+    <unit id="QuestionUnansweredFormat"><segment><source>{0} unanswered</source><target state="translated">{0} 个问题未回答</target></segment></unit>
+    <unit id="QuestionAllAnswered"><segment><source>All questions answered</source><target state="translated">已全部回答</target></segment></unit>
+    <unit id="QuestionHints"><segment><source>↑↓ choose · 1-9 pick · ←→ switch question</source><target state="translated">↑↓ 选择 · 1-9 直接选 · ←→ 切换问题</target></segment></unit>
+    <unit id="QuestionStopTip"><segment><source>Stop the turn</source><target state="translated">停止本轮</target></segment></unit>
+    <unit id="QuestionWaiting"><segment><source>Waiting for your answer…</source><target state="translated">等待回答…</target></segment></unit>
+    <unit id="QuestionAnswered"><segment><source>Answered</source><target state="translated">已回答</target></segment></unit>
+    <unit id="QuestionDeclined"><segment><source>Declined</source><target state="translated">已拒绝回答</target></segment></unit>
+    <unit id="QuestionAborted"><segment><source>Stopped</source><target state="translated">已中止</target></segment></unit>
+    <unit id="StepQuestion"><segment><source>Question</source><target state="translated">提问</target></segment></unit>
+    <unit id="SessionWaitingForYou"><segment><source>Waiting for you</source><target state="translated">等待你的操作</target></segment></unit>
   </file>
 </xliff>

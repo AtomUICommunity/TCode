@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using TCode.Agent.Compaction;
 using TCode.Agent.Coding.Prompt;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
@@ -54,33 +55,40 @@ public sealed class SessionStore
     }
 
     /// <summary>打开既有会话，同时返回完整快照（外部运行时需要其中的原生会话 id）。</summary>
-    public static (SessionStore Store, SessionSnapshot Snapshot) OpenSnapshot(string filePath)
+    public static (SessionStore Store, SessionSnapshot Snapshot) OpenSnapshot(string filePath, SessionSnapshot? snapshot = null)
     {
-        var snapshot = Read(filePath);
+        snapshot ??= Read(filePath);
         return (new SessionStore(filePath, snapshot.SessionId, snapshot.Cwd) { _leafId = snapshot.LeafId, _created = true }, snapshot);
     }
 
     /// <summary>
     /// 只读解析会话文件：沿当前分支（根 → 叶）收集消息，以及分支上最后一次生效的模型与各项参数。
-    /// 用于会话列表与恢复会话；不会创建 <see cref="SessionStore"/>。
+    /// 用于恢复会话；不会创建 <see cref="SessionStore"/>。
     /// </summary>
-    public static SessionSnapshot Read(string filePath)
+    public static SessionSnapshot Read(string filePath) => Read(filePath, summary: false);
+
+    /// <summary>
+    /// 会话列表用的快照：只解析用户消息，助手消息与工具结果（思考、工具输出、图片）跳过正文，
+    /// 只保留它们在树中的位置。<see cref="SessionSnapshot.Messages"/> 因此只含用户消息。
+    /// </summary>
+    public static SessionSnapshot ReadSummary(string filePath) => Read(filePath, summary: true);
+
+    private static SessionSnapshot Read(string filePath, bool summary)
     {
         SessionHeader? header = null;
         string? customTitle = null;
         var pinned = false;
         var entries = new Dictionary<string, TreeEntry>();
         string? leaf = null;
-        foreach (var line in File.ReadLines(filePath))
+        using var lines = new Utf8LineReader(filePath);
+        while (lines.Next() is { } line)
         {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
             SessionEntry? entry;
             try
             {
-                entry = JsonSerializer.Deserialize(line, SessionJsonContext.Default.SessionEntry);
+                entry = summary && SkippedEntry.TryRead(line.Span) is { } skipped
+                    ? skipped
+                    : JsonSerializer.Deserialize(line.Span, SessionJsonContext.Default.SessionEntry);
             }
             catch (JsonException)
             {
@@ -114,6 +122,8 @@ public sealed class SessionStore
         branch.Reverse();
 
         var messages = new List<Message>();
+        var earlier = new List<Message>();
+        CompactionEntry? compaction = null;
         ModelChangeEntry? model = null;
         ThinkingLevel? thinking = null;
         bool? fast = null;
@@ -138,6 +148,13 @@ public sealed class SessionStore
                 case MessageEntry m:
                     messages.Add(m.Message);
                     break;
+                case CompactionEntry c:
+                    // 压缩之前的消息只用于显示；之后的第一条系统提示记录是新的开头
+                    earlier.AddRange(messages);
+                    messages.Clear();
+                    compaction = c;
+                    initialPrompt = null;
+                    break;
                 case ModelChangeEntry c:
                     model = c;
                     break;
@@ -160,6 +177,8 @@ public sealed class SessionStore
             SystemPrompt = currentPrompt,
             Tasks = tasks,
             Role = role,
+            EarlierMessages = earlier,
+            Compaction = compaction,
         };
     }
 
@@ -178,6 +197,14 @@ public sealed class SessionStore
 
     public Task AppendTasksAsync(IReadOnlyList<TCode.Agent.Coding.Tools.TaskItem> tasks, CancellationToken ct = default)
         => AppendTreeAsync(parent => new TasksEntry(NewEntryId(), parent, tasks), ct);
+
+    public Task AppendCompactionAsync(CompactionTrigger trigger, string summary, long preTokens, long postTokens, long durationMs,
+        string? instructions, bool truncatedForRetry, CancellationToken ct = default)
+        => AppendTreeAsync(parent => new CompactionEntry(NewEntryId(), parent, trigger, summary, preTokens, postTokens, durationMs)
+        {
+            Instructions = instructions,
+            TruncatedForRetry = truncatedForRetry,
+        }, ct);
 
     public Task AppendRuntimeSessionAsync(string runtime, string nativeSessionId, CancellationToken ct = default)
         => AppendTreeAsync(parent => new RuntimeSessionEntry(NewEntryId(), parent, runtime, nativeSessionId), ct);
@@ -277,4 +304,13 @@ public sealed record SessionSnapshot(
 
     /// <summary>任务清单的最新快照。</summary>
     public IReadOnlyList<TCode.Agent.Coding.Tools.TaskItem>? Tasks { get; init; }
+
+    /// <summary>最后一次压缩之前的消息（只用于界面回看与标题，不发给模型）；<see cref="Messages"/> 从压缩之后开始。</summary>
+    public IReadOnlyList<Message> EarlierMessages { get; init; } = [];
+
+    /// <summary>当前分支上最后一次压缩。</summary>
+    public CompactionEntry? Compaction { get; init; }
+
+    /// <summary>界面显示的完整历史：压缩之前与之后的消息。</summary>
+    public IReadOnlyList<Message> AllMessages => EarlierMessages.Count == 0 ? Messages : [.. EarlierMessages, .. Messages];
 }

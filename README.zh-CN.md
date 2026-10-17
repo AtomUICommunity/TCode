@@ -13,6 +13,10 @@
 ![NativeAOT](https://img.shields.io/badge/NativeAOT-ready-success)
 ![Status](https://img.shields.io/badge/status-early%20development-orange)
 
+<br />
+
+<img src="docs/images/conversation-zh.png" alt="TCode 会话界面" width="900" />
+
 </div>
 
 TCode 是一个用于协作 AI 编程 Agent 的原生桌面客户端。Agent 循环运行在独立的 Agent Host 进程中，通过三种线协议与模型通信，每个会话都以只追加的 JSONL 文件保存在本地。整个客户端按 NativeAOT 发布设计。
@@ -21,14 +25,33 @@ TCode 是一个用于协作 AI 编程 Agent 的原生桌面客户端。Agent 循
 
 ## 功能特性
 
-- **以项目 / 会话为中心的界面。** 暗色优先的视觉设计，支持亮色及跟随系统；界面中英双语。
-- **命令面板（⌘K）**：多级页面、可搜索的项目和会话列表，支持键盘导航。
-- **多厂商、多模型。** 内置厂商目录（每个厂商只需一个 API Key），也支持自定义 OpenAI 兼容端点；设置文件修改后自动热重载。
+- **以项目 / 会话为中心的界面。** 暗色优先，支持亮色及跟随系统；界面中英双语；命令面板（⌘K）支持多级页面和键盘导航。
+- **多厂商、多模型。** 内置厂商目录（每个厂商只需一个 API Key），也支持自定义 OpenAI 兼容端点和本地服务；设置文件修改后自动热重载。
 - **三种协议适配器：** OpenAI Chat Completions、OpenAI Responses、Anthropic Messages，支持思考 / 推理内容的原样回放，并在厂商支持时启用快速模式。
-- **内置编码工具：** `read`、`write`、`edit`、`ls`、`glob`、`grep`、`bash`（支持后台任务）、任务清单、`web_fetch`、`web_search`，以及多 Agent 协作。
-- **审批流程。** 工具调用经过权限策略判定：工作区内的只读操作直接放行，其余操作可以先向界面询问。
-- **可恢复的会话。** 会话以 JSONL 树的形式保存在 `~/.tcode/sessions/`，可以列出、重新打开并继续。
-- **流式 Markdown**，由 StreamMark 提供（代码高亮、Mermaid、LaTeX）。
+- **内置编码工具：** `read`、`write`、`edit`、`ls`、`glob`、`grep`、`bash`（支持后台任务）、任务清单、`web_fetch`、`web_search`，以及子 Agent。
+- **外部 Agent 运行时。** 本机已安装的 Claude Code、Codex 和 ACP Agent 可以直接在 TCode 中运行，并共用 TCode 的审批流程。
+- **审批与权限模式。** 工作区内的只读操作直接放行，其余操作可以先向界面询问，可单次允许或本会话内允许。
+- **输入框。** `@` 引用文件、`/` 命令与技能、Agent / Plan 模式、图片附件。全局资源放在 `~/.tcode`，项目资源放在 `.agents/`。
+- **MCP。** 从 `settings.json` 或 `.mcp.json` 读取 stdio 和 HTTP 服务器，支持工具、资源、提示词、信息征询（elicitation）以及导入 / 导出。
+- **工作台。** 文件树、代码与 Markdown 预览、集成终端（libghostty-vt，独立的 pty host 进程保持会话，支持搜索）。
+- **可恢复的会话。** 会话以 JSONL 树的形式保存在 `~/.tcode/sessions/`，可以列出、重命名、置顶、重新打开并继续。
+- **流式 Markdown**，由 [StreamMark](https://github.com/AtomUICommunity/StreamMark) 提供（代码高亮、Mermaid、LaTeX）。
+- **应用内更新**（来自 GitHub Releases）与系统托盘图标。
+
+## 界面截图
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/home-zh.png" alt="新建会话" /><br /><sub><b>新建会话。</b>选择设备、项目、模型和模式。</sub></td>
+    <td width="50%"><img src="docs/images/workbench-zh.png" alt="工作台" /><br /><sub><b>工作台。</b>对话、代码预览和文件树并排显示。</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/palette-zh.png" alt="命令面板" /><br /><sub><b>命令面板（⌘K）。</b>命令、项目和会话。</sub></td>
+    <td width="50%"><img src="docs/images/conversation-light-zh.png" alt="亮色主题" /><br /><sub><b>亮色主题。</b>跟随系统或手动指定。</sub></td>
+  </tr>
+</table>
+
+截图由示例项目无头渲染生成，可以用 `tools/readme-screenshots.sh` 重新生成。
 
 ## 架构
 
@@ -52,7 +75,9 @@ TCode.Desktop ──(JSON-RPC 2.0，经 stdio)──▶ TCode.AgentHost
 | `src/TCode.Rpc.Contracts` | Host 与界面之间的接口和 DTO，精简的 JSON-RPC 2.0 实现 |
 | `src/TCode.AgentHost` | 独立进程：托管多个会话，并把 Agent 事件翻译为 RPC 通知 |
 | `src/TCode.Config` | 设置类型与解析，Host 和桌面端共用 |
-| `src/TCode.Runtimes` | 外部 Agent 运行时的基础代码（见路线图） |
+| `src/TCode.Runtimes` | 外部 Agent 运行时：Claude Code、Codex、ACP |
+| `src/TCode.Mcp` | MCP 客户端：服务器配置、连接池、工具 / 资源 / 提示词的桥接 |
+| `src/TCode.Terminal.*` | 终端：libghostty-vt 核心、PTY、pty host 进程与协议、Avalonia 视图 |
 | `src/TCode.Desktop` | Avalonia 应用：窗口、主题、视图、ViewModel、Host 连接 |
 
 依赖方向严格单向。`TCode.Ai`、`TCode.Agent`、`TCode.Agent.Coding` 不依赖任何 UI，并标记为 `IsAotCompatible`。
@@ -62,11 +87,12 @@ TCode.Desktop ──(JSON-RPC 2.0，经 stdio)──▶ TCode.AgentHost
 ### 环境要求
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)（版本在 `global.json` 中锁定，滚动策略为 `latestFeature`）
-- 同级目录 `../StreamMark` 下的 **StreamMark** 源码。`StreamMark.*` 包从本地源读取（`nuget.config` 中指定的 `../StreamMark/artifacts/packages`），需要先打包：
+- [Rust 工具链](https://rustup.rs/)：用于构建 StreamMark 的 LaTeX 原生库，只在打包时需要一次。
+- **StreamMark** 以 git 子模块的形式放在 `external/StreamMark`。`StreamMark.*` 包从本地源读取（`nuget.config` 中指定的 `packages/streammark`），需要先打包：
 
   ```bash
-  # 在 StreamMark 源码目录中执行
-  dotnet pack -o artifacts/packages
+  git submodule update --init
+  tools/streammark/pack.sh
   ```
 
 - AtomUI（`AtomUI.Desktop.Controls`）直接从 nuget.org 引用，无需源码。
@@ -86,7 +112,7 @@ dotnet run --project src/TCode.Desktop
 dotnet test TCode.slnx
 ```
 
-桌面端测试使用 Avalonia.Headless + Skia 渲染真实组件，把 PNG 截图写入测试输出目录下的 `snapshots/`，也可以用 `TCODE_SNAPSHOT_DIR` 指定目录。
+桌面端测试使用 Avalonia.Headless + Skia 渲染真实组件，把 PNG 截图写入测试输出目录下的 `snapshots/`，也可以用 `TCODE_SNAPSHOT_DIR` 指定目录。`tools/readme-screenshots.sh` 用同样的方式把 README 截图渲染到 `docs/images/`。
 
 ### 发布（NativeAOT）
 
@@ -144,16 +170,20 @@ API Key 可以写明文、`{env:VAR}` 或 `$VAR`。在界面中保存时，文�
 | [docs/architecture.md](docs/architecture.md) | 技术决策、分层、RPC、界面与主题、NativeAOT 约束 |
 | [docs/settings.md](docs/settings.md) | `settings.json` 格式与合并规则 |
 | [docs/design/builtin-agent-tools.md](docs/design/builtin-agent-tools.md) | 内置 Agent 的系统提示与工具设计 |
-| [docs/design/external-agent-runtimes.md](docs/design/external-agent-runtimes.md) | Claude Code、Codex、ACP 运行时的规划 |
+| [docs/design/external-agent-runtimes.md](docs/design/external-agent-runtimes.md) | Claude Code、Codex、ACP 运行时 |
+| [docs/design/composer.md](docs/design/composer.md) | 输入框：引用、命令、技能、模式 |
+| [docs/design/mcp.md](docs/design/mcp.md) | MCP 客户端 |
+| [docs/design/auto-update.md](docs/design/auto-update.md) | 应用内更新与发布流程 |
+| [docs/terminal/](docs/terminal/) | 终端架构、pty host 与路线图 |
 | [docs/design/motion.md](docs/design/motion.md) | 动效规范 |
 | [docs/protocols/](docs/protocols/) | 适配器实现所依据的线协议规格 |
 
 ## 路线图
 
-- 用录制的真实流量加固三个协议适配器。
-- 完成内置的 write / edit / bash 工具及其审批界面。
-- 外部运行时：Claude Code（stream-json）、Codex（`app-server`）以及通用 ACP Agent，复用 TCode 的审批流程。
-- 上下文压缩、会话分支与 fork、集成终端、变更 diff 视图。
+- 用录制的真实流量加固协议适配器和外部运行时。
+- 上下文压缩、会话分支与 fork、变更 diff 视图。
+- 终端：分屏、Shell 配置、SSH 与 Agent 集成（见 [docs/terminal/13-roadmap.md](docs/terminal/13-roadmap.md)）。
+- 签名并公证的 macOS 构建。
 
 ## 参与贡献
 

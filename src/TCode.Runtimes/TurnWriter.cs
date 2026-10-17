@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using TCode.Agent;
@@ -321,6 +322,7 @@ public sealed class TurnWriter
             return;
         }
         state.Buffer.Append(delta);
+        state.LastDeltaAt = Stopwatch.GetTimestamp();
         LlmEvent e = state.Kind switch
         {
             BlockKind.Text => new TextDeltaEvent(state.Index, delta),
@@ -425,11 +427,16 @@ public sealed class TurnWriter
         public string? ToolCallId { get; init; }
         public string? ToolName { get; init; }
         public bool Ended { get; set; }
+        public long StartedAt { get; } = Stopwatch.GetTimestamp();
+        public long LastDeltaAt { get; set; }
+
+        /// <summary>思考耗时：开始到最后一段增量（没有增量时为空）。</summary>
+        public long? DurationMs => LastDeltaAt == 0 ? null : (long)Stopwatch.GetElapsedTime(StartedAt, LastDeltaAt).TotalMilliseconds;
 
         public ContentBlock ToContent() => Kind switch
         {
             BlockKind.Text => new TextContent(Buffer.ToString()),
-            BlockKind.Thinking => new ThinkingContent(Buffer.ToString()),
+            BlockKind.Thinking => new ThinkingContent(Buffer.ToString()) { DurationMs = DurationMs },
             _ => ToToolCall(),
         };
 

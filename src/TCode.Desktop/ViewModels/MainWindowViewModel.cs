@@ -43,6 +43,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // 打开文件或面板时自动显示编辑区
         workbench.OpenRequested += () => IsWorkbenchOpen = true;
         workbench.Emptied += () => IsWorkbenchOpen = false;
+        // 变更面板与转录中的“审查 / 打开”跟随当前会话
+        conversation.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ConversationViewModel.Active))
+            {
+                workbench.SetChangesSource(conversation.Active);
+            }
+        };
         // 文件树跟随当前会话的工作目录，没有会话时跟随所选项目
         conversation.PropertyChanged += (_, e) =>
         {

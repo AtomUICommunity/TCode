@@ -10,4 +10,11 @@
     <ItemGroup>
         <PackageReference Include="AngleSharp" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- 内置提示词型 command（/init、/commit）的正文，见 BuiltinPromptCommands -->
+        <EmbeddedResource Include="Assets\BuiltinPrompts\*.md" LogicalName="TCode.Agent.Coding.Assets.BuiltinPrompts.%(Filename)%(Extension)" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TCode.Agent.Tests" />
+    </ItemGroup>
 </Project>

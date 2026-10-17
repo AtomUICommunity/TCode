@@ -2,7 +2,7 @@
 # 把 AOT 发布产物打成 TCode.app（Dock / Finder / Cmd+Tab 显示 app.icns）。
 # 用法: tools/package_macos_app.sh [rid=osx-arm64] [输出目录=artifacts] [版本=0.0.0-dev]
 # 设置 MACOS_SIGN_IDENTITY（例如 "Developer ID Application: Name (TEAMID)"）时由内向外签名（hardened runtime），否则不签名。
-# 发布流程见 docs/design/auto-update.md §11；pkg / dmg / 公证由 tools/release/package-macos.sh 完成。
+# 发布流程见 docs/design/auto-update.md §11；zip / dmg / 公证由 tools/release/package-macos.sh 完成。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RID="${1:-osx-arm64}"

@@ -317,9 +317,56 @@ public sealed partial class WorkbenchViewModel : ObservableObject
         OpenRequested?.Invoke();
     }
 
+    /// <summary>变更标签页：当前会话的文件改动（一个实例，随会话切换刷新）。</summary>
+    public ChangesTabViewModel Changes { get; } = new();
+
+    private SessionViewModel? _changesSource;
+
+    /// <summary>切换当前会话：变更面板跟随它，转录中的“审查 / 打开”也指向它。</summary>
+    public void SetChangesSource(SessionViewModel? session)
+    {
+        if (_changesSource is not null)
+        {
+            _changesSource.ReviewRequested -= ReviewChange;
+            _changesSource.OpenRequested -= OpenFile;
+        }
+        _changesSource = session;
+        if (session is not null)
+        {
+            session.ReviewRequested += ReviewChange;
+            session.OpenRequested += OpenFile;
+        }
+        Changes.SetSession(session);
+    }
+
+    [RelayCommand]
+    private void OpenChanges() => ShowChanges();
+
+    /// <summary>打开变更面板并选中该文件。</summary>
+    public void ReviewChange(string path)
+    {
+        ShowChanges();
+        Changes.Select(path);
+    }
+
+    private void ShowChanges()
+    {
+        if (!Tabs.Contains(Changes))
+        {
+            Tabs.Add(Changes);
+        }
+        Activate(Changes);
+        OpenRequested?.Invoke();
+    }
+
     [RelayCommand]
     private void AddTool(WorkbenchToolViewModel tool)
     {
+        if (tool.Kind == WorkbenchTabKind.Diffs)
+        {
+            ShowChanges();
+            return;
+        }
         if (tool.Kind == WorkbenchTabKind.Terminal)
         {
             // 每次都新建一个终端（01 §7），在项目目录中启动
@@ -350,13 +397,23 @@ public sealed partial class WorkbenchViewModel : ObservableObject
         ActiveTab = tab;
     }
 
+    /// <summary>确认框（标题、说明、确定按钮文字），由主窗口提供。</summary>
+    public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
+
     [RelayCommand]
-    private void Close(WorkbenchTabViewModel tab)
+    private async Task CloseAsync(WorkbenchTabViewModel tab)
     {
         if (tab is TerminalTabViewModel terminal)
         {
-            // 终端的关闭需要 host 确认：有程序在运行时不关闭，标签保留并显示确认栏；关闭成功时由 Closed 移除标签
-            _ = terminal.CloseAsync();
+            // 终端的关闭需要 host 确认：有程序在运行时先弹窗确认，确认后强制关闭；关闭成功时由 Closed 移除标签
+            if (!await terminal.CloseAsync() && ConfirmAsync is { } confirm)
+            {
+                var close = Strings.Get(TCodeLangResourceKind.TerminalCloseAction);
+                if (await confirm(close, Strings.Get(TCodeLangResourceKind.TerminalCloseRunning), close))
+                {
+                    await terminal.CloseAsync(force: true);
+                }
+            }
             return;
         }
         RemoveTab(tab);

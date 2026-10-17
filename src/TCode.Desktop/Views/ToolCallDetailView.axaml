@@ -4,6 +4,7 @@
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:TCode.Desktop.ViewModels"
              xmlns:controls="using:TCode.Desktop.Controls"
+             xmlns:views="using:TCode.Desktop.Views"
              x:Class="TCode.Desktop.Views.ToolCallDetailView"
              x:DataType="vm:ToolCallBlockViewModel">
     <StackPanel Margin="38,2,8,10" Spacing="8">
@@ -11,43 +12,20 @@
             <Style Selector="SelectableTextBlock.output.failed">
                 <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
             </Style>
-            <Style Selector="TextBlock.diff">
-                <Setter Property="FontFamily" Value="{StaticResource TCode.MonoFont}" />
-                <Setter Property="FontSize" Value="12" />
-                <Setter Property="LineHeight" Value="18" />
-                <Setter Property="TextWrapping" Value="NoWrap" />
-                <Setter Property="Foreground" Value="{DynamicResource TCode.TextSecondary}" />
-            </Style>
-            <Style Selector="TextBlock.diff.added">
-                <Setter Property="Foreground" Value="{DynamicResource TCode.Success}" />
-            </Style>
-            <Style Selector="TextBlock.diff.removed">
-                <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
-            </Style>
-            <Style Selector="TextBlock.diff.hunk">
-                <Setter Property="Foreground" Value="{DynamicResource TCode.TextTertiary}" />
-            </Style>
         </StackPanel.Styles>
-        <SelectableTextBlock Text="{Binding Detail}" FontFamily="{StaticResource TCode.MonoFont}" FontSize="12"
-                             LineHeight="19" TextWrapping="Wrap" Foreground="{DynamicResource TCode.TextSecondary}" />
+        <!-- 命令全文限高，超出内部滚动（长命令不撑开行） -->
+        <ScrollViewer MaxHeight="120" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <SelectableTextBlock Text="{Binding Detail}" FontFamily="{StaticResource TCode.MonoFont}" FontSize="12"
+                                 LineHeight="19" TextWrapping="Wrap" Foreground="{DynamicResource TCode.TextSecondary}" />
+        </ScrollViewer>
         <!-- 子 Agent：名字、工具调用次数与 tokens -->
         <TextBlock Classes="tertiary" FontSize="12" Text="{Binding SubagentStats}" IsVisible="{Binding HasSubagent}" />
-        <!-- 文件改动：+3 −1 与着色 diff -->
-        <Border IsVisible="{Binding HasDiff}" Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8">
-            <StackPanel Spacing="6">
-                <TextBlock Classes="tertiary" FontSize="12" Text="{Binding DiffStats}" />
-                <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding DiffLines}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:DiffLineViewModel">
-                                <TextBlock Classes="diff" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
-                                           Classes.hunk="{Binding IsHunk}" Text="{Binding Text}" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </StackPanel>
-        </Border>
+        <!-- 文件改动：+3 −1 与着色 diff（与变更面板同一控件） -->
+        <StackPanel IsVisible="{Binding HasDiff}" Spacing="6">
+            <TextBlock Classes="tertiary" FontSize="12" Text="{Binding DiffStats}" />
+            <views:DiffView Lines="{Binding DiffLines}" MaxContentHeight="320" />
+        </StackPanel>
         <Border IsVisible="{Binding ShowResult}" Background="{DynamicResource TCode.CodeBg}" CornerRadius="6" Padding="10,8">
             <ScrollViewer MaxHeight="240" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled"
                           controls:FollowTail.IsEnabled="{Binding IsBusy}">

@@ -67,6 +67,27 @@ public sealed class ModelPickerSnapshotTests
     }
 
     [Fact]
+    public async Task Picker_LongList_KeepsFavoriteButtonClearOfScrollBar()
+    {
+        await HeadlessApp.Session.Dispatch(() =>
+        {
+            var settings = new StateService(Path.Combine(Path.GetTempPath(), $"tcode-test-{Guid.NewGuid():N}.json"));
+            var picker = new ModelPickerViewModel(settings);
+            picker.Load(Enumerable.Range(1, 9).Select(i => new ModelDto($"glm-{i}", $"GLM-5.{i}", "zai", "openai-completions", true, null,
+                ["Off", "High"], "High", [128_000], i == 1, $"zai/glm-{i}", "Z.ai")).ToArray());
+            var view = new ModelPickerView { DataContext = picker, Margin = new Thickness(40), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+            var window = new AtomUI.Desktop.Controls.Window { Width = 900, Height = 560, Content = view, Background = Avalonia.Media.Brushes.Black };
+            window.Show();
+            view.GetVisualDescendants().OfType<Popup>().Single().ShouldUseOverlayLayer = true;
+            view.Toggle();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(9, picker.VisibleModels.Count);
+            HeadlessApp.Save(window, "model-picker-scroll");   // 列表出现滚动条：右侧收藏按钮不被盖住
+            window.Close();
+        }, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Picker_GroupsRuntimes_AndFiltersBySessionScope()
     {
         await HeadlessApp.Session.Dispatch(() =>

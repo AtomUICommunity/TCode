@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """生成并签名更新清单 manifest.json（docs/design/auto-update.md §4）。
 
-扫描产物目录中各平台的安装程序（pkg / setup.exe / tar.gz），写出 manifest.json，
+扫描产物目录中各平台的安装程序（zip / setup.exe / tar.gz），写出 manifest.json，
 再用 openssl 以 ECDSA P-256 + SHA-256 签名得到 manifest.json.sig（DER，客户端用 Rfc3279DerSequence 验证）。
 只用标准库与 openssl 命令行。用法：
 
@@ -18,8 +18,8 @@ import sys
 REPO = "AtomUICommunity/TCode"
 # 每个运行时标识对应的安装程序文件名与最低系统版本
 ASSETS = {
-    "osx-arm64": ("TCode-{v}-osx-arm64.pkg", "11.0"),
-    "osx-x64": ("TCode-{v}-osx-x64.pkg", "11.0"),
+    "osx-arm64": ("TCode-{v}-osx-arm64.zip", "11.0"),
+    "osx-x64": ("TCode-{v}-osx-x64.zip", "11.0"),
     "win-x64": ("TCode-{v}-win-x64-setup.exe", None),
     "linux-x64": ("TCode-{v}-linux-x64.tar.gz", None),
 }

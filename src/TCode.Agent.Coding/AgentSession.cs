@@ -17,6 +17,10 @@ namespace TCode.Agent.Coding;
 public sealed class AgentSession : IAsyncDisposable
 {
     private readonly IDisposable _persistence;
+    /// <summary>本次打开后压缩掉的消息：不再发给模型，只用于界面回看（<see cref="History"/>）。</summary>
+    private readonly List<Message> _earlier = [];
+    /// <summary>打开时会话文件里已压缩掉的消息条数：不常驻内存，回看到这里时才从文件读取。</summary>
+    private int _earlierOnDisk;
 
     private AgentSession(IAgentLoop agent, SessionStore store, ToolContext? tools = null)
     {
@@ -29,6 +33,13 @@ public sealed class AgentSession : IAsyncDisposable
             if (e is MessageEndEvent end)
             {
                 await store.AppendMessageAsync(end.Message, CancellationToken.None);
+            }
+            else if (e is TCode.Agent.CompactionEndEvent { Result: not null } compacted)
+            {
+                lock (_earlier)
+                {
+                    _earlier.AddRange(compacted.Replaced);
+                }
             }
         });
         if (agent is IExternalAgentLoop external)
@@ -84,10 +95,80 @@ public sealed class AgentSession : IAsyncDisposable
     public SessionApprovals Approvals { get; init; } = new();
 
     /// <summary>
-    /// 用户选择的上下文预算（≤ 模型上下文窗口）。用于计算占用比例，后续也作为压缩阈值的依据；
-    /// 当前各厂商没有对应的请求参数。
+    /// 用户选择的上下文预算（≤ 模型上下文窗口）：占用比例与自动压缩阈值的依据（docs/design/compaction.md §4）；
+    /// 各厂商没有对应的请求参数。
     /// </summary>
-    public int ContextWindow { get; set; }
+    public int ContextWindow
+    {
+        get;
+        set
+        {
+            field = value;
+            if (Agent is TCode.Agent.Agent builtin)
+            {
+                builtin.ContextBudget = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 界面显示的完整历史：压缩掉的消息加上 Agent 当前的历史（只增不减，分页下标保持稳定）。
+    /// 打开前就已压缩掉的部分在访问到时才从会话文件读取。
+    /// </summary>
+    public IReadOnlyList<Message> History
+    {
+        get
+        {
+            lock (_earlier)
+            {
+                if (_earlierOnDisk == 0)
+                {
+                    return _earlier.Count == 0 ? Agent.Messages : [.. _earlier, .. Agent.Messages];
+                }
+                var count = _earlierOnDisk;
+                var path = Store.FilePath;
+                return new HistoryView(new Lazy<IReadOnlyList<Message>>(() => ReadEarlier(path, count)), count, [.. _earlier, .. Agent.Messages]);
+            }
+        }
+    }
+
+    /// <summary>会话文件中前 <paramref name="count"/> 条已压缩的消息；文件被改短时用不显示的占位补齐，保持下标。</summary>
+    private static IReadOnlyList<Message> ReadEarlier(string path, int count)
+    {
+        IReadOnlyList<Message> earlier;
+        try
+        {
+            earlier = SessionStore.Read(path).EarlierMessages;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            earlier = [];
+        }
+        return [.. earlier.Take(count), .. Enumerable.Repeat<Message>(new SystemMessage(""), Math.Max(0, count - earlier.Count))];
+    }
+
+    private sealed class HistoryView(Lazy<IReadOnlyList<Message>> earlier, int earlierCount, IReadOnlyList<Message> rest) : IReadOnlyList<Message>
+    {
+        public int Count => earlierCount + rest.Count;
+
+        public Message this[int index] => index < earlierCount ? earlier.Value[index] : rest[index - earlierCount];
+
+        public IEnumerator<Message> GetEnumerator()
+        {
+            for (var i = 0; i < Count; i++)
+            {
+                yield return this[i];
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    /// <summary>手动压缩（/compact）；外部运行时与没有压缩器的会话不支持。</summary>
+    public Task CompactAsync(string? instructions) =>
+        Agent is TCode.Agent.Agent { Compactor: not null } builtin
+            ? builtin.CompactAsync(instructions)
+            : throw new InvalidOperationException("Compaction is only available for the built-in agent.");
 
     public static AgentSession Create(WireApiRegistry apis, ModelInfo model, string cwd, string? sessionsRoot = null,
         Func<string, string?>? getApiKey = null, BuiltinOptions? options = null)
@@ -108,17 +189,19 @@ public sealed class AgentSession : IAsyncDisposable
         };
     }
 
+    /// <param name="snapshot">调用方已读过的快照（避免再解析一遍会话文件）。</param>
     public static AgentSession Open(WireApiRegistry apis, ModelInfo model, string filePath, Func<string, string?>? getApiKey = null,
-        BuiltinOptions? options = null)
+        BuiltinOptions? options = null, SessionSnapshot? snapshot = null)
     {
-        var (store, snapshot) = SessionStore.OpenSnapshot(filePath);
+        (var store, snapshot) = SessionStore.OpenSnapshot(filePath, snapshot);
         var (agent, tools) = CreateBuiltinLoop(apis, model, store, snapshot, getApiKey, options ?? new BuiltinOptions());
-        agent.LoadHistory(ImageAttachments.Load(snapshot.Messages));
+        agent.LoadHistory(snapshot.Messages);
         tools.Tasks.Restore(snapshot.Tasks);
         return new AgentSession(agent, store, tools)
         {
             ContextWindow = model.ContextWindow,
             Approvals = options?.Approvals ?? new SessionApprovals(),
+            _earlierOnDisk = snapshot.EarlierMessages.Count,
         };
     }
 
@@ -139,6 +222,9 @@ public sealed class AgentSession : IAsyncDisposable
         {
             SessionId = store.SessionId,
             GetApiKey = getApiKey,
+            Compactor = new Compaction.Compactor(store, toolContext, prompt),
+            AutoCompact = options.AutoCompact,
+            Offload = ImageAttachments.Offload,
         };
         var dynamic = options.Services.DynamicTools?.Invoke(toolContext);
         toolContext.DynamicTools = dynamic;
@@ -192,11 +278,13 @@ public sealed class AgentSession : IAsyncDisposable
     }
 
     /// <summary>打开外部运行时的会话：<paramref name="createLoop"/> 从快照中取得原生会话 id 以便恢复。</summary>
-    public static AgentSession Open(string filePath, Func<SessionStore, SessionSnapshot, IExternalAgentLoop> createLoop)
+    public static AgentSession Open(string filePath, Func<SessionStore, SessionSnapshot, IExternalAgentLoop> createLoop,
+        SessionSnapshot? snapshot = null)
     {
-        var (store, snapshot) = SessionStore.OpenSnapshot(filePath);
+        (var store, snapshot) = SessionStore.OpenSnapshot(filePath, snapshot);
         var loop = createLoop(store, snapshot);
-        loop.LoadHistory(ImageAttachments.Load(snapshot.Messages));
+        // 外部运行时的历史只用于显示：图片同样只留路径
+        loop.LoadHistory(snapshot.Messages.Select(ImageAttachments.Offload).ToArray());
         return new AgentSession(loop, store) { ContextWindow = loop.Model.ContextWindow };
     }
 

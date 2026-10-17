@@ -33,6 +33,9 @@
             <SolidColorBrush x:Key="TCode.CodeBg" Color="#1C1C1C" />
             <SolidColorBrush x:Key="TCode.Success" Color="#40A167" />
             <SolidColorBrush x:Key="TCode.Danger" Color="#E5534B" />
+            <SolidColorBrush x:Key="TCode.DiffAddBg" Color="#1F3B2B" />
+            <SolidColorBrush x:Key="TCode.DiffRemoveBg" Color="#3E2427" />
+            <SolidColorBrush x:Key="TCode.DiffHunkBg" Color="#222222" />
             <SolidColorBrush x:Key="TCode.GitUntracked" Color="#84B8C8" />
             <SolidColorBrush x:Key="TCode.GitModified" Color="#D7BA7D" />
             <SolidColorBrush x:Key="TCode.Accent" Color="#8B7CF6" />
@@ -104,6 +107,9 @@
             <SolidColorBrush x:Key="TCode.CodeBg" Color="#F5F5F5" />
             <SolidColorBrush x:Key="TCode.Success" Color="#2F9E5C" />
             <SolidColorBrush x:Key="TCode.Danger" Color="#D1362F" />
+            <SolidColorBrush x:Key="TCode.DiffAddBg" Color="#E3F4EA" />
+            <SolidColorBrush x:Key="TCode.DiffRemoveBg" Color="#FBE6E4" />
+            <SolidColorBrush x:Key="TCode.DiffHunkBg" Color="#EFEFF1" />
             <SolidColorBrush x:Key="TCode.GitUntracked" Color="#2B7A92" />
             <SolidColorBrush x:Key="TCode.GitModified" Color="#9A6B00" />
             <SolidColorBrush x:Key="TCode.Accent" Color="#6E5BEF" />
@@ -154,6 +160,8 @@
     <CornerRadius x:Key="TCode.RadiusLarge">16</CornerRadius>
     <CornerRadius x:Key="TCode.RadiusMenu">10</CornerRadius>
     <BoxShadows x:Key="TCode.MenuShadow">0 8 24 0 #66000000</BoxShadows>
+    <!-- 浮在会话上方的小控件（任务球）：轻微投影，与正文区分开 -->
+    <BoxShadows x:Key="TCode.FloatShadow">0 2 10 0 #40000000</BoxShadows>
     <FontFamily x:Key="TCode.MonoFont">Menlo, Cascadia Mono, Consolas, DejaVu Sans Mono, monospace</FontFamily>
     <x:Double x:Key="TCode.FontSizeBody">13</x:Double>
     <x:Double x:Key="TCode.FontSizeSmall">12</x:Double>

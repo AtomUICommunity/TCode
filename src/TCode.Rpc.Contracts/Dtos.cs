@@ -218,7 +218,8 @@ public sealed record HistoryImage(string Path) : HistoryBlockDto;
 
 public sealed record HistoryText(string Text) : HistoryBlockDto;
 
-public sealed record HistoryThinking(string Text) : HistoryBlockDto;
+/// <summary>思考内容（超长时截断）；<paramref name="DurationMs"/> 为记录的思考耗时（旧记录没有）。</summary>
+public sealed record HistoryThinking(string Text, long? DurationMs = null) : HistoryBlockDto;
 
 public sealed record HistoryToolCall(string ToolCallId, string ToolName, string ArgumentsJson) : HistoryBlockDto;
 
@@ -262,6 +263,45 @@ public sealed record ToolApprovalRequest(
 
 /// <param name="ForSession">与 Approved 同时为 true 时表示“本会话内允许”（同类操作不再询问）。</param>
 public sealed record ToolApprovalResponse(bool Approved, string? Reason = null, bool ForSession = false);
+
+/// <summary>向用户提问（input/request，docs/design/ask-user.md §6）。</summary>
+/// <param name="Source">builtin / claude-code / codex：决定面板标题。</param>
+/// <param name="ToolCallId">对应的工具调用（转录里的问答卡片据此关联）。</param>
+public sealed record UserInputRequest(
+    string SessionId,
+    string RequestId,
+    string Source,
+    string? ToolCallId,
+    IReadOnlyList<UserQuestionDto> Questions,
+    string? AgentName = null);
+
+/// <param name="Id">问题标识：内置与 Claude 为问题原文，Codex 为问题 id。</param>
+/// <param name="Options">为空时只有文本框。</param>
+/// <param name="AllowOther">是否提供“其他”自由输入。</param>
+/// <param name="IsSecret">文本框掩码显示。</param>
+public sealed record UserQuestionDto(
+    string Id,
+    string Header,
+    string Question,
+    IReadOnlyList<UserQuestionOptionDto> Options,
+    bool MultiSelect = false,
+    bool AllowOther = true,
+    bool IsSecret = false);
+
+public sealed record UserQuestionOptionDto(string Label, string? Description = null);
+
+/// <param name="Outcome">answered / declined。</param>
+public sealed record UserInputResponse(string Outcome, IReadOnlyList<UserAnswerDto>? Answers = null)
+{
+    public const string Answered = "answered";
+    public const string Declined = "declined";
+
+    public static UserInputResponse Decline { get; } = new(Declined);
+}
+
+/// <param name="Selected">选中的选项标签（按选项顺序）。</param>
+/// <param name="Text">“其他”里输入的文本；空表示没有。</param>
+public sealed record UserAnswerDto(string QuestionId, IReadOnlyList<string> Selected, string? Text = null);
 
 public enum RuntimeStatusDto
 {

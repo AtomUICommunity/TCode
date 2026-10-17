@@ -80,6 +80,49 @@ public sealed class CodexFixtureTests
     }
 
     [Fact]
+    public async Task RequestUserInput_AnswersById_WithUserNote_AndShowsSyntheticQuestionTool()
+    {
+        var (agent, peer, _) = Create((_, _) => throw new InvalidOperationException("requestUserInput is not an approval"));
+        RuntimeInputRequest? asked = null;
+        agent.InputHandler = (request, _) =>
+        {
+            asked = request;
+            return Task.FromResult(new TCode.Agent.Questions.UserInputResult(TCode.Agent.Questions.UserInputOutcome.Answered,
+                [new("db_choice", ["SQLite"], "keep it small")]));
+        };
+        var events = Record(agent);
+        var run = agent.PromptAsync(UserMessage.FromText("运行测试"));
+        // 借用 C-b 的握手与收尾，把中间的命令审批换成一次提问
+        var b = Load("### C-b").ToList();
+        var toolStart = b.FindIndex(l => !l.FromClient && l.Json.Contains("\"type\":\"commandExecution\"") && l.Json.Contains("item/started"));
+        var tail = b.FindIndex(l => !l.FromClient && l.Json.Contains("msg_1b2c3d4e5f607183") && l.Json.Contains("item/started"));
+        const string thread = "019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f";
+        const string turn = "019a6f20-2b3c-7d4e-9f50-6a7b8c9d0e1f";
+        await peer.RunAsync([
+            .. b.Take(toolStart),
+            new TranscriptLine(false, """{"id":0,"method":"item/tool/requestUserInput","params":{"threadId":"@T","turnId":"@U","itemId":"call_rui","isBlocking":true,"autoResolutionMs":null,"questions":[{"id":"db_choice","header":"Database","question":"Which DB?","isOther":true,"isSecret":false,"options":[{"label":"Postgres (Recommended)","description":"Full featured"},{"label":"SQLite","description":"Zero setup"}]}]}}"""
+                .Replace("@T", thread).Replace("@U", turn)),
+            new TranscriptLine(true, """{"id":0,"result":{"answers":{"db_choice":{"answers":["SQLite","user_note: keep it small"]}}}}"""),
+            new TranscriptLine(false, """{"method":"serverRequest/resolved","params":{"threadId":"@T","requestId":0}}""".Replace("@T", thread)),
+            .. b.Skip(tail),
+        ]);
+        await run.WaitAsync(Timeout);
+
+        Assert.Equal("call_rui", asked!.ToolCallId);
+        var question = Assert.Single(asked.Questions);
+        Assert.Equal(("db_choice", "Database", "Which DB?", true), (question.Id, question.Header, question.Question, question.AllowOther));
+        Assert.Equal(["Postgres (Recommended)", "SQLite"], question.Options.Select(o => o.Label));
+        // 没有对应的 ThreadItem：转录里合成一个 request_user_input 工具调用
+        var call = agent.Messages.OfType<AssistantMessage>().SelectMany(m => m.Content).OfType<ToolCallContent>().Single(c => c.Id == "call_rui");
+        Assert.Equal("request_user_input", call.Name);
+        var end = events.OfType<ToolExecutionEndEvent>().Single(e => e.ToolCallId == "call_rui");
+        var details = JsonDocument.Parse(end.Result.Details!).RootElement;
+        Assert.Equal("answered", details.GetProperty("status").GetString());
+        Assert.Equal("keep it small", details.GetProperty("questions")[0].GetProperty("text").GetString());
+        Assert.Equal("3 个测试全部通过。", Assert.IsType<TextContent>(Assert.Single(Assert.IsType<AssistantMessage>(agent.Messages[^1]).Content)).Text);
+    }
+
+    [Fact]
     public async Task C_FileChangeApproval_Decline_UsesPatchFromItem()
     {
         RuntimeApprovalRequest? asked = null;

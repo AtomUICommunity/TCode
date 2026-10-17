@@ -12,13 +12,22 @@ public sealed class FileStateTracker
 {
     private readonly ConcurrentDictionary<string, Stamp> _stamps = new(PathUtil.Comparer);
 
-    private sealed record Stamp(DateTime ModifiedUtc, long Length, byte[] Hash);
+    private sealed record Stamp(DateTime ModifiedUtc, long Length, byte[] Hash, long Sequence);
+
+    private long _sequence;
 
     public void Record(string path, byte[] content)
     {
         var info = new FileInfo(path);
-        _stamps[PathUtil.RealPath(path)] = new Stamp(info.LastWriteTimeUtc, content.Length, SHA256.HashData(content));
+        _stamps[PathUtil.RealPath(path)] = new Stamp(info.LastWriteTimeUtc, content.Length, SHA256.HashData(content), Interlocked.Increment(ref _sequence));
     }
+
+    /// <summary>最近读过或写过的文件，最新的在前（压缩后重新附加，docs/design/compaction.md §7.3）。</summary>
+    public IReadOnlyList<string> Recent(int count) =>
+        _stamps.OrderByDescending(p => p.Value.Sequence).Take(count).Select(p => p.Key).ToArray();
+
+    /// <summary>忘记所有读取记录：压缩后模型不再看得到之前读过的内容，编辑前需要重新读取。</summary>
+    public void Clear() => _stamps.Clear();
 
     public bool HasRead(string path) => _stamps.ContainsKey(PathUtil.RealPath(path));
 

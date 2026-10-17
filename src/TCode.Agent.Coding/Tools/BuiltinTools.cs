@@ -1,5 +1,6 @@
 using TCode.Agent.Coding.Tools.Agents;
 using TCode.Agent.Coding.Tools.Files;
+using TCode.Agent.Coding.Tools.Questions;
 using TCode.Agent.Coding.Tools.Search;
 using TCode.Agent.Coding.Tools.Shell;
 using TCode.Agent.Coding.Tools.Tasks;
@@ -37,6 +38,10 @@ public static class BuiltinTools
             }
             tools.Add(new SendMessageTool(context));
             tools.Add(new ListAgentsTool(context));
+        }
+        if (context.Services.UserInput is not null)
+        {
+            tools.Add(new AskUserTool(context));
         }
         return tools;
     }

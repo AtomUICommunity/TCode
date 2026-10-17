@@ -19,10 +19,10 @@ namespace TCode.Desktop.Tests;
 /// </summary>
 public sealed class TerminalTabSnapshotTests
 {
-    private static FrameSnapshot Frame(string text, int cols = 60, int rows = 10)
+    private static FrameSnapshot Frame(string text, int cols = 60, int rows = 10, bool dark = true)
     {
         using var core = TerminalCore.Create(new TerminalCoreOptions(new TerminalSize(cols, rows, 8, 16)));
-        core.SetDefaultColors(TerminalTheme.ToCorePalette(TerminalTheme.Dark), ColorScheme.Dark);
+        core.SetDefaultColors(TerminalTheme.ToCorePalette(TerminalTheme.For(dark)), dark ? ColorScheme.Dark : ColorScheme.Light);
         core.Write(Encoding.UTF8.GetBytes(text));
         return core.CaptureFrame(force: true)!;
     }
@@ -68,8 +68,28 @@ public sealed class TerminalTabSnapshotTests
 
             tab.ShowStatus("正在启动终端…");
             window.UpdateLayout();
+            Assert.Equal("正在启动终端…", tab.Status);  // 先断言：截图会执行排队的任务，启动失败的提示可能随后覆盖它
             HeadlessApp.Save(window, "terminal-tab-status");
-            Assert.Equal("正在启动终端…", tab.Status);
+            window.Close();
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task RendersTheLightThemeWithOverlays()
+    {
+        await HeadlessApp.Session.Dispatch(() =>
+        {
+            var hosts = new PtyHostService(NullLogger<PtyHostService>.Instance);
+            var tab = new TerminalTabViewModel(hosts, cwd: null);
+            var view = new TerminalTabView { DataContext = tab };
+            var window = new Window { Width = 640, Height = 260, Content = view, RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light };
+            window.Show();
+            tab.Display(Frame("\x1b[1;32mtcode\x1b[0m ~/code $ ls\r\n\x1b[34msrc\x1b[0m  \x1b[33mtests\x1b[0m  \x1b[37mREADME.md\x1b[0m\r\n$ ", dark: false));
+            tab.OpenSearch();
+            tab.SearchText = "src";
+            tab.ShowStatus("正在启动终端…");
+            window.UpdateLayout();
+            HeadlessApp.Save(window, "terminal-tab-light");
             window.Close();
         }, CancellationToken.None);
     }

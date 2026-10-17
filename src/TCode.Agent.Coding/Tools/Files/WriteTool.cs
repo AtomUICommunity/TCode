@@ -1,3 +1,4 @@
+using TCode.Agent.Diff;
 using System.Text.Json;
 
 namespace TCode.Agent.Coding.Tools.Files;
@@ -49,6 +50,7 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
         }
         var exists = File.Exists(path);
         var previous = "";
+        string? snapshot = null;
         TextFile format;
         if (exists)
         {
@@ -63,6 +65,7 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
             }
             format = TextFile.Decode(current);
             previous = format.Text;
+            snapshot = current.Length <= FileRevert.MaxSnapshotBytes ? previous : null;
         }
         else
         {
@@ -75,7 +78,8 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
         context.Files.Record(path, bytes);
 
         var diff = LineDiff.Compute(previous, content, path);
-        var details = new DiffDetails(path, diff.UnifiedDiff, diff.Added, diff.Removed, diff.FirstChangedLine, Created: !exists).ToJson();
+        var details = new DiffDetails(path, diff.UnifiedDiff, diff.Added, diff.Removed, diff.FirstChangedLine, Created: !exists,
+            Before: snapshot, AfterSha256: FileRevert.Sha256(bytes)).ToJson();
         var lineCount = LineDiff.SplitLines(content).Length;
         var message = exists ? $"Overwrote {path} ({lineCount} lines)." : $"Created {path} ({lineCount} lines).";
         if (context.NestedInstructionsFor(path) is { } nested)

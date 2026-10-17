@@ -62,6 +62,7 @@ public sealed class SlashCommandTests
             Assert.Single(titles, t => t == "new");
             var review = conversation.Completion.Items.Single(i => i.Title == "review");
             Assert.Equal(("Review the diff", "项目"), (review.Subtitle, review.Source));
+            HeadlessApp.Save(window, "composer-slash-all");   // 列表出现滚动条：右侧来源列不被盖住
 
             window.KeyTextInputText("rev");
             await WaitUntil(() => conversation.Completion.Items.FirstOrDefault()?.Title == "review", "filtered");
@@ -91,6 +92,8 @@ public sealed class SlashCommandTests
             Assert.Equal(["command", "text"], history.Segments!.Select(s => s.Kind));
 
             // 外部运行时报告的命令：出现在 / 列表，选中后为运行时命令 tag，原样以 /名称 发送
+            // （外部运行时的会话不提供内置 /compact，运行时自己的同名命令不会被遮住）
+            session.Runtime = "claude-code";
             session.Apply(new TCode.Rpc.CommandsChanged([new TCode.Rpc.RuntimeCommandDto("compact", "Summarize the conversation", "<instructions>")]));
             conversation.Composer.SetContent([new TextSegment("/compa")]);
             await WaitUntil(() => conversation.Completion.Items.FirstOrDefault()?.Title == "compact", "runtime command");

@@ -13,6 +13,7 @@
     "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
     "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
     "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
+    "autoCompact": { "type": "boolean", "description": "Automatically compact the built-in agent's context when it nears the context budget (default true). /compact still works when disabled." },
     "closeToTray": { "type": "boolean", "description": "Closing the window hides TCode to the system tray and keeps sessions running (default true). When false, closing the window quits TCode." },
     "originalImages": { "type": "boolean", "description": "Show Markdown images at full resolution. By default they are decoded at their display size to save memory; clicking an image always opens the original." },
     "providers": {
@@ -137,6 +138,7 @@
         "name": { "type": "string" },
         "description": { "type": "string" },
         "contextWindow": { "type": "integer", "minimum": 1, "description": "Default 128000 for unknown models." },
+        "defaultContextWindow": { "type": "integer", "minimum": 1, "description": "Default context budget for new sessions (the smaller picker option). Default 272000; gpt-6.1-sol 500000." },
         "maxTokens": { "type": "integer", "minimum": 1, "description": "Default 16384 for unknown models." },
         "reasoning": { "type": "boolean" },
         "efforts": { "type": "array", "items": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"] } },

@@ -1,0 +1,130 @@
+<!-- 右上角任务球：收起是一个小球（运行中转圈，否则清单图标）；展开是 Agent、Shell、任务清单与“更改”入口。
+     每个分区都限高，超出在框内滚动（不无限增高）。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:icons="using:TCode.Desktop.Icons"
+             xmlns:controls="using:TCode.Desktop.Controls"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             x:Class="TCode.Desktop.Views.TaskOrbView"
+             x:DataType="vm:SessionViewModel"
+             IsVisible="{Binding HasTaskOrb, FallbackValue=False}">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.task.done">
+            <Setter Property="Foreground" Value="{DynamicResource TCode.TextTertiary}" />
+        </Style>
+        <!-- 收起的球：实心底色 + 描边 + 投影，浮在正文上方也能一眼看到；悬停 / 展开时加深 -->
+        <Style Selector="ToggleButton#OrbToggle">
+            <Setter Property="Background" Value="{DynamicResource TCode.ComposerBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TCode.ComposerBorder}" />
+        </Style>
+        <Style Selector="ToggleButton#OrbToggle:pointerover">
+            <Setter Property="Background" Value="{DynamicResource TCode.TileHoverBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TCode.TileHoverBorder}" />
+        </Style>
+        <Style Selector="ToggleButton#OrbToggle:checked">
+            <Setter Property="Background" Value="{DynamicResource TCode.SelectedBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TCode.TileHoverBorder}" />
+        </Style>
+    </UserControl.Styles>
+    <Panel>
+        <Border CornerRadius="15" BoxShadow="{StaticResource TCode.FloatShadow}" HorizontalAlignment="Right" VerticalAlignment="Top">
+            <!-- 运行中：转圈 + 运行数，宽度随内容变成胶囊；空闲：清单图标 -->
+            <ToggleButton x:Name="OrbToggle" Theme="{StaticResource TCode.RowButton}" MinWidth="30" Height="30" MinHeight="30" Padding="8,0"
+                          CornerRadius="15" BorderThickness="1" HorizontalContentAlignment="Center"
+                          ToolTip.Tip="{loc:TCodeLangResource TaskOrbTip}">
+                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                    <controls:DotSpinner Width="12" Height="12" VerticalAlignment="Center" IsVisible="{Binding HasRunningTasks}" />
+                    <TextBlock Text="{Binding RunningTaskCount}" FontSize="12" VerticalAlignment="Center" IsVisible="{Binding HasRunningTasks}" />
+                    <icons:LucideIcon Kind="ListChecks" Width="14" Height="14" VerticalAlignment="Center"
+                                      IsVisible="{Binding !HasRunningTasks}" StrokeBrush="{DynamicResource TCode.TextPrimary}" />
+                </StackPanel>
+            </ToggleButton>
+        </Border>
+
+        <Popup PlacementTarget="{Binding #OrbToggle}" IsOpen="{Binding #OrbToggle.IsChecked, Mode=TwoWay}"
+               Placement="BottomEdgeAlignedRight" IsLightDismissEnabled="True">
+            <Border Classes="card" Width="300" MaxHeight="420" Padding="12,10" Margin="0,6,0,0">
+                <StackPanel Spacing="10">
+                    <!-- 本会话的改动：点击打开变更面板 -->
+                    <Button Theme="{StaticResource TCode.ChipButton}" HorizontalAlignment="Stretch" Padding="8,4"
+                            IsVisible="{Binding HasChanges}" Click="OnOpenChangesClick">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <icons:LucideIcon Kind="GitCompare" Width="12" Height="12" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:TCodeLangResource TabChanges}" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ChangesStats}" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding HasAgents}">
+                        <TextBlock Classes="tertiary" FontSize="12" Text="{loc:TCodeLangResource TaskSectionAgents}" />
+                        <ScrollViewer MaxHeight="160" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Agents}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:BackgroundTaskItemViewModel">
+                                        <Grid ColumnDefinitions="18,*" Margin="0,2">
+                                            <Panel VerticalAlignment="Center">
+                                                <controls:DotSpinner Width="11" Height="11" IsVisible="{Binding IsRunning}" />
+                                                <icons:LucideIcon Kind="X" Width="12" Height="12" IsVisible="{Binding IsFailed}"
+                                                                  StrokeBrush="{DynamicResource TCode.Danger}" />
+                                            </Panel>
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                       Classes="task" Classes.done="{Binding !IsRunning}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding HasShells}">
+                        <TextBlock Classes="tertiary" FontSize="12" Text="{loc:TCodeLangResource TaskSectionShells}" />
+                        <ScrollViewer MaxHeight="160" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Shells}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:BackgroundTaskItemViewModel">
+                                        <Grid ColumnDefinitions="18,*" Margin="0,2">
+                                            <Panel VerticalAlignment="Center">
+                                                <controls:DotSpinner Width="11" Height="11" IsVisible="{Binding IsRunning}" />
+                                                <icons:LucideIcon Kind="X" Width="12" Height="12" IsVisible="{Binding IsFailed}"
+                                                                  StrokeBrush="{DynamicResource TCode.Danger}" />
+                                            </Panel>
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontFamily="{StaticResource TCode.MonoFont}" FontSize="11"
+                                                       TextTrimming="CharacterEllipsis" Classes="task" Classes.done="{Binding !IsRunning}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding TaskList.IsVisible}">
+                        <TextBlock Classes="tertiary" FontSize="12" Text="{loc:TCodeLangResource TaskSectionTasks}" />
+                        <ScrollViewer MaxHeight="160" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding TaskList.Items}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TaskItemViewModel">
+                                        <Grid ColumnDefinitions="18,*" Margin="0,2">
+                                            <Panel VerticalAlignment="Center">
+                                                <icons:LucideIcon Kind="Check" Width="12" Height="12" IsVisible="{Binding IsCompleted}"
+                                                                  StrokeBrush="{DynamicResource TCode.Success}" />
+                                                <icons:LucideIcon Kind="ChevronRight" Width="12" Height="12" IsVisible="{Binding IsInProgress}"
+                                                                  StrokeBrush="{DynamicResource TCode.Accent}" />
+                                                <Ellipse Width="6" Height="6" IsVisible="{Binding IsPending}" Stroke="{DynamicResource TCode.TextTertiary}"
+                                                         StrokeThickness="1" HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                            </Panel>
+                                            <TextBlock Grid.Column="1" Text="{Binding DisplayText}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                       Classes.secondary="{Binding IsCompleted}"
+                                                       TextDecorations="{Binding IsCompleted, Converter={x:Static vm:TaskDecorations.Strike}}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Panel>
+</UserControl>

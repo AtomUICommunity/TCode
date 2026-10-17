@@ -23,6 +23,7 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
     private const double PanelTogglesWidth = 64;
     private double _workbenchWidth = 520;
     private double _explorerWidth = 284;
+    private bool _explorerResized;  // 用户拖过文件树分割条后，不再按 1/4 上限收窄
     private const double ConversationMinWidth = 360;
     private const double EditorMinWidth = 320;
     private const double ExplorerMinWidth = 200;
@@ -58,7 +59,7 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             options: new MessageBoxOptions
             {
                 Title = title,
-                Style = MessageBoxStyle.Warning,
+                Style = MessageBoxStyle.Confirm,  // Warning 只有确定按钮；Confirm 才带取消（Esc 也是取消）
                 OkButtonText = okText,
                 CancelButtonText = Strings.Get(TCodeLangResourceKind.Cancel),
             },
@@ -127,6 +128,13 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
     public MainWindow()
     {
         InitializeComponent();
+        // 任务球里的“更改”入口：打开工作区的变更面板
+        TaskOrb.OpenChangesRequested += () => (DataContext as ViewModels.MainWindowViewModel)?.Workbench.OpenChangesCommand.Execute(null);
+        ExplorerSplitter.DragCompleted += (_, _) =>
+        {
+            _explorerResized = true;
+            _explorerWidth = MainGrid.ColumnDefinitions[4].Width.Value;
+        };
         ConfigureChrome();
 
         // 会话视图：渲染扩展（公式、代码高亮、图表）对窗口内所有 Markdown 生效
@@ -170,6 +178,7 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.Conversation.ConfirmDangerAsync = ConfirmDangerAsync;
+                vm.Workbench.ConfirmAsync = ConfirmAsync;
                 vm.Conversation.SetClipboardAsync = text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask;
                 // /role：打开当前可见的那个模式选择器
                 vm.Conversation.RolePickerRequested += () => (DockedRolePicker.IsEffectivelyVisible ? DockedRolePicker : EmptyRolePicker).Toggle();
@@ -307,15 +316,19 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             {
                 _workbenchWidth = columns[2].ActualWidth;
             }
-            if (columns[4].ActualWidth > 0)
+            // 拖过之后只认拖出的宽度（DragCompleted 里记下），被挤窄不算
+            if (!_explorerResized && columns[4].ActualWidth > 0)
             {
                 _explorerWidth = columns[4].ActualWidth;
             }
         }
 
-        // 按可用宽度分配：对话栏至少 ConversationMinWidth，文件树不超过 1/4，编辑区取剩余与记忆宽度中的较小值
+        // 按可用宽度分配：对话栏至少 ConversationMinWidth；文件树未被拖过时不超过 1/4（最大 420），拖过后保持拖出的宽度、
+        // 只在放不下时让位；编辑区取剩余与记忆宽度中的较小值
         var available = MainGrid.Bounds.Width > 0 ? MainGrid.Bounds.Width : Bounds.Width - (vm.IsSidebarOpen ? 256 : 0);
-        var explorer = vm.IsExplorerOpen ? Math.Clamp(Math.Min(_explorerWidth, available * 0.25), ExplorerMinWidth, 420) : 0;
+        var explorerRoom = available - (maximized ? 0 : ConversationMinWidth) - (vm.IsWorkbenchOpen ? EditorMinWidth : 0) - 2;
+        var explorerWant = _explorerResized ? _explorerWidth : Math.Min(Math.Min(_explorerWidth, available * 0.25), 420);
+        var explorer = vm.IsExplorerOpen ? Math.Max(ExplorerMinWidth, Math.Min(explorerWant, explorerRoom)) : 0;
         var editorRoom = available - explorer - (maximized ? 0 : ConversationMinWidth) - 2;
         var editor = !vm.IsWorkbenchOpen ? 0 : Math.Max(EditorMinWidth, Math.Min(_workbenchWidth, editorRoom));
         _wasMaximized = maximized;

@@ -10,8 +10,11 @@ namespace TCode.AgentHost;
 /// <summary>模型能力 → RPC 描述，以及会话参数的校验与就近修正。</summary>
 internal static class SessionOptions
 {
-    /// <summary>模型上下文超过 200K 时额外提供 200K 档，作为默认的较小预算。</summary>
-    private const int CompactContextWindow = 200_000;
+    /// <summary>
+    /// 默认上下文预算：模型窗口更大时，选择器提供“默认预算 / 模型最大窗口”两档，新会话用前者。
+    /// 个别模型的默认预算由目录或 settings.json 的 defaultContextWindow 单独指定（<see cref="ModelInfo.DefaultContextWindow"/>）。
+    /// </summary>
+    public const int DefaultContextWindow = 272_000;
 
     /// <param name="supportsSubagents">运行时能派生子 Agent（ACP 协调模式依赖它）；内置 Agent 总是可以。</param>
     public static ModelDto ToDto(ModelInfo m, string providerName, string? runtime = null, bool supportsSubagents = true) => new(
@@ -26,8 +29,11 @@ internal static class SessionOptions
         m.SupportsImages,
         supportsSubagents);
 
-    public static IReadOnlyList<int> ContextWindows(ModelInfo m) =>
-        m.ContextWindow > CompactContextWindow ? [CompactContextWindow, m.ContextWindow] : [m.ContextWindow];
+    public static IReadOnlyList<int> ContextWindows(ModelInfo m)
+    {
+        var preferred = m.DefaultContextWindow ?? DefaultContextWindow;
+        return preferred > 0 && m.ContextWindow > preferred ? [preferred, m.ContextWindow] : [m.ContextWindow];
+    }
 
     /// <summary>
     /// 把请求的参数合并到会话上并返回生效值；null 字段沿用当前值。

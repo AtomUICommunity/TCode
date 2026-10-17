@@ -27,18 +27,38 @@ public sealed record ThinkingContent(string Thinking) : ContentBlock
 
     /// <summary>Anthropic redacted_thinking：Thinking 为占位文本，数据在 Signature 中。</summary>
     public bool Redacted { get; init; }
+
+    /// <summary>思考耗时（毫秒）：从思考块开始到最后一段思考增量；只用于界面显示，不发给模型。</summary>
+    public long? DurationMs { get; init; }
 }
 
 /// <summary>
-/// 图片（base64）。用户附件带 <see cref="Path"/>：会话记录只保存路径，打开会话时再从文件读回数据；
-/// 数据为空（文件已删除，或尚未读回）的图片不会发给模型。
+/// 图片（base64）。带 <see cref="Path"/> 的图片数据不常驻内存：会话记录与历史只保存路径，
+/// 每次发给模型前用 <see cref="WithData"/> 从文件读回；读不到（文件已删除）的图片不会发给模型。
 /// </summary>
 public sealed record ImageContent(string Data, string MimeType) : ContentBlock
 {
-    /// <summary>附件文件的绝对路径（用户粘贴或选择的图片）；工具产生的图片为 null。</summary>
+    /// <summary>图片文件的绝对路径：用户附件，或已转存到附件目录的工具图片。</summary>
     public string? Path { get; init; }
 
     public bool HasData => Data.Length > 0;
+
+    /// <summary>需要数据时从 <see cref="Path"/> 读回；已有数据、没有路径或文件读不到时返回自身。</summary>
+    public ImageContent WithData()
+    {
+        if (HasData || Path is null)
+        {
+            return this;
+        }
+        try
+        {
+            return File.Exists(Path) ? this with { Data = Convert.ToBase64String(File.ReadAllBytes(Path)) } : this;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return this;
+        }
+    }
 }
 
 public sealed record ToolCallContent(string Id, string Name, string ArgumentsJson) : ContentBlock
