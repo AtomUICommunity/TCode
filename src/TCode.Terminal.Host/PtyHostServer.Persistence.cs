@@ -18,8 +18,11 @@ public sealed partial class PtyHostServer
     {
     }
 
+    private Task SaveForQuitAsync(Session session, string reason) => Task.CompletedTask;
+
     private async Task<QuitResult> QuitAsync(QuitParams p, ClientConnection caller)
     {
+        RaiseQuitRequested(p.Mode);
         if (p.Mode == "keepAlive")
         {
             return new QuitResult(0, 0);

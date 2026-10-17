@@ -76,6 +76,27 @@ public sealed partial class PtyHostServer : IAsyncDisposable
 
     public int UiConnections => _clients.Values.Count(c => c.IsFull && c.Kind == ClientKind.Ui);
 
+    public int ConnectionCount => _clients.Count;
+
+    /// <summary>host/quit 的模式（宽限期：keepAlive 不计时）。</summary>
+    internal event Action<string>? QuitRequested;
+
+    internal void RaiseQuitRequested(string mode) => QuitRequested?.Invoke(mode);
+
+    /// <summary>宽限期到期（§1.7）：关闭没有前台程序的会话，有程序在运行的保留。</summary>
+    internal async Task CloseIdleSessionsAsync(string reason)
+    {
+        foreach (var s in _sessions.Values)
+        {
+            var fg = await ForegroundAsync(s).ConfigureAwait(false);
+            if (!fg.Running)
+            {
+                await SaveForQuitAsync(s, reason).ConfigureAwait(false);
+                await RemoveSessionAsync(s, "closed").ConfigureAwait(false);
+            }
+        }
+    }
+
     // ---- 接受连接 ----
 
     public async Task RunAsync()

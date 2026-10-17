@@ -142,6 +142,11 @@ jobs:
           need="conpty.dll arm64/OpenConsole.exe"
           [ "${{ matrix.rid }}" = win-x64 ] && need="$need x64/OpenConsole.exe"
           for f in $need; do [ -f "$d/$f" ] || { echo "::error::missing $f"; exit 1; }; done
+      - name: Discovery tests against the AOT host (04 §15)
+        shell: bash
+        run: dotnet test tests/TCode.Terminal.Host.Tests --filter "FullyQualifiedName~DiscoveryTests"
+        env:
+          TCODE_PTYHOST_DIR: ${{ github.workspace }}/artifacts/publish/ptyhost
       - name: Run AOT self-test
         shell: bash
         run: artifacts/publish/ptyhost/tcode-ptyhost --self-test
