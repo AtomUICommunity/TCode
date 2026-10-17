@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+Renames the project from TCode to TKCode and reduces work while thinking blocks stream.
+
+### Changed
+
+- **Project renamed from TCode to TKCode.** This covers the solution, projects and namespaces, the pty and ghostty native libraries (`libtkcodepty`, `tkcode-pty-spawn`, `tkcode_ghostty.h`), the macOS bundle id (`com.tkcode.desktop`), and the GitHub repository (`AtomUICommunity/TKCode`).
+- **Data directory and environment variables are renamed.** The data directory is now `~/.tkcode` and every `TCODE_*` variable is now `TKCODE_*` (for example `TKCODE_HOME`). Existing data in `~/.tcode` is not migrated automatically; move it with `mv ~/.tcode ~/.tkcode`.
+- Streaming thinking blocks update their duration and token statistics at most every 500 ms, and count characters incrementally instead of rescanning the whole text on every refresh.
+- StreamMark is updated to `0.1.0-alpha.19` (position- and history-independent fallback fonts; fixes Windows CI font handling).
+
+**Full Changelog**: https://github.com/AtomUICommunity/TKCode/compare/v0.1.1...v0.1.2
+
 ## 0.1.1
 
 Largest update since 0.1.0. Adds conversation compaction, an interactive question panel for the agent, file change tracking with revert, and a number of desktop UI and release-pipeline changes.
