@@ -389,5 +389,14 @@
     <unit id="SubagentStatsFormat"><segment><source>{0} · {1} tool uses · {2} tokens</source></segment></unit>
     <unit id="ApprovalRead"><segment><source>Read outside workspace</source></segment></unit>
     <unit id="ApprovalNetwork"><segment><source>Network access</source></segment></unit>
+    <unit id="TerminalStarting"><segment><source>Starting terminal…</source></segment></unit>
+    <unit id="TerminalExitedFormat"><segment><source>Process exited with code {0}</source></segment></unit>
+    <unit id="TerminalExited"><segment><source>Process exited</source></segment></unit>
+    <unit id="TerminalPressEnterToRestart"><segment><source>Press Enter to start a new shell.</source></segment></unit>
+    <unit id="TerminalLost"><segment><source>The terminal service stopped. Press Enter to reopen the terminal in the same folder.</source></segment></unit>
+    <unit id="TerminalStartFailedFormat"><segment><source>Could not start the terminal: {0}</source></segment></unit>
+    <unit id="TerminalRunningProgram"><segment><source>A program is running in this terminal.</source></segment></unit>
+    <unit id="TerminalPasteNeedsConfirm"><segment><source>The paste contains line breaks, so it was not sent.</source></segment></unit>
+    <unit id="TerminalResyncing"><segment><source>Resynchronizing the terminal…</source></segment></unit>
   </file>
 </xliff>

@@ -394,4 +394,13 @@ public enum TCodeLangResourceKind
     SubagentStatsFormat,
     ApprovalRead,
     ApprovalNetwork,
+    TerminalStarting,
+    TerminalExitedFormat,
+    TerminalExited,
+    TerminalPressEnterToRestart,
+    TerminalLost,
+    TerminalStartFailedFormat,
+    TerminalRunningProgram,
+    TerminalPasteNeedsConfirm,
+    TerminalResyncing,
 }

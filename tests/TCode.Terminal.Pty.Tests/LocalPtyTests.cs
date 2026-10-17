@@ -23,6 +23,18 @@ public sealed class LocalPtyTests
     }
 
     [Fact]
+    public async Task StartsWithoutArgumentsAndArgv0Only()
+    {
+        // 登录 shell：argv0 "-sh"、没有其他参数（helper 的 argv 恰好是 [self, cwd, file, argv0]）
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix only");
+        await using var pty = LocalPty.Start(new PtyLaunch("/bin/sh", [], "-sh", null, Environment(("PS1", "$ ")), Size));
+        using var core = TerminalCore.Create(new TerminalCoreOptions(Size), new ReplyToConnection(pty));
+        await PumpUntilAsync(pty, core, c => c.FormatPlainText().Contains('$'), Timeout);
+        await pty.WriteAsync(Encoding.UTF8.GetBytes("exit 4\r"));
+        Assert.Equal(4, (await pty.Exited.WaitAsync(Timeout)).ExitCode);
+    }
+
+    [Fact]
     public async Task OutputPrecedesExit()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "Unix shell syntax");

@@ -1,0 +1,16 @@
+<!-- 终端标签：终端视图 + 状态提示（启动中、退出、断开）。快捷键与指针在视图的 code-behind 中转交给视图模型。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:tv="using:TCode.Terminal.Avalonia"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             x:Class="TCode.Desktop.Views.TerminalTabView"
+             x:DataType="vm:TerminalTabViewModel">
+    <Grid RowDefinitions="*,Auto">
+        <tv:TerminalView x:Name="Terminal" Grid.Row="0" Snapshot="{Binding Frame}" Padding="8" ClipToBounds="True" />
+        <Border Grid.Row="0" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,6" Background="#CC1E1E1E">
+            <TextBlock Text="{Binding Status}" Foreground="#D4D4D4" FontSize="12" TextWrapping="Wrap" />
+        </Border>
+    </Grid>
+</UserControl>

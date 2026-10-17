@@ -386,3 +386,12 @@ TaskNotificationFormat	Background task {0}: {1}	后台任务 {0}：{1}
 SubagentStatsFormat	{0} · {1} tool uses · {2} tokens	{0} · {1} 次工具调用 · {2} tokens
 ApprovalRead	Read outside workspace	读取工作区外的文件
 ApprovalNetwork	Network access	访问网络
+TerminalStarting	Starting terminal…	正在启动终端…
+TerminalExitedFormat	Process exited with code {0}	进程已退出（退出码 {0}）
+TerminalExited	Process exited	进程已退出
+TerminalPressEnterToRestart	Press Enter to start a new shell.	按 Enter 启动新的 shell。
+TerminalLost	The terminal service stopped. Press Enter to reopen the terminal in the same folder.	终端服务已停止。按 Enter 在相同目录重新打开终端。
+TerminalStartFailedFormat	Could not start the terminal: {0}	无法启动终端：{0}
+TerminalRunningProgram	A program is running in this terminal.	此终端中有程序在运行。
+TerminalPasteNeedsConfirm	The paste contains line breaks, so it was not sent.	粘贴内容包含换行，已取消发送。
+TerminalResyncing	Resynchronizing the terminal…	正在重新同步终端…

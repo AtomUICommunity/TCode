@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TCode.Desktop.Icons;
+using TCode.Desktop.Services;
+using TCode.Desktop.Terminal;
 using TCode.Desktop.Localization;
 using TCode.Desktop.Previews;
 
@@ -259,8 +261,11 @@ public sealed partial class FileTabViewModel : WorkbenchTabViewModel, IDisposabl
 /// </summary>
 public sealed partial class WorkbenchViewModel : ObservableObject
 {
-    public WorkbenchViewModel()
+    private readonly PtyHostService _hosts;
+
+    public WorkbenchViewModel(PtyHostService hosts)
     {
+        _hosts = hosts;
         Tools = [new(WorkbenchTabKind.Browser), new(WorkbenchTabKind.Terminal), new(WorkbenchTabKind.Diffs), new(WorkbenchTabKind.History)];
         Tabs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTabs));
         Strings.LanguageChanged += (_, _) =>
@@ -315,6 +320,15 @@ public sealed partial class WorkbenchViewModel : ObservableObject
     [RelayCommand]
     private void AddTool(WorkbenchToolViewModel tool)
     {
+        if (tool.Kind == WorkbenchTabKind.Terminal)
+        {
+            // 每次都新建一个终端（01 §7），在项目目录中启动
+            var terminal = new TerminalTabViewModel(_hosts, Root);
+            Tabs.Add(terminal);
+            Activate(terminal);
+            OpenRequested?.Invoke();
+            return;
+        }
         var existing = Tabs.FirstOrDefault(t => t.Kind == tool.Kind);
         if (existing is null)
         {
@@ -337,6 +351,25 @@ public sealed partial class WorkbenchViewModel : ObservableObject
 
     [RelayCommand]
     private void Close(WorkbenchTabViewModel tab)
+    {
+        if (tab is TerminalTabViewModel terminal)
+        {
+            // 终端的关闭需要 host 确认（有程序在运行时不关闭，标签保留并显示提示）
+            _ = CloseTerminalAsync(terminal);
+            return;
+        }
+        RemoveTab(tab);
+    }
+
+    private async Task CloseTerminalAsync(TerminalTabViewModel terminal)
+    {
+        if (await terminal.CloseAsync())
+        {
+            RemoveTab(terminal);
+        }
+    }
+
+    private void RemoveTab(WorkbenchTabViewModel tab)
     {
         var index = Tabs.IndexOf(tab);
         Tabs.Remove(tab);
