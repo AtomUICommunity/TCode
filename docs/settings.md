@@ -37,6 +37,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
   "language": "zh-CN",              // zh-CN | en-US
   "theme": "system",                // system | dark | light
   "reduceMotion": false,            // true：关闭界面动画（macOS 系统的“减少动态效果”同样生效）
+  "closeToTray": true,              // false：关闭窗口即退出；默认隐藏到系统托盘，会话继续运行
   "originalImages": false,          // true：Markdown 图片按原始清晰度显示；默认按显示尺寸压缩解码以节省内存，点击图片查看的始终是原图
 
   "providers": {
@@ -86,6 +87,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 | `mcpServers` | object | `{}` | MCP 服务器，键为服务器名（`[A-Za-z0-9_-]{1,32}`），见 §2.7 |
 | `defaultRole` | string | `agent` | 新会话的模式：`agent`、`plan`、`acp`，或自定义模式（`roles/*.md`）的名字。当前项目没有这个自定义模式时退回 `agent`。见 [design/composer.md](design/composer.md) §10.3 |
 | `skills` | object | 无 | `autoDiscover`（默认 `true`）：在内置 Agent 的系统提示里列出 skill，让模型自己加载。设为 `false` 后只能在输入框里用 `/skill名` 显式调用。skill 的目录约定见 [design/composer.md](design/composer.md) §4 |
+| `update` | object | 无 | 应用内更新：`prerelease`（默认 `true`：也接收 GitHub 上标记为 Pre-release 的版本；`false` 时只接收正式版）、`autoCheck`（默认 `true`：启动 60 秒后及之后每 6 小时检查；`false` 时只能在「设置 → 关于」手动检查）。见 [design/auto-update.md](design/auto-update.md) |
 
 ### 2.2 厂商（`providers.<id>`）
 

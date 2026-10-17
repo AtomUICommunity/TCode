@@ -10,6 +10,7 @@
              xmlns:icons="using:TCode.Desktop.Icons"
              xmlns:loc="using:TCode.Desktop.Localization"
              xmlns:views="using:TCode.Desktop.Views"
+             xmlns:smv="using:StreamMark.Avalonia"
              x:Class="TCode.Desktop.Views.SettingsView"
              x:DataType="vm:MainWindowViewModel">
     <UserControl.Resources>
@@ -144,6 +145,15 @@
                                         </ItemsControl>
                                         </motion:IndicatorPanel>
                                     </Border>
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource TCode.Divider}" />
+                                <!-- 关闭窗口时保留在托盘 -->
+                                <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Classes="strong" Text="{loc:TCodeLangResource CloseToTrayLabel}" />
+                                        <TextBlock Classes="tertiary" Text="{loc:TCodeLangResource CloseToTrayHint}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <atom:ToggleSwitch Grid.Column="1" SizeType="Small" VerticalAlignment="Center" IsChecked="{Binding CloseToTray}" />
                                 </Grid>
                                 <Border Height="1" Background="{DynamicResource TCode.Divider}" />
                                 <!-- 减少动态效果 -->
@@ -523,6 +533,63 @@
                                 <TextBlock Classes="secondary" Text="{loc:TCodeLangResource AboutUi}" />
                             </StackPanel>
                         </Border>
+
+                        <!-- 更新（docs/design/auto-update.md §9）：通道、自动检查、手动检查、更新说明（StreamMark 渲染） -->
+                        <StackPanel Spacing="10" DataContext="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Updates}" x:DataType="vm:UpdatesViewModel">
+                            <TextBlock Classes="strong" Text="{loc:TCodeLangResource UpdateSectionTitle}" FontSize="15" Margin="0,8,0,0" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <!-- 当前版本 + 检查 -->
+                                    <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Classes="strong" Text="{Binding CurrentVersionText}" />
+                                            <TextBlock Classes="tertiary" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0" VerticalAlignment="Center">
+                                            <atom:Button Color="Default" Variant="Solid" SizeType="Small" Command="{Binding DownloadCommand}"
+                                                         Content="{loc:TCodeLangResource UpdateAction}" IsVisible="{Binding ShowDownloadButton}" />
+                                            <atom:Button Color="Default" Variant="Solid" SizeType="Small" Command="{Binding OpenReleasePageCommand}"
+                                                         Content="{loc:TCodeLangResource UpdateOpenPage}" IsVisible="{Binding ShowOpenPageButton}" />
+                                            <atom:Button Color="Default" Variant="Solid" SizeType="Small" Command="{Binding InstallCommand}"
+                                                         Content="{loc:TCodeLangResource UpdateInstallRestart}" IsVisible="{Binding ShowInstallButton}" />
+                                            <atom:Button Color="Default" Variant="Outlined" SizeType="Small" Command="{Binding CheckNowCommand}"
+                                                         Content="{loc:TCodeLangResource UpdateCheckNow}" IsEnabled="{Binding !IsChecking}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border Height="1" Background="{DynamicResource TCode.Divider}" />
+                                    <!-- 接收预发布版本 -->
+                                    <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Classes="strong" Text="{loc:TCodeLangResource UpdatePrereleaseLabel}" />
+                                            <TextBlock Classes="tertiary" Text="{loc:TCodeLangResource UpdatePrereleaseHint}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <atom:ToggleSwitch Grid.Column="1" SizeType="Small" VerticalAlignment="Center" IsChecked="{Binding IsReceivingPrereleases}" />
+                                    </Grid>
+                                    <Border Height="1" Background="{DynamicResource TCode.Divider}" />
+                                    <!-- 自动检查 -->
+                                    <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Classes="strong" Text="{loc:TCodeLangResource UpdateAutoCheckLabel}" />
+                                            <TextBlock Classes="tertiary" Text="{loc:TCodeLangResource UpdateAutoCheckHint}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <atom:ToggleSwitch Grid.Column="1" SizeType="Small" VerticalAlignment="Center" IsChecked="{Binding IsAutoCheck}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <!-- 更新说明：Release 正文，用 StreamMark 渲染 -->
+                            <Border Classes="card" Padding="16,12" IsVisible="{Binding HasNotes}">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Classes="strong" Text="{Binding NotesTitle}" VerticalAlignment="Center" />
+                                        <atom:Button Grid.Column="1" Color="Default" Variant="Text" SizeType="Small" Command="{Binding OpenReleasePageCommand}"
+                                                     Content="{loc:TCodeLangResource UpdateViewOnGitHub}">
+                                            <atom:Button.Icon><icons:LucideIcon Kind="ExternalLink" /></atom:Button.Icon>
+                                        </atom:Button>
+                                    </Grid>
+                                    <smv:MarkdownView Markdown="{Binding Notes}" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>

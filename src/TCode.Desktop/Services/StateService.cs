@@ -29,6 +29,21 @@ public sealed class AppState
     public Dictionary<string, string> PermissionModes { get; set; } = [];
     /// <summary>每个工作区最近在输入框里 @ 过的路径（相对路径，目录以 / 结尾，最近的在前）。</summary>
     public Dictionary<string, List<string>> RecentMentions { get; set; } = [];
+    /// <summary>应用内更新的记录（docs/design/auto-update.md §8）。</summary>
+    public UpdateRecord Update { get; set; } = new();
+}
+
+public sealed class UpdateRecord
+{
+    public DateTimeOffset? LastCheckAt { get; set; }
+    /// <summary>Release 列表的 ETag（响应体缓存在 updates/releases-cache.json）：304 时复用，不计入 GitHub 未认证配额。</summary>
+    public string? ETag { get; set; }
+    /// <summary>「跳过此版本」：自动检查不再提醒这个版本，手动检查仍然显示。</summary>
+    public string? SkippedVersion { get; set; }
+    /// <summary>已下载并校验、等待安装的版本（暂存在 ~/.tcode/updates/&lt;版本&gt;/）。</summary>
+    public string? PendingVersion { get; set; }
+    /// <summary>已启动安装程序的版本：下次启动时据此判断更新成功（当前版本等于它）还是没有完成。</summary>
+    public string? InstallingVersion { get; set; }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

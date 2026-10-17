@@ -13,6 +13,7 @@
     "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
     "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
     "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
+    "closeToTray": { "type": "boolean", "description": "Closing the window hides TCode to the system tray and keeps sessions running (default true). When false, closing the window quits TCode." },
     "originalImages": { "type": "boolean", "description": "Show Markdown images at full resolution. By default they are decoded at their display size to save memory; clicking an image always opens the original." },
     "providers": {
       "type": "object",
@@ -52,6 +53,15 @@
           "type": "boolean",
           "description": "List skills in the built-in agent's system prompt so the model can load them on its own (default true). When false, skills are used only when named with /skill-name."
         }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "description": "In-app updates from GitHub Releases.",
+      "properties": {
+        "prerelease": { "type": "boolean", "description": "Also receive releases marked as pre-release on GitHub (default true). When false, only stable releases are offered." },
+        "autoCheck": { "type": "boolean", "description": "Check 60 seconds after start and every 6 hours after that (default true). When false, check from Settings › About." }
       },
       "additionalProperties": false
     },

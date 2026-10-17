@@ -16,6 +16,9 @@ public sealed record TCodeSettings
 
     /// <summary>Markdown 中的图片按原始清晰度显示：默认（false）按显示尺寸压缩解码以节省内存，点击图片查看时仍是原图。</summary>
     public bool? OriginalImages { get; init; }
+
+    /// <summary>点窗口关闭按钮时隐藏到系统托盘、进程继续运行（默认 true）；false 时关闭窗口即退出。</summary>
+    public bool? CloseToTray { get; init; }
     public Dictionary<string, ProviderSettings> Providers { get; init; } = new(StringComparer.Ordinal);
 
     /// <summary>内置 Agent 的 web_search 后端；未配置时不提供该工具。</summary>
@@ -29,6 +32,9 @@ public sealed record TCodeSettings
 
     /// <summary>skills（~/.tcode/skills 与项目 .agents/skills）。</summary>
     public SkillsSettings? Skills { get; init; }
+
+    /// <summary>应用内更新（docs/design/auto-update.md §8）。</summary>
+    public UpdateSettings? Update { get; init; }
 
     /// <summary>MCP 服务器（原样保留，按项单独解析，一项出错不影响其他项；见 <see cref="McpServerConfig.ParseServers"/>）。</summary>
     public JsonObject? McpServers { get; init; }
@@ -44,6 +50,15 @@ public sealed record WebSearchSettings
 
     /// <summary>自定义端点（SearXNG 必填：实例地址）。</summary>
     public string? BaseUrl { get; init; }
+}
+
+public sealed record UpdateSettings
+{
+    /// <summary>也接收 GitHub 上标为 Pre-release 的版本（默认 true）；false 时只接收正式版。</summary>
+    public bool? Prerelease { get; init; }
+
+    /// <summary>启动 60 秒后及之后每 6 小时自动检查（默认 true）；false 时只能在「关于」页手动检查。</summary>
+    public bool? AutoCheck { get; init; }
 }
 
 public sealed record SkillsSettings

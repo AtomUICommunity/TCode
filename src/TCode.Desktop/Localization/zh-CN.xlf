@@ -560,5 +560,56 @@
     <unit id="TerminalSearchNext"><segment><source>Next match (Enter)</source><target state="translated">下一个 (Enter)</target></segment></unit>
     <unit id="TerminalSearchPrevious"><segment><source>Previous match (Shift+Enter)</source><target state="translated">上一个 (Shift+Enter)</target></segment></unit>
     <unit id="TerminalSearchClose"><segment><source>Close (Esc)</source><target state="translated">关闭 (Esc)</target></segment></unit>
+    <unit id="UpdateSectionTitle"><segment><source>Updates</source><target state="translated">更新</target></segment></unit>
+    <unit id="UpdateAvailableFormat"><segment><source>TCode {0} is available</source><target state="translated">TCode {0} 可用</target></segment></unit>
+    <unit id="UpdateDownloadingFormat"><segment><source>Downloading TCode {0}</source><target state="translated">正在下载 TCode {0}</target></segment></unit>
+    <unit id="UpdateProgressFormat"><segment><source>{0}% downloaded</source><target state="translated">已下载 {0}%</target></segment></unit>
+    <unit id="UpdateReadyFormat"><segment><source>TCode {0} is ready to install</source><target state="translated">TCode {0} 已就绪</target></segment></unit>
+    <unit id="UpdateReadyHint"><segment><source>TCode will quit and start the installer, then reopen when it finishes.</source><target state="translated">TCode 将退出并启动安装程序，安装完成后会重新打开。</target></segment></unit>
+    <unit id="UpdateInterrupted"><segment><source>The last update did not finish</source><target state="translated">上次更新未完成</target></segment></unit>
+    <unit id="UpdateInterruptedHintFormat"><segment><source>TCode {0} is already downloaded. You can install it again.</source><target state="translated">TCode {0} 已下载，可以重新安装。</target></segment></unit>
+    <unit id="UpdateFailed"><segment><source>Update failed</source><target state="translated">更新失败</target></segment></unit>
+    <unit id="UpdateConfirmTitle"><segment><source>Sessions are still running</source><target state="translated">有会话正在运行</target></segment></unit>
+    <unit id="UpdateConfirmHintFormat"><segment><source>{0} session(s) are running or waiting for approval. Installing now will interrupt them, and running terminal commands will stop.</source><target state="translated">有 {0} 个会话正在运行或等待批准，立即安装会中断它们，终端中正在运行的命令也会结束。</target></segment></unit>
+    <unit id="UpdateWaitingTitle"><segment><source>Update scheduled</source><target state="translated">等待安装</target></segment></unit>
+    <unit id="UpdateWaitingHint"><segment><source>The update will install when all sessions finish.</source><target state="translated">所有会话结束后将自动安装更新。</target></segment></unit>
+    <unit id="UpdateUpdatedFormat"><segment><source>Updated to TCode {0}</source><target state="translated">已更新到 TCode {0}</target></segment></unit>
+    <unit id="UpdateManualHint"><segment><source>Download the new version from the release page.</source><target state="translated">请到下载页面获取新版本。</target></segment></unit>
+    <unit id="UpdateManualMacHint"><segment><source>Move TCode to the Applications folder to install updates from inside the app.</source><target state="translated">把 TCode 移到「应用程序」文件夹后才能在应用内安装更新。</target></segment></unit>
+    <unit id="UpdateManualPortableHint"><segment><source>This copy was not set up by the installer. Download the new version from the release page.</source><target state="translated">当前不是通过安装程序安装的，请到下载页面获取新版本。</target></segment></unit>
+    <unit id="UpdateManualReadOnlyHint"><segment><source>The installation folder is not writable. Download the new version from the release page.</source><target state="translated">安装目录不可写，请到下载页面获取新版本。</target></segment></unit>
+    <unit id="UpdateChecking"><segment><source>Checking for updates…</source><target state="translated">正在检查更新…</target></segment></unit>
+    <unit id="UpdateUpToDate"><segment><source>TCode is up to date</source><target state="translated">已是最新版本</target></segment></unit>
+    <unit id="UpdateUpToDateFormat"><segment><source>TCode is up to date (checked at {0})</source><target state="translated">已是最新版本（{0} 检查）</target></segment></unit>
+    <unit id="UpdateInstalling"><segment><source>Starting the installer…</source><target state="translated">正在启动安装程序…</target></segment></unit>
+    <unit id="UpdateDevBuild"><segment><source>Development builds are not updated.</source><target state="translated">开发版本不支持自动更新。</target></segment></unit>
+    <unit id="UpdateLastCheckFormat"><segment><source>Last checked {0}</source><target state="translated">上次检查：{0}</target></segment></unit>
+    <unit id="UpdateAction"><segment><source>Update</source><target state="translated">更新</target></segment></unit>
+    <unit id="UpdateLater"><segment><source>Later</source><target state="translated">稍后</target></segment></unit>
+    <unit id="UpdateSkip"><segment><source>Skip this version</source><target state="translated">跳过此版本</target></segment></unit>
+    <unit id="UpdateInstallRestart"><segment><source>Install and restart</source><target state="translated">安装并重启</target></segment></unit>
+    <unit id="UpdateRetry"><segment><source>Retry</source><target state="translated">重试</target></segment></unit>
+    <unit id="UpdateOpenPage"><segment><source>Open download page</source><target state="translated">打开下载页面</target></segment></unit>
+    <unit id="UpdateViewNotes"><segment><source>Release notes</source><target state="translated">更新说明</target></segment></unit>
+    <unit id="UpdateInstallNow"><segment><source>Install now</source><target state="translated">立即安装</target></segment></unit>
+    <unit id="UpdateInstallWhenIdle"><segment><source>Install when finished</source><target state="translated">等待完成后安装</target></segment></unit>
+    <unit id="UpdateCancel"><segment><source>Cancel</source><target state="translated">取消</target></segment></unit>
+    <unit id="UpdateClose"><segment><source>Close</source><target state="translated">关闭</target></segment></unit>
+    <unit id="UpdateCheckNow"><segment><source>Check for updates</source><target state="translated">检查更新</target></segment></unit>
+    <unit id="UpdatePreviewTag"><segment><source>Preview</source><target state="translated">预览</target></segment></unit>
+    <unit id="UpdateAutoCheckLabel"><segment><source>Check for updates automatically</source><target state="translated">自动检查更新</target></segment></unit>
+    <unit id="UpdateAutoCheckHint"><segment><source>60 seconds after launch, then every 6 hours.</source><target state="translated">启动 60 秒后检查，之后每 6 小时检查一次。</target></segment></unit>
+    <unit id="UpdateBadgeTip"><segment><source>Update available</source><target state="translated">有可用更新</target></segment></unit>
+    <unit id="UpdateNotesTitleFormat"><segment><source>What's new in TCode {0}</source><target state="translated">TCode {0} 更新说明</target></segment></unit>
+    <unit id="UpdateViewOnGitHub"><segment><source>View on GitHub</source><target state="translated">在 GitHub 上查看</target></segment></unit>
+    <unit id="TrayShow"><segment><source>Show TCode</source><target state="translated">显示 TCode</target></segment></unit>
+    <unit id="TrayQuit"><segment><source>Quit TCode</source><target state="translated">退出 TCode</target></segment></unit>
+    <unit id="TrayDownloadUpdateFormat"><segment><source>Download TCode {0}</source><target state="translated">下载 TCode {0}</target></segment></unit>
+    <unit id="TrayInstallUpdateFormat"><segment><source>Install TCode {0} and restart</source><target state="translated">安装 TCode {0} 并重启</target></segment></unit>
+    <unit id="CloseToTrayLabel"><segment><source>Keep running in the tray</source><target state="translated">关闭窗口时保留在托盘</target></segment></unit>
+    <unit id="CloseToTrayHint"><segment><source>Closing the window hides TCode to the system tray and keeps sessions running. Quit from the tray menu.</source><target state="translated">关闭窗口后 TCode 隐藏到系统托盘，会话继续运行；从托盘菜单退出。</target></segment></unit>
+    <unit id="UpdateCheckFailedFormat"><segment><source>Check failed: {0}</source><target state="translated">检查失败：{0}</target></segment></unit>
+    <unit id="UpdatePrereleaseLabel"><segment><source>Receive pre-release updates</source><target state="translated">接收预发布版本更新</target></segment></unit>
+    <unit id="UpdatePrereleaseHint"><segment><source>Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.</source><target state="translated">也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。</target></segment></unit>
   </file>
 </xliff>

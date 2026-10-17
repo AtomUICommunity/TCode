@@ -21,8 +21,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ThemeService themes,
         UserSettingsService userSettings,
         AgentHostConnection host,
+        UpdatesViewModel updates,
         ILogger<SettingsViewModel> settingsLogger)
     {
+        Updates = updates;
+        // 卡片的「查看更新说明」打开设置 › 关于
+        updates.OpenAbout = async () =>
+        {
+            IsSettingsOpen = true;
+            await Settings.OpenAsync(SettingsSection.About);
+        };
         Sidebar = sidebar;
         Conversation = conversation;
         Workbench = workbench;
@@ -51,6 +59,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public WorkbenchViewModel Workbench { get; }
     public ThemeService Themes { get; }
 
+    /// <summary>应用内更新：右下角提醒卡片、侧栏小圆点、设置 › 关于的「更新」一节。</summary>
+    public UpdatesViewModel Updates { get; }
+
     /// <summary>右侧文件树。</summary>
     public FileExplorerViewModel Explorer { get; }
 
@@ -76,6 +87,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         IsSettingsOpen = true;
         await Settings.OpenAsync();
+    }
+
+    /// <summary>托盘菜单「检查更新」：打开设置 › 关于并立即检查。</summary>
+    [RelayCommand]
+    private async Task OpenAboutAndCheckAsync()
+    {
+        IsSettingsOpen = true;
+        await Settings.OpenAsync(SettingsSection.About);
+        await Updates.CheckNowCommand.ExecuteAsync(null);
     }
 
     [RelayCommand]

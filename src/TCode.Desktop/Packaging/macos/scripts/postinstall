@@ -1,0 +1,13 @@
+#!/bin/sh
+# pkg 安装完成后（以 root 运行）。应用内更新（docs/design/auto-update.md §7.2）：
+# TCode 启动 Installer 前写入标记文件（内容为用户名），只有看到标记才以该用户身份重新打开 TCode；首次安装不自动启动。
+MARKER=/tmp/com.tcode.desktop.update-relaunch
+[ -f "$MARKER" ] || exit 0
+user=$(cat "$MARKER")
+rm -f "$MARKER"
+console=$(stat -f %Su /dev/console)
+# 只为当前登录在控制台的用户重新打开
+[ -n "$user" ] && [ "$user" = "$console" ] || exit 0
+uid=$(id -u "$user" 2>/dev/null) || exit 0
+launchctl asuser "$uid" sudo -u "$user" /usr/bin/open -b com.tcode.desktop || true
+exit 0

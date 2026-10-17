@@ -741,8 +741,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string SettingsPath => _settings.FilePath;
     public string DataDirectory => ConfigPaths.Home;
-    public string VersionText => Strings.Format(TCodeLangResourceKind.AboutVersionFormat,
-        typeof(SettingsViewModel).Assembly.GetName().Version?.ToString(3) ?? "0");
+    public string VersionText => Strings.Format(TCodeLangResourceKind.AboutVersionFormat, TCode.Desktop.Updates.AppVersionInfo.Display);
     public bool HasErrors => Errors.Count > 0;
 
     [ObservableProperty]
@@ -1040,6 +1039,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     private Task ChooseLanguageAsync(SettingsChoiceViewModel choice) => _setLanguage(choice.Value);
 
     /// <summary>减少动态效果（settings.json 的 reduceMotion）。</summary>
+    /// <summary>关闭窗口时隐藏到托盘（默认开启）。</summary>
+    public bool CloseToTray
+    {
+        get => _settings.Current.CloseToTray != false;
+        set
+        {
+            if (value != CloseToTray)
+            {
+                _settings.SetCloseToTray(value);
+            }
+        }
+    }
+
     public bool ReduceMotion
     {
         get => _settings.Current.ReduceMotion == true;
@@ -1394,6 +1406,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void RefreshGeneral()
     {
         OnPropertyChanged(nameof(ReduceMotion));
+        OnPropertyChanged(nameof(CloseToTray));
         OnPropertyChanged(nameof(OriginalImages));
         var language = _settings.Current.Language ?? "zh-CN";
         Fill(Languages, [("zh-CN", Strings.Get(TCodeLangResourceKind.LanguageChinese)), ("en-US", Strings.Get(TCodeLangResourceKind.LanguageEnglish))], language);

@@ -65,11 +65,16 @@ public partial class App : Application
                     manager.ChangeLanguage(wanted);
                 }
             };
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = Services.GetRequiredService<MainWindowViewModel>(),
-            };
+            var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
+            var window = new MainWindow { DataContext = mainViewModel };
+            desktop.MainWindow = window;
+            // 系统托盘；默认关闭窗口只隐藏，进程与会话继续运行
+            // 托盘图标、窗口与更新的事件持有它，不需要另存引用
+            _ = new AppTray(this, desktop, window, userSettings, Services.GetRequiredService<UpdatesViewModel>(), mainViewModel);
             desktop.ShutdownRequested += (_, _) => Services.GetRequiredService<AgentHostConnection>().Dispose();
+            // 应用内更新：安装程序启动后退出；启动 60 秒后开始检查（docs/design/auto-update.md）
+            Services.GetRequiredService<UpdatesViewModel>().Shutdown = () => desktop.Shutdown();
+            Services.GetRequiredService<TCode.Desktop.Updates.UpdateService>().Start();
         }
         base.OnFrameworkInitializationCompleted();
         TCode.Desktop.Services.MacDockIcon.Apply();

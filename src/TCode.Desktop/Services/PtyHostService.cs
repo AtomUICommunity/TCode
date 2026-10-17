@@ -79,6 +79,27 @@ public sealed class PtyHostService(ILogger<PtyHostService> logger) : IDisposable
         return new HostSettingsDto { BaseEnvironment = env };
     }
 
+    /// <summary>
+    /// 应用内更新前让 host 按 revive 方式退出（保存快照，新版本启动后恢复；auto-update.md §7）。
+    /// 没有连接过 host 时什么也不做；失败只记日志，不阻止更新。
+    /// </summary>
+    public async Task QuitForUpdateAsync()
+    {
+        if (_client is not { } client || client.Completion.IsCompleted || client.Scope != "full")
+        {
+            return;
+        }
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await client.QuitAsync(new QuitParams { Mode = "revive", Reason = "update", DeadlineMs = 5000 }, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "pty host did not quit before the update");
+        }
+    }
+
     public void Dispose()
     {
         _client?.DisposeAsync().AsTask().GetAwaiter().GetResult();

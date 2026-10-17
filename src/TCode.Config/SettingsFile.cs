@@ -19,9 +19,10 @@ public static class SettingsFile
         AllowTrailingCommas = true,
     };
 
-    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers" };
+    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers", "update", "closeToTray" };
     private static readonly HashSet<string> WebSearchKeys = new(StringComparer.OrdinalIgnoreCase) { "provider", "apiKey", "baseUrl" };
     private static readonly HashSet<string> WebSearchProviders = new(StringComparer.OrdinalIgnoreCase) { "brave", "tavily", "exa", "searxng" };
+    private static readonly HashSet<string> UpdateKeys = new(StringComparer.OrdinalIgnoreCase) { "prerelease", "autoCheck" };
     private static readonly HashSet<string> PermissionKeys = new(StringComparer.OrdinalIgnoreCase) { "additionalDirectories" };
     private static readonly HashSet<string> ProviderKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -120,6 +121,10 @@ public static class SettingsFile
         if (obj["permissions"] is JsonObject permissions)
         {
             Check(permissions, PermissionKeys, "permissions.", warnings);
+        }
+        if (obj["update"] is JsonObject update)
+        {
+            Check(update, UpdateKeys, "update.", warnings);
         }
         if (obj["mcpServers"] is { } mcp && mcp is not JsonObject)
         {

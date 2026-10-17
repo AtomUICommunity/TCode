@@ -11,6 +11,7 @@ using TCode.Desktop.Controls;
 using TCode.Desktop.Controls.Composer;
 using TCode.Desktop.Previews;
 using TCode.Desktop.Services;
+using TCode.Desktop.Updates;
 using TCode.Desktop.ViewModels;
 using TCode.Desktop.Views;
 using TCode.Terminal.Core;
@@ -49,6 +50,9 @@ internal static class SmokeMode
         var state = new StateService(Path.Combine(home, "state.json"));
         state.Current.Workspaces.Add(project);
         state.Save();
+
+        // 更新源：进程内的假 GitHub（临时签名密钥），不访问网络（必须在创建 UpdateService 之前设置环境变量）
+        using var updateFeed = SmokeUpdateFeed.Start(home);
 
         var services = new ServiceCollection();
         services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
@@ -130,6 +134,7 @@ internal static class SmokeMode
             Check("files.search", WaitUntil(() => search.IsCompleted) && search.Result.Items.FirstOrDefault()?.Path == "README.md",
                 search.IsCompletedSuccessfully ? string.Join(", ", search.Result.Items.Select(i => i.Path)) : search.Exception?.GetBaseException().Message);
             CheckTerminal(Check, vm, project);
+            CheckUpdates(Check, vm, window, provider, updateFeed, home);
 
             using var frame = window.CaptureRenderedFrame();
             Check("ui.frame", frame is not null, null);
@@ -228,6 +233,37 @@ internal static class SmokeMode
         }
     }
 
+    // 应用内更新：Release 列表与清单（源生成 JSON）、ECDSA 验签、下载与 SHA-256 校验、StreamMark 渲染更新说明，在 AOT 下都要可用。
+    // 只下载不安装：下载用单独的服务实例并指定 Windows 安装方式（没有平台校验，也不会启动安装程序）
+    private static void CheckUpdates(Action<string, bool, string?> check, MainWindowViewModel vm, MainWindow window, IServiceProvider provider,
+        SmokeUpdateFeed feed, string home)
+    {
+        var updates = vm.Updates;
+        updates.CheckNowCommand.Execute(null);
+        check("update.check", WaitUntil(() => updates.Service.Status == UpdateStatus.Available) && updates.VersionText == SmokeUpdateFeed.Version,
+            updates.StatusText);
+        updates.ShowNotesCommand.Execute(null);
+        var notes = WaitUntil(() => vm.IsSettingsOpen && vm.Settings.IsAbout &&
+                                    window.GetVisualDescendants().OfType<StreamMark.Avalonia.MarkdownView>().Any(m => m.IsEffectivelyVisible && m.Bounds.Height > 20));
+        check("update.notes", notes, updates.Notes);
+        vm.CloseSettingsCommand.Execute(null);
+
+        using var service = new UpdateService(provider.GetRequiredService<StateService>(), provider.GetRequiredService<UserSettingsService>(),
+            provider.GetRequiredService<ILogger<UpdateService>>(), new UpdateServiceOptions
+            {
+                Target = new InstallTarget.WindowsInstaller(home),
+                UpdatesDirectory = Path.Combine(home, "updates-download"),
+                FeedOverride = feed.Url,
+                PublicKeys = [feed.PublicKey],
+            });
+        var checking = service.CheckAsync(manual: true);
+        WaitUntil(() => checking.IsCompleted);
+        var downloading = service.DownloadAsync();
+        var ready = WaitUntil(() => downloading.IsCompleted) && service.Status == UpdateStatus.Ready;
+        var installer = Path.Combine(home, "updates-download", SmokeUpdateFeed.Version, feed.InstallerName);
+        check("update.download", ready && File.Exists(installer) && File.ReadAllBytes(installer).SequenceEqual(feed.Installer), service.Error ?? service.Status.ToString());
+    }
+
     private static bool WaitUntil(Func<bool> condition, int timeoutMs = 30_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
@@ -251,5 +287,123 @@ internal static class SmokeMode
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Thread.Sleep(16);
         }
+    }
+}
+
+/// <summary>冒烟模式的更新源：本机 HttpListener 扮演 GitHub（releases.json、清单与签名、安装程序），用临时生成的密钥签名。</summary>
+internal sealed class SmokeUpdateFeed : IDisposable
+{
+    public const string Version = "99.0.0";
+    private readonly System.Net.HttpListener _listener;
+
+    private SmokeUpdateFeed(System.Net.HttpListener listener, string url, string publicKey, string installerName, byte[] installer)
+    {
+        _listener = listener;
+        Url = url;
+        PublicKey = publicKey;
+        InstallerName = installerName;
+        Installer = installer;
+    }
+
+    public string Url { get; }
+    public string PublicKey { get; }
+    public string InstallerName { get; }
+    public byte[] Installer { get; }
+
+    public static SmokeUpdateFeed Start(string home)
+    {
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        var publicKey = key.ExportSubjectPublicKeyInfoPem();
+        var installer = System.Text.Encoding.UTF8.GetBytes(new string('x', 200_000));
+        var installerName = $"TCode-{Version}-{AppVersionInfo.Rid}.bin";
+        var manifest = System.Text.Encoding.UTF8.GetBytes(new System.Text.Json.Nodes.JsonObject
+        {
+            ["schema"] = 1,
+            ["version"] = Version,
+            ["channel"] = "stable",
+            ["assets"] = new System.Text.Json.Nodes.JsonObject
+            {
+                [AppVersionInfo.Rid] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["name"] = installerName,
+                    ["size"] = installer.Length,
+                    ["sha256"] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(installer)),
+                },
+            },
+        }.ToJsonString());
+        var signature = key.SignData(manifest, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.DSASignatureFormat.Rfc3279DerSequence);
+
+        var port = FreePort();
+        var url = $"http://127.0.0.1:{port}";
+        var files = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            [$"/download/{installerName}"] = installer,
+            ["/download/manifest.json"] = manifest,
+            ["/download/manifest.json.sig"] = signature,
+        };
+        var assets = new System.Text.Json.Nodes.JsonArray();
+        foreach (var (path, data) in files)
+        {
+            // 非泛型的 Add(JsonNode)：泛型重载需要运行时生成代码（IL3050）
+            assets.Add((System.Text.Json.Nodes.JsonNode)new System.Text.Json.Nodes.JsonObject { ["name"] = path["/download/".Length..], ["size"] = data.Length, ["browser_download_url"] = url + path });
+        }
+        files["/releases.json"] = System.Text.Encoding.UTF8.GetBytes(new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+        {
+            ["tag_name"] = "v" + Version,
+            ["draft"] = false,
+            ["prerelease"] = false,
+            ["body"] = "## Smoke\n\n- **signed** manifest\n- `sha256` checked download\n",
+            ["html_url"] = url + "/release",
+            ["assets"] = assets,
+        }).ToJsonString());
+
+        var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add(url + "/");
+        listener.Start();
+        _ = Task.Run(async () =>
+        {
+            while (listener.IsListening)
+            {
+                System.Net.HttpListenerContext context;
+                try
+                {
+                    context = await listener.GetContextAsync();
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+                if (files.TryGetValue(context.Request.Url!.AbsolutePath, out var body))
+                {
+                    await context.Response.OutputStream.WriteAsync(body);
+                }
+                else
+                {
+                    context.Response.StatusCode = 404;
+                }
+                context.Response.Close();
+            }
+        });
+
+        var keyFile = Path.Combine(home, "smoke-update-key.pem");
+        File.WriteAllText(keyFile, publicKey);
+        Environment.SetEnvironmentVariable("TCODE_UPDATE_FEED", url);
+        Environment.SetEnvironmentVariable("TCODE_UPDATE_KEY", keyFile);
+        return new SmokeUpdateFeed(listener, url, publicKey, installerName, installer);
+    }
+
+    private static int FreePort()
+    {
+        var socket = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        socket.Start();
+        var port = ((System.Net.IPEndPoint)socket.LocalEndpoint).Port;
+        socket.Stop();
+        return port;
+    }
+
+    public void Dispose()
+    {
+        _listener.Stop();
+        _listener.Close();
     }
 }

@@ -557,3 +557,56 @@ TerminalSearchPlaceholder	Find in terminal	在终端中查找
 TerminalSearchNext	Next match (Enter)	下一个 (Enter)
 TerminalSearchPrevious	Previous match (Shift+Enter)	上一个 (Shift+Enter)
 TerminalSearchClose	Close (Esc)	关闭 (Esc)
+# 应用内更新（docs/design/auto-update.md §9）
+UpdateSectionTitle	Updates	更新
+UpdateAvailableFormat	TCode {0} is available	TCode {0} 可用
+UpdateDownloadingFormat	Downloading TCode {0}	正在下载 TCode {0}
+UpdateProgressFormat	{0}% downloaded	已下载 {0}%
+UpdateReadyFormat	TCode {0} is ready to install	TCode {0} 已就绪
+UpdateReadyHint	TCode will quit and start the installer, then reopen when it finishes.	TCode 将退出并启动安装程序，安装完成后会重新打开。
+UpdateInterrupted	The last update did not finish	上次更新未完成
+UpdateInterruptedHintFormat	TCode {0} is already downloaded. You can install it again.	TCode {0} 已下载，可以重新安装。
+UpdateFailed	Update failed	更新失败
+UpdateConfirmTitle	Sessions are still running	有会话正在运行
+UpdateConfirmHintFormat	{0} session(s) are running or waiting for approval. Installing now will interrupt them, and running terminal commands will stop.	有 {0} 个会话正在运行或等待批准，立即安装会中断它们，终端中正在运行的命令也会结束。
+UpdateWaitingTitle	Update scheduled	等待安装
+UpdateWaitingHint	The update will install when all sessions finish.	所有会话结束后将自动安装更新。
+UpdateUpdatedFormat	Updated to TCode {0}	已更新到 TCode {0}
+UpdateManualHint	Download the new version from the release page.	请到下载页面获取新版本。
+UpdateManualMacHint	Move TCode to the Applications folder to install updates from inside the app.	把 TCode 移到「应用程序」文件夹后才能在应用内安装更新。
+UpdateManualPortableHint	This copy was not set up by the installer. Download the new version from the release page.	当前不是通过安装程序安装的，请到下载页面获取新版本。
+UpdateManualReadOnlyHint	The installation folder is not writable. Download the new version from the release page.	安装目录不可写，请到下载页面获取新版本。
+UpdateChecking	Checking for updates…	正在检查更新…
+UpdateUpToDate	TCode is up to date	已是最新版本
+UpdateUpToDateFormat	TCode is up to date (checked at {0})	已是最新版本（{0} 检查）
+UpdateInstalling	Starting the installer…	正在启动安装程序…
+UpdateDevBuild	Development builds are not updated.	开发版本不支持自动更新。
+UpdateLastCheckFormat	Last checked {0}	上次检查：{0}
+UpdateAction	Update	更新
+UpdateLater	Later	稍后
+UpdateSkip	Skip this version	跳过此版本
+UpdateInstallRestart	Install and restart	安装并重启
+UpdateRetry	Retry	重试
+UpdateOpenPage	Open download page	打开下载页面
+UpdateViewNotes	Release notes	更新说明
+UpdateInstallNow	Install now	立即安装
+UpdateInstallWhenIdle	Install when finished	等待完成后安装
+UpdateCancel	Cancel	取消
+UpdateClose	Close	关闭
+UpdateCheckNow	Check for updates	检查更新
+UpdatePreviewTag	Preview	预览
+UpdateAutoCheckLabel	Check for updates automatically	自动检查更新
+UpdateAutoCheckHint	60 seconds after launch, then every 6 hours.	启动 60 秒后检查，之后每 6 小时检查一次。
+UpdateBadgeTip	Update available	有可用更新
+UpdateNotesTitleFormat	What's new in TCode {0}	TCode {0} 更新说明
+UpdateViewOnGitHub	View on GitHub	在 GitHub 上查看
+# 系统托盘
+TrayShow	Show TCode	显示 TCode
+TrayQuit	Quit TCode	退出 TCode
+TrayDownloadUpdateFormat	Download TCode {0}	下载 TCode {0}
+TrayInstallUpdateFormat	Install TCode {0} and restart	安装 TCode {0} 并重启
+CloseToTrayLabel	Keep running in the tray	关闭窗口时保留在托盘
+CloseToTrayHint	Closing the window hides TCode to the system tray and keeps sessions running. Quit from the tray menu.	关闭窗口后 TCode 隐藏到系统托盘，会话继续运行；从托盘菜单退出。
+UpdateCheckFailedFormat	Check failed: {0}	检查失败：{0}
+UpdatePrereleaseLabel	Receive pre-release updates	接收预发布版本更新
+UpdatePrereleaseHint	Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.	也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。

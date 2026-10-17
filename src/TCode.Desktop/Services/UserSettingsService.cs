@@ -55,7 +55,34 @@ public sealed class UserSettingsService : IDisposable
 
     public void SetOriginalImages(bool value) => Update(root => SettingsFile.Set(root, "originalImages", value ? JsonValue.Create(true) : null));
 
+    public void SetCloseToTray(bool value) => Update(root => SettingsFile.Set(root, "closeToTray", value ? null : JsonValue.Create(false)));
+
     public void SetDefaultRole(string? role) => Update(root => SettingsFile.Set(root, "defaultRole", role is null or "agent" ? null : JsonValue.Create(role)));
+
+    /// <summary>接收预发布版本：true 写回时删除该字段（默认值）。</summary>
+    public void SetReceivePrereleases(bool value) => Update(root => SetUpdateField(root, "prerelease", value ? null : JsonValue.Create(false)));
+
+    /// <summary>自动检查更新：true 写回时删除该字段（默认值）。</summary>
+    public void SetAutoCheckUpdates(bool value) => Update(root => SetUpdateField(root, "autoCheck", value ? null : JsonValue.Create(false)));
+
+    private static void SetUpdateField(JsonObject root, string key, JsonNode? value)
+    {
+        var section = root["update"] as JsonObject;
+        if (section is null)
+        {
+            if (value is null)
+            {
+                return;
+            }
+            section = [];
+            root["update"] = section;
+        }
+        SettingsFile.Set(section, key, value);
+        if (section.Count == 0)
+        {
+            root.Remove("update");
+        }
+    }
 
     public void SetDefaultModel(string? modelRef) => Update(root => SettingsFile.Set(root, "model", modelRef is null ? null : JsonValue.Create(modelRef)));
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TCode.Desktop.Services;
+using TCode.Desktop.Updates;
 using TCode.Desktop.ViewModels;
 
 namespace TCode.Desktop;
@@ -17,6 +18,14 @@ internal static class Program
         {
             return SmokeMode.Run(args);
         }
+        if (args.Contains("--version"))
+        {
+            // 发布 CI 的冒烟检查与安装后的版本确认
+            Console.WriteLine(AppVersionInfo.Display);
+            return 0;
+        }
+        // Windows 安装程序（Packaging/windows/TCode.iss 的 AppMutex）据此等待 TCode 退出后再替换文件
+        using var instance = OperatingSystem.IsWindows() ? new Mutex(false, "TCodeDesktop") : null;
         // Avalonia 必须占用主线程（macOS 要求），因此 Host 只 Start，不 Run。
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -56,6 +65,8 @@ internal static class Program
         services.AddSingleton<AgentHostConnection>();
         services.AddSingleton<WorkspaceService>();
         services.AddSingleton<PtyHostService>();
+        services.AddSingleton<UpdateService>();
+        services.AddSingleton<UpdatesViewModel>();
 
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<SidebarViewModel>();

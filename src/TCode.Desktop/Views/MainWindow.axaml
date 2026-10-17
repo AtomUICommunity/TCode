@@ -81,10 +81,16 @@
                                     <icons:LucideIcon Kind="{Binding Themes.IsDark, Converter={x:Static views:Converters.ThemeIcon}}" />
                                 </atom:Button.Icon>
                             </atom:Button>
-                            <atom:Button Grid.Column="4" Color="Default" Variant="Text" SizeType="Small" Command="{Binding OpenSettingsCommand}"
-                                         ToolTip.Tip="{loc:TCodeLangResource OpenSettings}">
-                                <atom:Button.Icon><icons:LucideIcon Kind="Settings" /></atom:Button.Icon>
-                            </atom:Button>
+                            <Panel Grid.Column="4">
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding OpenSettingsCommand}"
+                                             ToolTip.Tip="{loc:TCodeLangResource OpenSettings}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="Settings" /></atom:Button.Icon>
+                                </atom:Button>
+                                <!-- 有可用更新：关闭提醒卡片后仍能从这里进入设置 › 关于 -->
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource TCode.Accent}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                         Margin="0,3,3,0" IsHitTestVisible="False" IsVisible="{Binding Updates.HasUpdate}"
+                                         ToolTip.Tip="{loc:TCodeLangResource UpdateBadgeTip}" />
+                            </Panel>
                         </Grid>
 
                         <!-- 会话列表：标题行固定，列表虚拟化（只创建可见行），滚到底部时加载下一页 -->
@@ -794,6 +800,10 @@
         <!-- ============ 设置页 ============ -->
         <!-- 设置页与主界面：设置页从略大处缩回并淡入，主界面淡出 -->
         <views:SettingsView x:Name="SettingsPage" motion:Presence.IsPresent="{Binding IsSettingsOpen}" motion:Presence.Effect="Zoom" motion:Presence.Distance="0" />
+
+        <!-- ============ 更新提醒（右下角，主界面与设置页上都显示） ============ -->
+        <views:UpdateCardView DataContext="{Binding Updates}" x:DataType="vm:UpdatesViewModel" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16"
+                              motion:Presence.IsPresent="{Binding IsCardVisible}" motion:Presence.Effect="SlideUp" />
 
         <!-- ============ ⌘K 命令面板 ============ -->
         <!-- 遮罩淡入，卡片从上方轻微缩放落下 -->
