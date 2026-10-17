@@ -398,5 +398,9 @@
     <unit id="TerminalRunningProgram"><segment><source>A program is running in this terminal.</source><target state="translated">此终端中有程序在运行。</target></segment></unit>
     <unit id="TerminalPasteNeedsConfirm"><segment><source>The paste contains line breaks, so it was not sent.</source><target state="translated">粘贴内容包含换行，已取消发送。</target></segment></unit>
     <unit id="TerminalResyncing"><segment><source>Resynchronizing the terminal…</source><target state="translated">正在重新同步终端…</target></segment></unit>
+    <unit id="TerminalPasteConfirm"><segment><source>The text contains line breaks, which can run commands as you paste. Paste it anyway?</source><target state="translated">内容包含换行，粘贴时可能直接执行命令。仍然粘贴吗？</target></segment></unit>
+    <unit id="TerminalPasteAction"><segment><source>Paste</source><target state="translated">粘贴</target></segment></unit>
+    <unit id="TerminalCloseRunning"><segment><source>A program is still running in this terminal. Close it anyway?</source><target state="translated">此终端中仍有程序在运行。仍然关闭吗？</target></segment></unit>
+    <unit id="TerminalCloseAction"><segment><source>Close terminal</source><target state="translated">关闭终端</target></segment></unit>
   </file>
 </xliff>

@@ -395,3 +395,7 @@ TerminalStartFailedFormat	Could not start the terminal: {0}	无法启动终端�
 TerminalRunningProgram	A program is running in this terminal.	此终端中有程序在运行。
 TerminalPasteNeedsConfirm	The paste contains line breaks, so it was not sent.	粘贴内容包含换行，已取消发送。
 TerminalResyncing	Resynchronizing the terminal…	正在重新同步终端…
+TerminalPasteConfirm	The text contains line breaks, which can run commands as you paste. Paste it anyway?	内容包含换行，粘贴时可能直接执行命令。仍然粘贴吗？
+TerminalPasteAction	Paste	粘贴
+TerminalCloseRunning	A program is still running in this terminal. Close it anyway?	此终端中仍有程序在运行。仍然关闭吗？
+TerminalCloseAction	Close terminal	关闭终端

@@ -154,6 +154,19 @@ internal sealed class InProcessHost : IAsyncDisposable
 
 internal static class Wait
 {
+    public static async Task UntilAsync(Func<Task<bool>> condition, string what, int seconds = 15)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"timed out waiting for {what}");
+            }
+            await Task.Delay(20);
+        }
+    }
+
     public static async Task UntilAsync(Func<bool> condition, string what, int seconds = 15)
     {
         var deadline = DateTime.UtcNow.AddSeconds(seconds);

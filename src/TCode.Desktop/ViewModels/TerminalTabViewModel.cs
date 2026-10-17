@@ -3,6 +3,7 @@ using Avalonia.Input;
 using MouseButton = TCode.Terminal.Core.MouseButton;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using TCode.Desktop.Localization;
 using TCode.Desktop.Services;
 using TCode.Desktop.Terminal;
@@ -64,6 +65,28 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
 
     public bool CanRestart => _exited || _lost;
 
+    /// <summary>需要用户确认的粘贴内容（含换行等）；确认前不会发送。</summary>
+    public string? PendingPaste { get; private set; }
+
+    /// <summary>程序仍在运行，关闭需要确认。</summary>
+    public bool PendingClose { get; private set; }
+
+    /// <summary>有需要用户确认的操作（粘贴、关闭）。</summary>
+    public bool HasPrompt => PendingPaste is not null || PendingClose;
+
+    /// <summary>确认栏的说明文字。</summary>
+    public string? PromptMessage => PendingPaste is not null
+        ? Strings.Get(TCodeLangResourceKind.TerminalPasteConfirm)
+        : PendingClose ? Strings.Get(TCodeLangResourceKind.TerminalCloseRunning) : null;
+
+    /// <summary>确认按钮的文字（粘贴 / 关闭终端）。</summary>
+    public string? PromptActionText => PendingPaste is not null
+        ? Strings.Get(TCodeLangResourceKind.TerminalPasteAction)
+        : PendingClose ? Strings.Get(TCodeLangResourceKind.TerminalCloseAction) : null;
+
+    /// <summary>标签被关闭（会话已结束并已从 host 移除）。工作台据此移除标签。</summary>
+    public event Action? Closed;
+
     /// <summary>OSC 52 写入剪贴板（由视图提供实现）。</summary>
     public Func<string, Task>? SetClipboardText { get; set; }
 
@@ -74,6 +97,13 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
     public Func<Uri, Task>? OpenLink { get; set; }
 
     // ---- 生命周期 ----
+
+    /// <summary>测试用：直接挂上一个已经创建好的客户端与会话（不经过 host 发现）。</summary>
+    internal void AttachForTesting(PtyHostClient client, TerminalSession session)
+    {
+        _client = client;
+        _session = session;
+    }
 
     /// <summary>首次布局得到尺寸时启动会话。之后的尺寸变化通过 <see cref="Resize"/> 处理。</summary>
     public void EnsureStarted(TerminalSize size)
@@ -92,7 +122,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         {
             var client = await _hosts.GetAsync().ConfigureAwait(false);
             _client = client;
-            client.Completion.ContinueWith(_ => Dispatcher.UIThread.Post(OnHostLost), TaskScheduler.Default);
+            _ = client.Completion.ContinueWith(_ => Dispatcher.UIThread.Post(OnHostLost), TaskScheduler.Default);
             var session = new TerminalSession(OnSessionFrame, OnSessionEvent);
             var create = new SessionCreateParams
             {
@@ -170,7 +200,10 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         SetStatus(TCodeLangResourceKind.TerminalLost);
     }
 
-    /// <summary>关闭标签：会话仍有程序在运行时不关闭（返回 false），由调用方决定是否确认。</summary>
+    /// <summary>
+    /// 关闭标签（UI 线程）。会话里有程序在运行时不关闭，改为请求确认（<see cref="PendingClose"/>）；
+    /// 确认后以 <paramref name="force"/> 再次调用。关闭成功时引发 <see cref="Closed"/>。
+    /// </summary>
     public async Task<bool> CloseAsync(bool force = false)
     {
         var session = _session;
@@ -178,16 +211,52 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         if (session is null || client is null || session.SessionId == 0)
         {
             await DisposeAsync();
+            Closed?.Invoke();
             return true;
         }
         var result = await client.CloseSessionAsync(session.SessionId, force).ConfigureAwait(true);
         if (!result.Closed)
         {
-            Dispatcher.UIThread.Post(() => SetStatus(TCodeLangResourceKind.TerminalRunningProgram));
+            PendingClose = true;
+            NotifyPrompt();
             return false;
         }
+        PendingClose = false;
         await DisposeAsync();
+        Closed?.Invoke();
         return true;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmPromptAsync()
+    {
+        if (PendingPaste is { } paste)
+        {
+            PendingPaste = null;
+            NotifyPrompt();
+            await PasteAsync(paste, allowUnsafe: true).ConfigureAwait(true);
+        }
+        else if (PendingClose)
+        {
+            await CloseAsync(force: true).ConfigureAwait(true);
+        }
+    }
+
+    [RelayCommand]
+    private void CancelPrompt()
+    {
+        PendingPaste = null;
+        PendingClose = false;
+        NotifyPrompt();
+    }
+
+    private void NotifyPrompt()
+    {
+        OnPropertyChanged(nameof(PendingPaste));
+        OnPropertyChanged(nameof(PendingClose));
+        OnPropertyChanged(nameof(HasPrompt));
+        OnPropertyChanged(nameof(PromptMessage));
+        OnPropertyChanged(nameof(PromptActionText));
     }
 
     // ---- 会话事件（工作线程 → UI 线程）----
@@ -366,8 +435,10 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         await PasteAsync(text).ConfigureAwait(true);
     }
 
-    /// <summary>粘贴：按 bracketed paste 编码；包含换行等可能注入命令的内容时不发送（确认对话框待实现）。</summary>
-    public async Task PasteAsync(string text)
+    /// <summary>
+    /// 粘贴：按 bracketed paste 编码。包含换行等可能注入命令的内容先请求确认（<see cref="PendingPaste"/>），确认后以 allowUnsafe 再次调用。
+    /// </summary>
+    public async Task PasteAsync(string text, bool allowUnsafe = false)
     {
         if (_session is not { } session)
         {
@@ -376,12 +447,13 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         var (outcome, bytes) = await session.Invoke(core =>
         {
             var buffer = new ArrayBufferWriter<byte>();
-            var result = core.EncodePaste(text, allowUnsafe: false, buffer);
+            var result = core.EncodePaste(text, allowUnsafe, buffer);
             return (result, buffer.WrittenSpan.ToArray());
         }).ConfigureAwait(true);
         if (outcome == PasteOutcome.RequiresConfirmation)
         {
-            SetStatus(TCodeLangResourceKind.TerminalPasteNeedsConfirm);
+            PendingPaste = text;
+            NotifyPrompt();
             return;
         }
         if (outcome == PasteOutcome.Written)

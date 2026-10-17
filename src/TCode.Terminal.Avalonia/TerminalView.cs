@@ -82,6 +82,10 @@ public sealed partial class TerminalView : Control
             _metrics = null;
             _fallback.Clear();
         }
+        if (change.Property == SnapshotProperty)
+        {
+            NotifyCursorMoved();
+        }
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -177,6 +181,7 @@ public sealed partial class TerminalView : Control
                     break;
             }
         }
+        DrawPreedit(context, palette.Foreground, palette.Background);
     }
 
     private static TerminalRgb ForegroundOf(in ResolvedStyle style, TerminalPalette palette)

@@ -398,5 +398,9 @@
     <unit id="TerminalRunningProgram"><segment><source>A program is running in this terminal.</source></segment></unit>
     <unit id="TerminalPasteNeedsConfirm"><segment><source>The paste contains line breaks, so it was not sent.</source></segment></unit>
     <unit id="TerminalResyncing"><segment><source>Resynchronizing the terminal…</source></segment></unit>
+    <unit id="TerminalPasteConfirm"><segment><source>The text contains line breaks, which can run commands as you paste. Paste it anyway?</source></segment></unit>
+    <unit id="TerminalPasteAction"><segment><source>Paste</source></segment></unit>
+    <unit id="TerminalCloseRunning"><segment><source>A program is still running in this terminal. Close it anyway?</source></segment></unit>
+    <unit id="TerminalCloseAction"><segment><source>Close terminal</source></segment></unit>
   </file>
 </xliff>

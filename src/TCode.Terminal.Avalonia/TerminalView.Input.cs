@@ -49,6 +49,8 @@ public sealed partial class TerminalView
     public TerminalView()
     {
         Focusable = true;
+        LostFocus += (_, _) => SetPreedit(null);  // 失去焦点时组合中止
+        InitializeInputMethod();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -67,12 +69,16 @@ public sealed partial class TerminalView
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
+        // 提交的文字结束组合：先清除组合文字
+        SetPreedit(null);
         if (!string.IsNullOrEmpty(e.Text))
         {
             TextEntered?.Invoke(this, e.Text);
             e.Handled = true;
         }
     }
+
+
 
     private void Dispatch(KeyEventArgs e, KeyInput? input, bool alreadyHandled)
     {

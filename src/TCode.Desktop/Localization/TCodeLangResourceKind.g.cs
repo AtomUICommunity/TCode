@@ -403,4 +403,8 @@ public enum TCodeLangResourceKind
     TerminalRunningProgram,
     TerminalPasteNeedsConfirm,
     TerminalResyncing,
+    TerminalPasteConfirm,
+    TerminalPasteAction,
+    TerminalCloseRunning,
+    TerminalCloseAction,
 }

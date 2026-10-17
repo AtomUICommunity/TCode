@@ -324,6 +324,7 @@ public sealed partial class WorkbenchViewModel : ObservableObject
         {
             // 每次都新建一个终端（01 §7），在项目目录中启动
             var terminal = new TerminalTabViewModel(_hosts, Root);
+            terminal.Closed += () => RemoveTab(terminal);
             Tabs.Add(terminal);
             Activate(terminal);
             OpenRequested?.Invoke();
@@ -354,19 +355,11 @@ public sealed partial class WorkbenchViewModel : ObservableObject
     {
         if (tab is TerminalTabViewModel terminal)
         {
-            // 终端的关闭需要 host 确认（有程序在运行时不关闭，标签保留并显示提示）
-            _ = CloseTerminalAsync(terminal);
+            // 终端的关闭需要 host 确认：有程序在运行时不关闭，标签保留并显示确认栏；关闭成功时由 Closed 移除标签
+            _ = terminal.CloseAsync();
             return;
         }
         RemoveTab(tab);
-    }
-
-    private async Task CloseTerminalAsync(TerminalTabViewModel terminal)
-    {
-        if (await terminal.CloseAsync())
-        {
-            RemoveTab(terminal);
-        }
     }
 
     private void RemoveTab(WorkbenchTabViewModel tab)
