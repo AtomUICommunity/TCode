@@ -28,7 +28,10 @@ internal sealed class TestHost : IAsyncDisposable
     public Task Run { get; }
     public List<string> LogLines { get; } = [];
 
-    public static TestHost Start()
+    public string Home => _dir;
+
+    /// <summary><paramref name="home"/> 不为空时开启持久化，revive 数据写在它下面（多个 host 实例可共用同一个 home）。</summary>
+    public static TestHost Start(string? home = null)
     {
         // sun_path 上限约 104 字节：放在短路径下
         var dir = Path.Combine(OperatingSystem.IsWindows() ? Path.GetTempPath() : "/tmp", "tch-" + Guid.NewGuid().ToString("N")[..8]);
@@ -36,7 +39,7 @@ internal sealed class TestHost : IAsyncDisposable
         var endpoint = OperatingSystem.IsWindows() ? $@"\\.\pipe\tcode-test-{Guid.NewGuid():N}" : Path.Combine(dir, "h.sock");
         var token = Handshake.NewToken();
         var lines = new List<string>();
-        var server = new PtyHostServer(new PtyHostServerOptions { Endpoint = endpoint, Token = token, Build = "test" },
+        var server = new PtyHostServer(new PtyHostServerOptions { Endpoint = endpoint, Token = token, Build = "test", Home = home, GhosttyBuildId = "test-ghostty" },
             new HostLog(null, HostLog.Level.Debug, line => { lock (lines) { lines.Add(line); } }));
         var host = new TestHost(server, token, dir);
         host.LogLines.AddRange(lines);

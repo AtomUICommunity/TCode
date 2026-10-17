@@ -133,6 +133,30 @@ public sealed class DiscoveryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SigtermSavesSessionsBeforeExiting()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "POSIX signals");
+        var client = await PtyHostLocator.ConnectOrStartAsync(Options());
+        await client.ConfigureAsync(new HostSettingsDto());
+        using var sink = new ReplicaSink();
+        var (created, handle) = await client.CreateSessionAsync(Interactive(), sink);
+        await Wait.UntilAsync(() => sink.Text().Contains('$'), "prompt");
+        handle!.SendInput(Bytes("echo saved-on-sigterm\r"));
+        await Wait.UntilAsync(() => sink.Text().Contains("saved-on-sigterm"), "echo");
+        var pid = PtyHostLocator.ReadRegistration(PtyHostPaths.Registration(_home, _build))!.Pid;
+        using (var kill = Process.Start("kill", ["-TERM", pid.ToString()]))
+        {
+            await kill.WaitForExitAsync();
+        }
+        Assert.Equal("signal SIGTERM", (await client.Completion.WaitAsync(TimeSpan.FromSeconds(10))).Goodbye);
+        await client.DisposeAsync();
+        await Wait.UntilAsync(() => !IsRunning(pid), "host exit");
+        var meta = Path.Combine(_home, "terminal", "revive", created.PersistentId, "meta.json");
+        Assert.True(File.Exists(meta));
+        Assert.Contains("saved-on-sigterm", await File.ReadAllTextAsync(Path.Combine(_home, "terminal", "revive", created.PersistentId, "tail.vt")));
+    }
+
+    [Fact]
     public async Task BuildMismatchFailsToStart()
     {
         var e = await Assert.ThrowsAsync<PtyHostStartException>(() => PtyHostLocator.ConnectOrStartAsync(Options(build: "000000000000")));

@@ -16,6 +16,9 @@ public sealed record PtyHostServerOptions
     /// <summary>完整权限令牌（32 字节）。</summary>
     public required byte[] Token { get; init; }
 
+    /// <summary>TCODE_HOME：revive 数据在 <c>terminal/revive/</c> 下。为 null 时不持久化。</summary>
+    public string? Home { get; init; }
+
     public string InstanceId { get; init; } = Ulid.New();
     public string Build { get; init; } = "dev";
     public string? GhosttyBuildId { get; init; }
@@ -58,6 +61,7 @@ public sealed partial class PtyHostServer : IAsyncDisposable
         _context = new HostContext(log, OnSessionExited);
         _listener = PtyTransport.Listen(options.Endpoint);
         _tick = new Timer(_ => OnTick(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        InitializePersistence();
     }
 
     public HostLog Log { get; }

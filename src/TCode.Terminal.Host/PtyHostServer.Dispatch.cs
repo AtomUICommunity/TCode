@@ -401,8 +401,18 @@ public sealed partial class PtyHostServer
         try
         {
             var effects = new DeferredEffects();
-            var core = TerminalCore.Create(coreOptions, effects);
-            session = new Session(_context, sessionId, persistentId, pty, core, p, size);
+            RevivedDto? revived = null;
+            TerminalCore core;
+            if (revive is not null)
+            {
+                core = CreateRevivedCore(revive, coreOptions, effects, out var r);
+                revived = r;
+            }
+            else
+            {
+                core = TerminalCore.Create(coreOptions, effects);
+            }
+            session = new Session(_context, sessionId, persistentId, pty, core, p, size) { Revived = revived };
             effects.Target = session;
             if (p.Palette is { } palette)
             {
@@ -410,7 +420,7 @@ public sealed partial class PtyHostServer
             }
             if (revive is not null)
             {
-                await session.InvokeAsync(() => { ApplyRevive(session, revive, p.ReviveBanner); return 0; }).ConfigureAwait(false);
+                await session.InvokeAsync(() => { ApplyRevive(session, p.ReviveBanner); return 0; }).ConfigureAwait(false);
             }
             _sessions[sessionId] = session;
             AttachResultDto? attach = null;

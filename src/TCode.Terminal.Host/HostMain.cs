@@ -52,6 +52,7 @@ internal static partial class HostMain
             {
                 Endpoint = endpoint,
                 Token = token,
+                Home = home,
                 Build = build,
                 GhosttyBuildId = ghosttyBuildId,
                 HostVersion = version,
@@ -113,7 +114,7 @@ internal static partial class HostMain
             return PosixSignalRegistration.Create(signal, ctx =>
             {
                 ctx.Cancel = true;  // 自己处理：保存后退出（§12.3）
-                _ = Task.Run(() => server.ShutdownAsync($"signal {signal}"));
+                _ = Task.Run(() => server.SaveAndShutdownAsync($"signal {signal}"));
             });
         }
         catch (PlatformNotSupportedException)
