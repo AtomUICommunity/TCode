@@ -18,9 +18,9 @@ public static class MarkdownSetup
 {
     private static readonly Lazy<MarkdownServices> Shared = new(() =>
     {
+        // 语法按需懒加载：第一次遇到某种语言时由后台着色任务加载（只加载当前主题那一份），代码先以无色显示、加载完再着色。
+        // 不在启动时预热：预热 7 种语法（明暗两个主题各一份）会常驻约 80MB
         var highlighter = new TextMateSyntaxHighlighter();
-        // C# 等语法首次加载较慢，启动时在后台预热
-        highlighter.Prewarm("csharp", "typescript", "python", "json", "bash", "rust", "go");
         return new MarkdownServices
         {
             Math = RaTeXMathRenderer.Shared,

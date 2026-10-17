@@ -7,7 +7,8 @@ namespace TCode.Desktop.Controls;
 
 /// <summary>
 /// 彩色点阵加载动画（3×3 圆点，紫 / 粉 / 蓝依次闪烁）：会话中的“琢磨中…”与侧栏运行中的会话。
-/// 仅在可见且挂到可视树时计时。
+/// 仅在有效可见（自身与所有祖先都可见）且挂到可视树时计时：祖先被隐藏时（例如退场后的启动页）停止，
+/// 否则隐藏的转圈会每 110ms 让界面重绘一次，空闲时也持续占用 CPU。
 /// </summary>
 public sealed class DotSpinner : Control
 {
@@ -21,6 +22,30 @@ public sealed class DotSpinner : Control
     // 点亮顺序：沿外圈顺时针，中心点常亮偏暗
     private static readonly int[] Ring = [0, 1, 2, 5, 8, 7, 6, 3];
 
+    // 已挂到可视树的转圈：任意元素的 IsVisible 变化后统一重新检查（有效可见性的变化事件不公开）
+    private static readonly HashSet<DotSpinner> s_attached = [];
+    private static bool s_recheckPending;
+
+    static DotSpinner()
+    {
+        IsVisibleProperty.Changed.AddClassHandler<Visual>((_, _) =>
+        {
+            if (s_attached.Count == 0 || s_recheckPending)
+            {
+                return;
+            }
+            s_recheckPending = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                s_recheckPending = false;
+                foreach (var spinner in s_attached.ToList())
+                {
+                    spinner.UpdateTimer();
+                }
+            }, DispatcherPriority.Background);
+        });
+    }
+
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(110) };
     private int _frame;
     private bool _attached;
@@ -29,10 +54,18 @@ public sealed class DotSpinner : Control
     {
         _timer.Tick += (_, _) =>
         {
+            if (!IsEffectivelyVisible)
+            {
+                UpdateTimer();
+                return;
+            }
             _frame = (_frame + 1) % (Ring.Length * Palette.Length);
             InvalidateVisual();
         };
     }
+
+    /// <summary>计时器是否在运行（测试用）。</summary>
+    internal bool IsAnimating => _timer.IsEnabled;
 
     protected override Size MeasureOverride(Size availableSize) => new(12, 12);
 
@@ -66,6 +99,7 @@ public sealed class DotSpinner : Control
     {
         base.OnAttachedToVisualTree(e);
         _attached = true;
+        s_attached.Add(this);
         UpdateTimer();
     }
 
@@ -74,6 +108,7 @@ public sealed class DotSpinner : Control
         base.OnDetachedFromVisualTree(e);
         _attached = false;
         _timer.Stop();
+        s_attached.Remove(this);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -87,7 +122,7 @@ public sealed class DotSpinner : Control
 
     private void UpdateTimer()
     {
-        if (IsVisible && _attached)
+        if (IsVisible && _attached && IsEffectivelyVisible)
         {
             _timer.Start();
         }

@@ -17,7 +17,8 @@ namespace TCode.MemoryHarness;
 /// 内存与空闲 CPU 基准：隔离的 TCODE_HOME + 模拟模型，在真实窗口中跑一个场景，等待稳定后记录
 /// footprint（与“活动监视器”的“内存”列一致）、历史峰值、GC 堆，以及场景结束后一段安静时间内的 CPU。
 /// 环境变量：MH_SCENARIO=idle|markdown|chat，MH_LABEL=结果标签，MH_HOME=复用的数据目录（测磁盘缓存命中），
-/// MH_OUT=结果追加到的文件，MH_QUIET_SECONDS=安静窗口秒数（默认 10）。
+/// MH_OUT=结果追加到的文件，MH_QUIET_SECONDS=安静窗口秒数（默认 10），
+/// MH_TRACE=时间线文件（每 20ms 记录 footprint / GC 已提交 / 累计分配，以及启动各阶段的标记，用于分析启动峰值）。
 /// </summary>
 internal static class Program
 {
@@ -26,6 +27,7 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        Timeline.Start();
         var home = Environment.GetEnvironmentVariable("MH_HOME") is { Length: > 0 } fixedHome
             ? Directory.CreateDirectory(fixedHome).FullName
             : Directory.CreateTempSubdirectory("tcode-mem-home-").FullName;
@@ -45,8 +47,24 @@ internal static class Program
         TCode.Desktop.Program.ConfigureServices(services);
         using var provider = services.BuildServiceProvider();
         App.Services = provider;
-        return TCode.Desktop.Program.BuildAvaloniaApp()
-            .AfterSetup(b => { Dispatcher.UIThread.Post(() => { _ = RunAsync(provider, workspace); }); })
+        Timeline.Mark("services");
+        var app = TCode.Desktop.Program.BuildAvaloniaApp();
+        // MH_RENDER=metal|opengl：覆盖渲染后端顺序（对比后端的内存差异）
+        if (Environment.GetEnvironmentVariable("MH_RENDER") is { Length: > 0 } render)
+        {
+            app = app.With(new AvaloniaNativePlatformOptions
+            {
+                RenderingMode = render == "metal"
+                    ? [AvaloniaNativeRenderingMode.Metal, AvaloniaNativeRenderingMode.OpenGl, AvaloniaNativeRenderingMode.Software]
+                    : [AvaloniaNativeRenderingMode.OpenGl, AvaloniaNativeRenderingMode.Metal, AvaloniaNativeRenderingMode.Software],
+            });
+        }
+        return app
+            .AfterSetup(b =>
+            {
+                Timeline.Mark("avalonia-setup");
+                Dispatcher.UIThread.Post(() => { _ = RunAsync(provider, workspace); });
+            })
             .StartWithClassicDesktopLifetime(args);
     }
 
@@ -54,12 +72,18 @@ internal static class Program
     {
         var scenario = Env("MH_SCENARIO", "idle");
         var vm = provider.GetRequiredService<MainWindowViewModel>();
+        Timeline.Mark("window");
         await Task.Delay(TimeSpan.FromSeconds(4));
+        Timeline.Mark("scenario");
         var baseline = Footprint.Current;
         try
         {
             switch (scenario)
             {
+                case "idle":
+                    // 等启动收尾（连接 Agent Host、预热语法、启动页退场）结束，测稳定空闲
+                    await Task.Delay(TimeSpan.FromSeconds(15));
+                    break;
                 case "markdown":
                     var file = Samples.WriteMarkdown(workspace);
                     vm.Workbench.OpenFile(file);
@@ -109,6 +133,7 @@ internal static class Program
         {
             File.AppendAllText(output, line + Environment.NewLine);
         }
+        Timeline.Flush();
         (Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Shutdown();
     }
 
@@ -172,6 +197,62 @@ internal static class Samples
             }
         }
         bitmap.Save(path, new PngBitmapEncoderOptions());
+    }
+}
+
+/// <summary>启动时间线：后台线程每 20ms 采样一次，写到 MH_TRACE 指定的文件。</summary>
+internal static class Timeline
+{
+    private static readonly Stopwatch Clock = Stopwatch.StartNew();
+    private static readonly List<string> Lines = [];
+    private static string? s_path;
+
+    public static void Start()
+    {
+        s_path = Environment.GetEnvironmentVariable("MH_TRACE") is { Length: > 0 } path ? path : null;
+        if (s_path is null)
+        {
+            return;
+        }
+        var thread = new Thread(() =>
+        {
+            while (Clock.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                Sample(null);
+                Thread.Sleep(20);
+            }
+            Flush();
+        }) { IsBackground = true, Name = "MemoryTimeline" };
+        thread.Start();
+    }
+
+    public static void Mark(string name) => Sample(name);
+
+    private static void Sample(string? mark)
+    {
+        if (s_path is null)
+        {
+            return;
+        }
+        var info = GC.GetGCMemoryInfo();
+        var line = $"{Clock.ElapsedMilliseconds,6} footprint={Footprint.Current / 1048576.0,7:F1} gcCommitted={info.TotalCommittedBytes / 1048576.0,7:F1} " +
+                   $"allocated={GC.GetTotalAllocatedBytes() / 1048576.0,8:F1} gcs={GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}{(mark is null ? "" : "  <<< " + mark)}";
+        lock (Lines)
+        {
+            Lines.Add(line);
+        }
+    }
+
+    public static void Flush()
+    {
+        if (s_path is null)
+        {
+            return;
+        }
+        lock (Lines)
+        {
+            File.WriteAllLines(s_path!, Lines);
+        }
     }
 }
 
