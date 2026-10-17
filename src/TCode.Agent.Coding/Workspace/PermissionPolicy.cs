@@ -93,6 +93,18 @@ public static class PermissionPolicy
                 var networkKey = permission.Domain is { } domain ? "network:" + domain.ToLowerInvariant() : "network:search";
                 return approvals.Contains(networkKey) ? PermissionVerdict.Allow : new(false, "network", permission.Title ?? permission.Domain, networkKey);
 
+            case ToolAccess.External:
+                // MCP 工具：annotations（readOnlyHint 等）不可信，不作为放行依据；“始终允许”由工具在 DescribePermission 中返回 None。
+                if (mode == PermissionMode.AutoApprove)
+                {
+                    return PermissionVerdict.Allow;
+                }
+                var server = permission.Domain ?? "";
+                var toolKey = $"mcp:{server}/{permission.Command}";
+                return approvals.Contains(toolKey) || approvals.Contains($"mcp:{server}/*")
+                    ? PermissionVerdict.Allow
+                    : new(false, "mcp", permission.Title ?? permission.Command, toolKey);
+
             default:
                 return new(false, "tool", permission.Title);
         }

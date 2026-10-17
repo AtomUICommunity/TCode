@@ -15,7 +15,7 @@ public enum SmoothAxes
 /// 内容尺寸变化时平滑过渡占用尺寸（输入框逐行增高、弹层内切换子状态、列表结果数量变化）。
 /// 内容始终按完整尺寸排版，过渡期间按 VerticalAnchor 对齐并裁剪。
 /// </summary>
-public class SmoothSize : Decorator
+public class SmoothSize : Decorator, IMotionGated
 {
     public static readonly StyledProperty<SmoothAxes> AxesProperty =
         AvaloniaProperty.Register<SmoothSize, SmoothAxes>(nameof(Axes));
@@ -33,7 +33,7 @@ public class SmoothSize : Decorator
     public SmoothSize()
     {
         ClipToBounds = true;
-        _gate = new MotionGate(this);
+        _gate = MotionGate.For(this);
         _width = new MotionValue(this, 0, _ => Invalidate());
         _height = new MotionValue(this, 0, _ => Invalidate());
     }

@@ -165,4 +165,4 @@ API Key 可以写明文、`{env:VAR}` 或 `$VAR`。在界面中保存时，文�
 
 ## 许可证
 
-尚未选定许可证。在添加许可证之前，所有权利归作者所有。
+TCode 基于 [Apache License 2.0](LICENSE) 开源。

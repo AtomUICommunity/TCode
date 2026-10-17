@@ -135,7 +135,7 @@ public static class Presence
         public Controller(Control control)
         {
             _control = control;
-            _gate = new MotionGate(control);
+            _gate = MotionGate.For(control);
             _effect = GetEffect(control);
             _progress = new MotionValue(control, control.IsVisible ? 1 : 0,
                 p => Apply(_control, _effect, GetDistance(_control), p));

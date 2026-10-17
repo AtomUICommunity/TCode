@@ -163,7 +163,10 @@ internal sealed class AcpSession : IRuntimeSession
         }
     }
 
-    private static JsonElement SessionParams(string? sessionId, string cwd) => JsonBuilder.Object(w =>
+    /// <summary>注入的 TCode MCP 桥接（StartAsync 之前设置）。stdio 是 ACP 的基线能力，不依赖 mcpCapabilities。</summary>
+    public McpBridgeLaunch? McpBridge { get; set; }
+
+    internal JsonElement SessionParams(string? sessionId, string cwd) => JsonBuilder.Object(w =>
     {
         if (sessionId is not null)
         {
@@ -171,6 +174,13 @@ internal sealed class AcpSession : IRuntimeSession
         }
         w.WriteString("cwd", cwd);
         w.WriteStartArray("mcpServers");
+        if (McpBridge is { } bridge)
+        {
+            w.WriteStartObject();
+            w.WriteString("name", McpBridgeLaunch.ServerName);
+            bridge.WriteObject(w, envAsArray: true);
+            w.WriteEndObject();
+        }
         w.WriteEndArray();
     });
 
@@ -601,7 +611,14 @@ internal sealed class AcpSession : IRuntimeSession
             case "config_option_update":
                 Config.ApplyUpdate(update);
                 break;
-            // user_message_chunk（回显）、plan、available_commands_update、current_mode_update、session_info_update、
+            case "available_commands_update":
+                // 整体替换命令列表，用于输入框的 / 补全（§7.8）
+                _host.OnCommands(update.Arr("availableCommands").Select(c => c.Str("name") is { Length: > 0 } name
+                        ? new RuntimeCommand(name.TrimStart('/'), c.Str("description") is { Length: > 0 } d ? d : null, c.Obj("input")?.Str("hint"))
+                        : null)
+                    .OfType<RuntimeCommand>().ToList());
+                break;
+            // user_message_chunk（回显）、plan、current_mode_update、session_info_update、
             // usage_update、notice 等：状态类更新，界面接入前先忽略；未知变体同样忽略（§7）。
         }
     }

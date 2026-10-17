@@ -291,6 +291,20 @@ public sealed partial class ModelPickerViewModel : ObservableObject
         SelectionChanged?.Invoke();
     }
 
+    /// <summary>按引用（厂商/模型）选择模型，与在列表中点选相同；找不到时返回 false（role 指定的模型不可用）。</summary>
+    public bool SelectByRef(string modelRef)
+    {
+        if (Find(modelRef) is not { } model)
+        {
+            return false;
+        }
+        if (Selected?.Model.Ref != model.Model.Ref)
+        {
+            Select(model);
+        }
+        return true;
+    }
+
     /// <summary>⌘1…⌘9：选择当前列表中的第 n 项。</summary>
     public bool SelectByShortcut(int number)
     {

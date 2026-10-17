@@ -67,6 +67,15 @@ public sealed class PopoverInMotion : AbstractMotion
     {
         base.ConfigureTransitions();
         RenderTransformOrigin = Origin;
+        // 只有缩放 / 位移用弹簧（允许过冲）。透明度绝不能超过 1：渲染时按字节换算，1.04 × 255 溢出成接近 0，
+        // 弹层会在快结束时几乎消失几帧（“打开下拉闪几下”）
+        foreach (var transition in Transitions.OfType<TransitionBase>())
+        {
+            if (transition.Property == Visual.OpacityProperty)
+            {
+                transition.Easing = MotionTokens.EaseEmphasized;
+            }
+        }
     }
 
     protected override void ConfigureMotionStartValue(BaseMotionActor actor)

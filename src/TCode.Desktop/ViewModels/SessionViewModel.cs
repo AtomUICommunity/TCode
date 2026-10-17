@@ -56,6 +56,9 @@ public sealed partial class SessionViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsExternal))]
     public partial string? Runtime { get; set; }
 
+    /// <summary>外部运行时自带的斜杠命令（运行时启动后报告；内置 Agent 为空）。</summary>
+    public IReadOnlyList<RuntimeCommandDto> RuntimeCommands { get; private set; } = [];
+
     public bool IsExternal => Runtime is not null;
 
     /// <summary>模型选择器范围：没有历史时可选全部模型，有历史后只能选同一运行时（内置为 ""）。</summary>
@@ -77,6 +80,25 @@ public sealed partial class SessionViewModel : ObservableObject
     {
         approval.Decided += a => PendingApprovals.Remove(a);
         PendingApprovals.Add(approval);
+    }
+
+    /// <summary>MCP 服务器的 elicitation 请求（按到达顺序，一次显示一个）。</summary>
+    public ObservableCollection<McpElicitationViewModel> PendingElicitations { get; } = [];
+
+    public McpElicitationViewModel? CurrentElicitation => PendingElicitations.FirstOrDefault();
+    public bool HasPendingElicitation => PendingElicitations.Count > 0;
+
+    public void AddElicitation(McpElicitationViewModel elicitation)
+    {
+        elicitation.Decided += e =>
+        {
+            PendingElicitations.Remove(e);
+            OnPropertyChanged(nameof(CurrentElicitation));
+            OnPropertyChanged(nameof(HasPendingElicitation));
+        };
+        PendingElicitations.Add(elicitation);
+        OnPropertyChanged(nameof(CurrentElicitation));
+        OnPropertyChanged(nameof(HasPendingElicitation));
     }
     public bool IsEmpty => Items.Count == 0;
 
@@ -189,6 +211,10 @@ public sealed partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsLoadingEarlier { get; set; }
 
+    /// <summary>标题用输入框里的样子（command 显示为 /名称，不用展开后的正文）。</summary>
+    private static string? TitleText(string? text, IReadOnlyList<PromptSegmentDto>? segments) =>
+        segments is { Count: > 0 } ? Controls.Composer.ComposerDocument.PlainText(Controls.Composer.ComposerSegments.FromDto(segments)) : text;
+
     /// <summary>由历史消息构建会话条目（同一轮的多条助手消息合并为一条）。</summary>
     private List<TranscriptItemViewModel> BuildItems(IReadOnlyList<HistoryMessageDto> history, bool latest)
     {
@@ -208,10 +234,10 @@ public sealed partial class SessionViewModel : ObservableObject
                     }
                     if (latest)
                     {
-                        Title ??= ImagePrompt.Collapse(text);
+                        Title ??= ImagePrompt.Title(TitleText(text, message.Segments));
                     }
                     var images = message.Blocks.OfType<HistoryImage>().Select(i => i.Path).ToArray();
-                    items.Add(new UserMessageItemViewModel(text, images));
+                    items.Add(new UserMessageItemViewModel(text, images, message.Segments));
                     break;
                 case "assistant":
                     // 同一轮的多条助手消息（工具调用前后）合并显示为一条。
@@ -282,6 +308,9 @@ public sealed partial class SessionViewModel : ObservableObject
         LastActivity = DateTimeOffset.Now;
         switch (e)
         {
+            case CommandsChanged c:
+                RuntimeCommands = c.Commands;
+                break;
             case AgentStarted:
                 SetRunning(true);
                 _lastStopReason = null;
@@ -298,8 +327,8 @@ public sealed partial class SessionViewModel : ObservableObject
                 Items.Add(new NotificationItemViewModel(source, m.Text ?? ""));
                 break;
             case MessageStarted { Role: "user" } m:
-                Title ??= m.Text is null ? null : ImagePrompt.Collapse(m.Text);
-                Items.Add(new UserMessageItemViewModel(m.Text ?? "", m.Images));
+                Title ??= ImagePrompt.Title(TitleText(m.Text, m.Segments));
+                Items.Add(new UserMessageItemViewModel(m.Text ?? "", m.Images, m.Segments));
                 break;
             case MessageStarted { Role: "assistant" } m:
                 // 同一轮内工具调用后的后续回复接在同一条消息里显示。

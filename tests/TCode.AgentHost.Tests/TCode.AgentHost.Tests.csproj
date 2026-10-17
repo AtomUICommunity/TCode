@@ -11,5 +11,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\src\TCode.AgentHost\TCode.AgentHost.csproj" />
+        <!-- MCP 桥接测试用的 stdio 服务器 -->
+        <ProjectReference Include="..\TCode.Mcp.TestServer\TCode.Mcp.TestServer.csproj" ReferenceOutputAssembly="false" />
     </ItemGroup>
 </Project>

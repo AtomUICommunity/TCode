@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using TCode.Desktop.Controls;
 using TCode.Desktop.Localization;
 using TCode.Desktop.Services;
 using TCode.Desktop.ViewModels;
@@ -53,9 +54,11 @@ public partial class App : Application
             // settings.json 被外部修改语言时立即切换
             var userSettings = Services.GetRequiredService<UserSettingsService>();
             TCode.Desktop.Motion.MotionSettings.UserReduceMotion = userSettings.Current.ReduceMotion == true;
+            MarkdownSetup.OriginalImages = userSettings.Current.OriginalImages == true;
             userSettings.Changed += () =>
             {
                 TCode.Desktop.Motion.MotionSettings.UserReduceMotion = userSettings.Current.ReduceMotion == true;
+                MarkdownSetup.OriginalImages = userSettings.Current.OriginalImages == true;
                 if (this.GetLanguageManager() is { } manager && LanguageTag.TryParse(userSettings.Current.Language, out var wanted) &&
                     (wanted == LanguageTags.EnUS || wanted == LanguageTags.ZhCN) && manager.Current.CurrentLanguage != wanted)
                 {

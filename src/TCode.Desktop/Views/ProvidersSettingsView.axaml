@@ -112,16 +112,19 @@
                         <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,10,Auto,10,Auto,10,Auto,10,Auto">
                             <TextBlock Classes="strong" Text="{loc:TCodeLangResource ProtocolLabel}" VerticalAlignment="Center" />
                             <Border Grid.Column="1" Classes="segmented">
+                                <!-- 选中底板在选项之间滑动 -->
+                                <motion:IndicatorPanel IndicatorBrush="{DynamicResource TCode.SegmentSelectedBg}" IndicatorBorderBrush="{DynamicResource TCode.SegmentSelectedBorder}" IndicatorRadius="6">
                                 <ItemsControl ItemsSource="{Binding Protocols}">
                                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
-                                            <Button Theme="{StaticResource TCode.RowButton}" Classes.selected="{Binding IsSelected}" Content="{Binding Label}"
+                                            <Button Theme="{StaticResource TCode.RowButton}" Classes.selected="{Binding IsSelected}" motion:IndicatorPanel.IsCurrent="{Binding IsSelected}" Content="{Binding Label}"
                                                     Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).ChooseProtocolCommand}"
                                                     CommandParameter="{Binding}" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </motion:IndicatorPanel>
                             </Border>
                             <TextBlock Grid.Row="2" Classes="strong" Text="{loc:TCodeLangResource ProviderIdLabel}" VerticalAlignment="Center" />
                             <atom:LineEdit Grid.Row="2" Grid.Column="1" PlaceholderText="my-gateway" Text="{Binding CustomId, Mode=TwoWay}"
@@ -191,14 +194,17 @@
                                         <Grid ColumnDefinitions="100,*" IsVisible="{Binding IsCustom}">
                                             <TextBlock Classes="secondary" Text="{loc:TCodeLangResource ProtocolLabel}" VerticalAlignment="Center" />
                                             <Border Grid.Column="1" Classes="segmented">
+                                                <!-- 选中底板在选项之间滑动 -->
+                                                <motion:IndicatorPanel IndicatorBrush="{DynamicResource TCode.SegmentSelectedBg}" IndicatorBorderBrush="{DynamicResource TCode.SegmentSelectedBorder}" IndicatorRadius="6">
                                                 <StackPanel Orientation="Horizontal">
                                                     <Button Theme="{StaticResource TCode.RowButton}" Content="Chat Completions" Command="{Binding ChooseProtocolCommand}" CommandParameter="chat"
-                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" />
+                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" motion:IndicatorPanel.IsCurrent="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" />
                                                     <Button Theme="{StaticResource TCode.RowButton}" Content="Responses" Command="{Binding ChooseProtocolCommand}" CommandParameter="responses"
-                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" />
+                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" motion:IndicatorPanel.IsCurrent="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" />
                                                     <Button Theme="{StaticResource TCode.RowButton}" Content="Anthropic Messages" Command="{Binding ChooseProtocolCommand}" CommandParameter="messages"
-                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" />
+                                                            Classes.selected="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" motion:IndicatorPanel.IsCurrent="{Binding ProtocolInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" />
                                                 </StackPanel>
+                                                </motion:IndicatorPanel>
                                             </Border>
                                         </Grid>
                                         <Grid ColumnDefinitions="100,*">
@@ -278,16 +284,19 @@
                                                 <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,8,Auto,8,Auto,8,Auto,8,Auto">
                                                     <TextBlock Grid.Row="8" Classes="secondary" Text="{loc:TCodeLangResource ProtocolLabel}" VerticalAlignment="Center" />
                                                     <Border Grid.Row="8" Grid.Column="1" Classes="segmented">
+                                                        <!-- 选中底板在选项之间滑动 -->
+                                                        <motion:IndicatorPanel IndicatorBrush="{DynamicResource TCode.SegmentSelectedBg}" IndicatorBorderBrush="{DynamicResource TCode.SegmentSelectedBorder}" IndicatorRadius="6">
                                                         <StackPanel Orientation="Horizontal">
                                                             <Button Theme="{StaticResource TCode.RowButton}" Content="{Binding ProviderApiText}" Command="{Binding ChooseApiCommand}" CommandParameter=""
-                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=''}" />
+                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=''}" motion:IndicatorPanel.IsCurrent="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=''}" />
                                                             <Button Theme="{StaticResource TCode.RowButton}" Content="Chat" Command="{Binding ChooseApiCommand}" CommandParameter="chat"
-                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" />
+                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" motion:IndicatorPanel.IsCurrent="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=chat}" />
                                                             <Button Theme="{StaticResource TCode.RowButton}" Content="Responses" Command="{Binding ChooseApiCommand}" CommandParameter="responses"
-                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" />
+                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" motion:IndicatorPanel.IsCurrent="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=responses}" />
                                                             <Button Theme="{StaticResource TCode.RowButton}" Content="Anthropic" Command="{Binding ChooseApiCommand}" CommandParameter="messages"
-                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" />
+                                                                    Classes.selected="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" motion:IndicatorPanel.IsCurrent="{Binding ApiInput, Converter={x:Static views:Converters.EqualsParameter}, ConverterParameter=messages}" />
                                                         </StackPanel>
+                                                        </motion:IndicatorPanel>
                                                     </Border>
                                                     <TextBlock Classes="secondary" Text="{loc:TCodeLangResource DisplayNameField}" VerticalAlignment="Center" />
                                                     <atom:LineEdit Grid.Column="1" SizeType="Small" Text="{Binding NameInput, Mode=TwoWay}" PlaceholderText="{Binding ModelId}" />

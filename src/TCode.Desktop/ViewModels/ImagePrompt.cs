@@ -60,9 +60,18 @@ public static partial class ImagePrompt
             ? ExpandedPattern().Replace(text, m => Placeholder(int.Parse(m.Groups[1].ValueSpan)))
             : text;
 
-    /// <summary>从文本中去掉某张图片的占位符（移除附件时）。</summary>
-    public static string RemovePlaceholder(string text, int number) =>
-        PlaceholderPattern().Replace(text, m => int.Parse(m.Groups[1].ValueSpan) == number ? "" : m.Value);
+    /// <summary>会话标题：折叠图片引用后的首行，过长时截断（与 Agent Host 的 SessionIndex.TitleOf 一致）。</summary>
+    public static string? Title(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+        var line = Collapse(text.Trim()).Split('\n')[0].Trim();
+        return line.Length > MaxTitleLength ? line[..MaxTitleLength] + "…" : line;
+    }
+
+    private const int MaxTitleLength = 80;
 
     private static string Reference(int number, ImageAttachmentViewModel image) => $"[Image #{number}: {image.Path}]";
 }

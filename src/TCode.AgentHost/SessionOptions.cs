@@ -1,4 +1,5 @@
 using TCode.Agent.Coding;
+using TCode.Agent.Coding.Assets;
 using TCode.Ai.Models;
 using TCode.Agent;
 using TCode.Rpc;
@@ -12,7 +13,8 @@ internal static class SessionOptions
     /// <summary>模型上下文超过 200K 时额外提供 200K 档，作为默认的较小预算。</summary>
     private const int CompactContextWindow = 200_000;
 
-    public static ModelDto ToDto(ModelInfo m, string providerName, string? runtime = null) => new(
+    /// <param name="supportsSubagents">运行时能派生子 Agent（ACP 协调模式依赖它）；内置 Agent 总是可以。</param>
+    public static ModelDto ToDto(ModelInfo m, string providerName, string? runtime = null, bool supportsSubagents = true) => new(
         m.Id, m.Name, m.Provider, m.Api, m.Reasoning, m.Description,
         ThinkingLevels.Available(m).Select(l => l.ToString()).ToArray(),
         ThinkingLevels.Default(m).ToString(),
@@ -21,14 +23,24 @@ internal static class SessionOptions
         ModelCatalog.RefOf(m),
         providerName,
         runtime,
-        m.SupportsImages);
+        m.SupportsImages,
+        supportsSubagents);
 
     public static IReadOnlyList<int> ContextWindows(ModelInfo m) =>
         m.ContextWindow > CompactContextWindow ? [CompactContextWindow, m.ContextWindow] : [m.ContextWindow];
 
-    /// <summary>把请求的参数合并到会话上并返回生效值；null 字段沿用当前值。</summary>
-    public static SessionOptionsDto Apply(AgentSession session, SessionOptionsDto? requested)
+    /// <summary>
+    /// 把请求的参数合并到会话上并返回生效值；null 字段沿用当前值。
+    /// role 按 <paramref name="assets"/>（会话项目的 command / skill / role）解析，找不到时保持原来的 role。
+    /// </summary>
+    public static SessionOptionsDto Apply(AgentSession session, SessionOptionsDto? requested, AgentAssetCatalog? assets = null)
     {
+        // ACP 依赖子 Agent：运行时没有子 Agent 时保持原来的模式
+        if (requested?.Role is { } roleName && SessionRole.Resolve(roleName, assets ?? AgentAssetCatalog.Empty) is { } role &&
+            (role.Name != SessionRole.AcpName || session.External is not { SupportsSubagents: false }))
+        {
+            session.Role = role;
+        }
         var model = session.Agent.Model;
         var thinking = requested?.ThinkingLevel is { } t && Enum.TryParse<ThinkingLevel>(t, ignoreCase: true, out var parsed)
             ? parsed
@@ -47,7 +59,7 @@ internal static class SessionOptions
 
     public static SessionOptionsDto Current(AgentSession session) =>
         new(session.Agent.ThinkingLevel.ToString(), session.Agent.FastMode, session.ContextWindow,
-            ToWire(session.Agent.PermissionMode));
+            ToWire(session.Agent.PermissionMode), session.Role.Name);
 
     /// <summary>线上取值为 camelCase：ask / autoApprove / fullAccess。</summary>
     public static string ToWire(PermissionMode mode) => mode switch
@@ -67,6 +79,7 @@ internal static class SessionOptions
         session.Agent.ThinkingLevel = ThinkingLevels.Default(model);
         session.Agent.FastMode = false;
         session.Agent.PermissionMode = PermissionMode.Ask;
+        session.Role = SessionRole.Agent;
         session.ContextWindow = ContextWindows(model)[0];
     }
 

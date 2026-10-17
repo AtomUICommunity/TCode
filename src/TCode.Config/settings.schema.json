@@ -13,6 +13,7 @@
     "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
     "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
     "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
+    "originalImages": { "type": "boolean", "description": "Show Markdown images at full resolution. By default they are decoded at their display size to save memory; clicking an image always opens the original." },
     "providers": {
       "type": "object",
       "description": "Keyed by provider id. A built-in id (anthropic, openai, deepseek, openrouter, …) overrides the catalog; any other id defines a custom provider.",
@@ -39,10 +40,61 @@
         }
       },
       "additionalProperties": false
+    },
+    "defaultRole": {
+      "type": "string",
+      "description": "Mode for new conversations: agent (default), plan, acp, or the name of a custom role from roles/*.md. A custom role that the project does not define falls back to agent."
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "autoDiscover": {
+          "type": "boolean",
+          "description": "List skills in the built-in agent's system prompt so the model can load them on its own (default true). When false, skills are used only when named with /skill-name."
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcpServers": {
+      "type": "object",
+      "description": "MCP servers for the built-in agent (and, through the TCode bridge, external runtimes). Keys are server names: 1-32 letters, digits, '_' or '-'.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+      "additionalProperties": { "$ref": "#/definitions/mcpServer" }
     }
   },
   "additionalProperties": false,
   "definitions": {
+    "mcpServer": {
+      "type": "object",
+      "description": "A command makes it a local (stdio) server; a url makes it a remote server. Strings accept {env:VAR}, ${VAR}, ${VAR:-default}, ${workspaceFolder} and ${userHome}.",
+      "properties": {
+        "type": { "enum": ["stdio", "http", "sse"], "description": "Usually inferred. http = Streamable HTTP (falls back to legacy SSE automatically); sse forces legacy HTTP+SSE." },
+        "command": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "cwd": { "type": "string", "description": "Working directory. Defaults to the session's project directory." },
+        "envFile": { "type": "string", "description": "A dotenv file whose variables are added to env." },
+        "url": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" }, "description": "An Authorization header disables the OAuth login flow." },
+        "oauth": {
+          "type": "object",
+          "properties": {
+            "clientId": { "type": "string", "description": "Pre-registered client id. Omit to use dynamic client registration." },
+            "clientSecret": { "type": "string" },
+            "callbackPort": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Fixed loopback callback port (http://127.0.0.1:PORT/callback)." },
+            "scopes": { "type": "string", "description": "Space-separated scopes to request." }
+          },
+          "additionalProperties": false
+        },
+        "enabled": { "type": "boolean", "default": true },
+        "disabledTools": { "type": "array", "items": { "type": "string" }, "description": "Tools (MCP names) hidden from the model." },
+        "alwaysAllow": { "type": "array", "items": { "type": "string" }, "description": "Tools that never ask for approval; \"*\" allows the whole server." },
+        "startupTimeout": { "type": "integer", "minimum": 1, "default": 30, "description": "Seconds." },
+        "toolTimeout": { "type": "integer", "minimum": 1, "default": 600, "description": "Seconds per tool call." },
+        "name": { "type": "string", "description": "Display name." }
+      },
+      "additionalProperties": false
+    },
     "secret": {
       "type": "string",
       "description": "Plain value, {env:VAR} or $VAR. Use \"\" for local servers that need no key."

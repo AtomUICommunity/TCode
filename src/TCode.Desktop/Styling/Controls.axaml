@@ -5,7 +5,8 @@
 -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:motion="using:TCode.Desktop.Motion">
+        xmlns:motion="using:TCode.Desktop.Motion"
+        xmlns:composer="using:TCode.Desktop.Controls.Composer">
     <Styles.Resources>
         <!-- 侧栏导航、列表行、菜单行：透明背景，悬停/选中时填充 -->
         <ControlTheme x:Key="TCode.RowButton" TargetType="Button">
@@ -103,9 +104,7 @@
             <Style Selector="^:pointerover">
                 <Setter Property="Foreground" Value="{DynamicResource TCode.TextPrimary}" />
             </Style>
-            <Style Selector="^:pressed">
-                <Setter Property="RenderTransform" Value="scale(0.96)" />
-            </Style>
+            <!-- 不做按下缩放：它是弹层的触发按钮，AtomUI 弹层按按钮当时（缩放中）的边界定位，会固定偏几个像素 -->
         </ControlTheme>
 
         <!-- 弹层菜单项：比 RowButton 更紧凑，悬停色更亮（模型选择器、项目 / 分支选择器、命令面板） -->
@@ -215,10 +214,20 @@
         <Setter Property="MinHeight" Value="26" />
         <Setter Property="Padding" Value="12,0" />
     </Style>
+    <!-- 选中底板由 motion:IndicatorPanel 画，在选项之间滑动；选项自己不再填充 -->
     <Style Selector="Border.segmented Button.selected">
-        <Setter Property="Background" Value="{DynamicResource TCode.SegmentSelectedBg}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource TCode.SegmentSelectedBorder}" />
-        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.segmented Button.selected:pointerover">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 命令面板：高亮底板在结果之间滑动 -->
+    <Style Selector="Border.menu motion|IndicatorPanel Button.selected">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 页签：下划线由 IndicatorPanel 画并在页签之间滑动，页签自己的下划线隐藏 -->
+    <Style Selector="motion|IndicatorPanel Button.active /template/ Border#PART_Underline">
+        <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="Border.segmented Button">
         <Setter Property="BorderThickness" Value="1" />
@@ -270,5 +279,14 @@
     </Style>
     <Style Selector="SelectableTextBlock">
         <Setter Property="SelectionBrush" Value="#553B82F6" />
+    </Style>
+    <!-- 输入框（docs/design/composer.md §6.2）：tag 用强调色的浅底 -->
+    <Style Selector="composer|ComposerEditor">
+        <Setter Property="Foreground" Value="{DynamicResource TCode.TextPrimary}" />
+        <Setter Property="PlaceholderForeground" Value="{DynamicResource TCode.TextTertiary}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource TCode.TextPrimary}" />
+        <Setter Property="SelectionBrush" Value="#553B82F6" />
+        <Setter Property="TagBackground" Value="{DynamicResource TCode.AccentSoftBg}" />
+        <Setter Property="TagForeground" Value="{DynamicResource TCode.AccentText}" />
     </Style>
 </Styles>

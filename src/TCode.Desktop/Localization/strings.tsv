@@ -364,6 +364,8 @@ ImageZoomIn	Zoom in	放大
 ImageZoomOut	Zoom out	缩小
 ReduceMotionLabel	Reduce motion	减少动态效果
 ReduceMotionHint	Turn off interface animations. The system Reduce Motion setting is honored too.	关闭界面动画；系统的“减少动态效果”同样生效。
+OriginalImagesLabel	Full-resolution images	图片原始清晰度
+OriginalImagesHint	Show Markdown images at full resolution. Off by default: images are decoded at their display size to save memory, and clicking one still opens the original.	Markdown 中的图片按原始清晰度显示。默认关闭：按显示尺寸压缩解码以节省内存，点击图片查看的仍是原图。
 SplashLoading	Warming up the agent…	正在唤醒智能体…
 SplashQuip1	Fixing one bug — three more come to say hi	程序员修 bug——越修越多
 SplashQuip2	A programmer counting sheep — 0, 1, 10, 11, 100…	程序员数羊——0、1、10、11、100……
@@ -386,3 +388,155 @@ TaskNotificationFormat	Background task {0}: {1}	后台任务 {0}：{1}
 SubagentStatsFormat	{0} · {1} tool uses · {2} tokens	{0} · {1} 次工具调用 · {2} tokens
 ApprovalRead	Read outside workspace	读取工作区外的文件
 ApprovalNetwork	Network access	访问网络
+SettingsMcp	MCP Servers	MCP 服务器
+McpHint	Tools from Model Context Protocol servers. Global servers are saved in settings.json; project servers come from the project's .mcp.json.	连接 MCP（Model Context Protocol）服务器提供的工具。全局服务器保存在 settings.json，项目服务器来自项目根目录的 .mcp.json。
+SearchMcpServers	Search servers	搜索服务器
+McpGlobalGroup	Global	全局
+McpProjectGroupFormat	Project · {0}	项目 · {0}
+McpNoServers	No MCP servers yet.	还没有 MCP 服务器。
+AddMcpServer	Add server	添加服务器
+SelectMcpHint	Select a server on the left, or add one.	在左侧选择一个服务器，或添加新服务器。
+McpStateConnected	Connected	已连接
+McpStateConnecting	Connecting…	连接中…
+McpStateIdle	Not connected	未连接
+McpStateNeedsAuth	Login required	需要登录
+McpStateFailed	Failed	连接失败
+McpStateDisabled	Disabled	已停用
+McpStateUntrusted	Awaiting trust	待信任
+McpStateIgnored	Ignored	已忽略
+McpStateInvalid	Configuration error	配置错误
+McpTransportLocal	Local command	本地命令
+McpTransportRemote	Remote URL	远程 URL
+McpServerNameLabel	Name	名称
+McpCommandLabel	Command	命令
+McpArgsLabel	Arguments	参数
+McpArgsHint	One argument per line	每行一个参数
+McpCwdLabel	Working dir	工作目录
+McpCwdPlaceholder	Defaults to the project directory	默认为项目目录
+McpEnvLabel	Environment	环境变量
+McpEnvHint	KEY=value, one per line. Values may use {env:VAR} or ${workspaceFolder}.	每行一个 KEY=value，值可以写 {env:VAR} 或 ${workspaceFolder}。
+McpUrlLabel	URL	URL
+McpHeadersLabel	Headers	请求头
+McpHeadersHint	Name: value, one per line. An Authorization header turns off OAuth login.	每行一个“名称: 值”。写了 Authorization 头就不会走 OAuth 登录。
+McpScopeLabel	Save to	保存到
+McpScopeGlobal	Global (settings.json)	全局（settings.json）
+McpScopeProject	This project (.mcp.json)	当前项目（.mcp.json）
+McpToolsLabel	Tools	工具
+McpToolsSummaryFormat	{0} enabled · schema about {1} tokens	已启用 {0} 个 · schema 约 {1} tokens
+McpToolsEmpty	No tools. Tools appear after the server connects.	没有工具。服务器连接后才会显示。
+McpAlwaysAllow	Always allow	始终允许
+McpReadOnlyTag	read-only	只读
+McpDestructiveTag	destructive	破坏性
+McpOpenWorldTag	open world	开放世界
+McpAnnotationsHint	Tags are declared by the server itself; they never skip approval.	标签由服务器自行声明，不会作为免审批的依据。
+McpLogLabel	Log	日志
+McpLogEmpty	No log output.	没有日志。
+McpRestart	Restart	重启
+McpLogin	Log in	登录
+McpLogout	Log out	登出
+McpTrust	Trust	信任
+McpIgnore	Ignore	忽略
+McpUntrustedHint	This server comes from the project's .mcp.json and runs a command on this machine. Trust it only if you trust the project.	该服务器来自项目的 .mcp.json，会在本机执行命令。只有信任这个项目时才应信任它。
+McpShadowedHint	Overrides the global server with the same name.	覆盖了同名的全局服务器。
+McpMissingVariablesFormat	Environment variables not set: {0}	未设置的环境变量：{0}
+McpTestOkFormat	Connected · {0} tools · {1}	连接成功 · {0} 个工具 · {1}
+McpNameInvalid	Use 1–32 letters, digits, '_' or '-'.	请使用 1–32 个字母、数字、_ 或 -。
+McpNameExists	A server with this name already exists.	已存在同名服务器。
+McpUrlInvalid	Enter a full URL, e.g. https://example.com/mcp.	请输入完整的 URL，例如 https://example.com/mcp。
+McpCommandRequired	Enter the command to run.	请填写要运行的命令。
+McpInstructionsLabel	Server instructions	服务器说明
+McpProtocolFormat	protocol {0}	协议 {0}
+McpEnableServer	Enable server	启用服务器
+McpProjectFileErrorFormat	.mcp.json has errors: {0}	.mcp.json 有错误：{0}
+McpTransportLabel	Type	类型
+ApprovalMcp	Use MCP tool	使用 MCP 工具
+ImportMcp	Import…	导入…
+ExportMcp	Export	导出
+McpImportTitle	Import MCP servers	导入 MCP 服务器
+McpImportPaste	Paste JSON	粘贴 JSON
+McpImportScan	From other apps	从其他应用
+McpImportFromFile	Open file…	打开文件…
+McpImportPastePlaceholder	Paste an mcpServers / servers JSON, a single server, or Codex TOML	粘贴 mcpServers / servers JSON、单个服务器，或 Codex 的 TOML
+McpImportNoSources	No MCP configurations from other apps were found on this machine.	本机没有找到其他应用的 MCP 配置。
+McpImportFormatFormat	Detected format: {0}	识别格式：{0}
+McpImportDroppedFormat	Not imported: {0}	不会导入：{0}
+McpImportAutoApproveFormat	Also import auto-approved tools: {0}	同时导入自动批准的工具：{0}
+McpImportButtonFormat	Import {0}	导入 {0} 个
+McpImportOverwrites	Overwrites the existing server	将覆盖已有的同名服务器
+McpImportTargetLabel	Import to	导入到
+McpImportInputHint	Value or {env:VAR}	填写值或 {env:VAR}
+McpExportTitle	Export MCP servers	导出 MCP 服务器
+McpExportHint	Common mcpServers format, readable by Claude Code, Cursor, Copilot CLI and others.	通用的 mcpServers 格式，Claude Code、Cursor、Copilot CLI 等都能读取。
+McpExportExpand	Expand variables to current values (includes secrets)	把变量展开为当前值（会包含密钥）
+CopyToClipboard	Copy	复制
+SaveToFile	Save as…	另存为…
+McpNoteRunsCommandFormat	Runs a command on this machine: {0}	将在本机执行命令：{0}
+McpNoteUnknownTypeFormat	Unknown type "{0}"; inferred from the other fields.	不认识的类型“{0}”，已按其他字段推断。
+McpNoteAllowList	The source only allowed some tools; disable the others after the server connects.	源配置只允许部分工具，连接后请手动停用其余工具。
+McpNoteHeadersHelper	headersHelper (a command that prints headers) is not supported; add the headers directly.	不支持 headersHelper（输出请求头的命令），请直接填写请求头。
+McpNoteTrust	The source marked this server as trusted; TCode still asks before running its tools unless you allow them.	源配置把该服务器设为信任；TCode 仍会在运行工具前询问，除非你设置了允许。
+McpNoteFileReference	File references (${file:…}) are not supported; replace them with a value or an {env:VAR} reference.	不支持文件引用（${file:…}），请改为具体的值或 {env:VAR} 引用。
+McpElicitTitleFormat	{0} is asking for information	{0} 请求信息
+McpElicitSubmit	Submit	提交
+McpElicitDecline	Decline	拒绝
+McpElicitOpenUrl	Open in browser	在浏览器中打开
+McpElicitUrlHint	The page opens in your default browser; TCode cannot see what you enter there. When you're done, let the agent retry.	页面会在默认浏览器中打开，TCode 看不到你在页面上填写的内容。完成后让 Agent 重试即可。
+McpElicitPunycode	Warning: this domain uses internationalized characters and may imitate another site.	注意：该域名包含国际化字符，可能在仿冒其他网站。
+McpElicitInsecure	Warning: the link is not HTTPS.	注意：该链接不是 HTTPS。
+McpElicitUnsupported	This request uses a form TCode cannot display. You can only decline it.	该请求使用了 TCode 无法显示的表单，只能拒绝。
+McpElicitOpenFailed	Could not open the browser.	无法打开浏览器。
+McpFieldRequired	Required	必填
+McpFieldInteger	Enter a whole number	请输入整数
+McpFieldNumber	Enter a number	请输入数字
+McpFieldRangeFormat	Must be between {0} and {1}	取值范围为 {0} 到 {1}
+McpFieldLengthFormat	Length must be between {0} and {1}	长度应在 {0} 到 {1} 之间
+McpFieldFormatFormat	Invalid {0}	{0} 格式不正确
+McpFieldCountFormat	Choose between {0} and {1} options	请选择 {0} 到 {1} 项
+McpPromptArgumentMissingFormat	Fill in the prompt argument "{0}"	请填写提示词参数“{0}”
+McpWaitForTurn	MCP references can be sent after the current turn finishes.	当前轮结束后才能发送带 MCP 引用的消息。
+McpAttentionNeedsAuthFormat	MCP server {0} needs you to log in	MCP 服务器 {0} 需要登录
+McpAttentionUntrustedFormat	The project's .mcp.json adds MCP server {0}, which runs: {1}	项目的 .mcp.json 添加了 MCP 服务器 {0}，将运行：{1}
+Dismiss	Dismiss	关闭
+EditCut	Cut	剪切
+EditCopy	Copy	复制
+EditPaste	Paste	粘贴
+EditSelectAll	Select All	全选
+CompletionLoading	Loading…	正在加载…
+CompletionNoResults	No matches	没有匹配的结果
+McpRemoveReference	Remove	移除
+AssetSourceProject	Project	项目
+AssetSourceGlobal	Global	全局
+CommandSourceBuiltin	Built-in	内置
+BuiltinNewDescription	Start a new conversation	新建会话
+BuiltinModelDescription	Switch the model	切换模型
+BuiltinForkDescription	Fork this conversation	从当前位置分叉会话
+StepSkill	Use skill	使用 skill
+RoleTitle	Mode	模式
+RoleAgent	Agent	Agent
+RoleAgentDesc	Works on the task: edits files and runs commands	执行任务：可以修改文件、运行命令
+RolePlan	Plan	Plan
+RolePlanDesc	Investigates and writes a plan; read-only	调查后给出实施计划，只读
+RoleCycleHint	Shift+Tab to switch	Shift+Tab 切换
+BuiltinRoleDescription	Choose the mode	切换模式
+RoleModelUnavailableFormat	The mode's model {0} is not available	该模式指定的模型 {0} 不可用
+RoleAcp	ACP	ACP
+RoleAcpDesc	Designs the plan and delegates the work to subagents	设计方案、拆分任务，交给子 Agent 执行
+SettingsAssets	Commands, Skills & Modes	命令、Skills 与模式
+AssetsHint	Global items live in ~/.tcode; project items live in .agents at the project root and override global items with the same name.	全局项在 ~/.tcode 下；项目项在项目根的 .agents 下，同名时覆盖全局项。
+DefaultRoleLabel	Default mode	默认模式
+DefaultRoleHint	The mode new conversations start in	新会话开始时的模式
+AssetKindCommand	Command	命令
+AssetKindSkill	Skill	Skill
+AssetKindRole	Mode	模式
+AssetsCommandsTitle	Commands	命令
+AssetsSkillsTitle	Skills	Skills
+AssetsRolesTitle	Custom modes	自定义模式
+AssetsEmpty	None yet	暂无
+AssetsNewGlobal	New (global)	新建（全局）
+AssetsNewProject	New (project)	新建（项目）
+AssetsNoticesTitle	Needs attention	需要注意
+AssetShadowedFormat	{0} {1} ({2}) is overridden by the {3} ({4}) with the same name	{2}的{0} {1} 被同名的{4}{3}覆盖
+AssetsDirectories	Directories	目录
+AssetsGlobalDirectory	Global	全局
+AssetsProjectDirectory	Project	项目
+AssetsNoProject	Open a project to create project items.	打开一个项目后才能新建项目项。

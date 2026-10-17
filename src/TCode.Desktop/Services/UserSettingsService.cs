@@ -53,6 +53,10 @@ public sealed class UserSettingsService : IDisposable
 
     public void SetReduceMotion(bool value) => Update(root => SettingsFile.Set(root, "reduceMotion", value ? JsonValue.Create(true) : null));
 
+    public void SetOriginalImages(bool value) => Update(root => SettingsFile.Set(root, "originalImages", value ? JsonValue.Create(true) : null));
+
+    public void SetDefaultRole(string? role) => Update(root => SettingsFile.Set(root, "defaultRole", role is null or "agent" ? null : JsonValue.Create(role)));
+
     public void SetDefaultModel(string? modelRef) => Update(root => SettingsFile.Set(root, "model", modelRef is null ? null : JsonValue.Create(modelRef)));
 
     /// <summary>修改 settings.json：只改动涉及的节点，写完立即重新读取并通知。</summary>

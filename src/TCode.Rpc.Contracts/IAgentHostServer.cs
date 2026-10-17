@@ -80,6 +80,36 @@ public interface IAgentHostServer
     Task<SessionOptionsDto> SetOptionsAsync(string sessionId, SessionOptionsDto options, CancellationToken cancellationToken = default);
 
     Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：全局与 <paramref name="cwd"/> 项目中的服务器及其状态。</summary>
+    Task<McpServersDto> ListMcpServersAsync(string? cwd, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：服务器的工具（没有连接时临时连接，最多等待 startupTimeout）。</summary>
+    Task<McpToolsDto> ListMcpToolsAsync(string key, string? cwd, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：stderr 与连接日志。</summary>
+    Task<McpLogDto> GetMcpLogAsync(string key, string? cwd, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：用未保存的配置临时连接并执行 tools/list，不写文件、不进入连接池。</summary>
+    Task<McpTestResult> TestMcpServerAsync(McpTestRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：断开并重新连接；<paramref name="login"/> 为 true 时允许打开浏览器进行 OAuth 登录。</summary>
+    Task RestartMcpServerAsync(string key, string? cwd, bool login, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：删除该服务器保存的 OAuth 令牌并断开。</summary>
+    Task LogoutMcpServerAsync(string key, string? cwd, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：信任或忽略项目 .mcp.json 中的服务器。</summary>
+    Task TrustMcpServerAsync(string key, string cwd, bool trusted, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP：项目可用服务器的资源与提示词（Composer 的 @ 与 /）。</summary>
+    Task<McpCatalogDto> GetMcpCatalogAsync(string? cwd, CancellationToken cancellationToken = default);
+
+    /// <summary>输入框 @ 文件：在目录的文件索引中模糊搜索。</summary>
+    Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>cwd 所在项目生效的 command / skill / role（全局 ~/.tcode 与项目 .agents 合并后）。</summary>
+    Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -95,9 +125,21 @@ public interface IAgentHostClient
 
     /// <summary>需要审批的工具调用（按权限档位与工作区边界判定）执行前向用户请求审批。</summary>
     Task<ToolApprovalResponse> RequestToolApprovalAsync(ToolApprovalRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>MCP 服务器状态或配置变化（notification）。</summary>
+    void OnMcpChanged(McpChangedNotification notification);
+
+    /// <summary>MCP 服务器请求用户输入；用户关闭或没有界面时返回 cancel。</summary>
+    Task<McpElicitResponse> RequestMcpElicitationAsync(McpElicitRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>用系统浏览器打开 MCP OAuth 授权页。</summary>
+    Task<McpOpenUrlResponse> OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>command / skill / role 的定义文件变化（notification）。</summary>
+    void OnAssetsChanged(AssetsChangedNotification notification);
 }
 
 public static class RpcProtocol
 {
-    public const int Version = 13;
+    public const int Version = 18;
 }

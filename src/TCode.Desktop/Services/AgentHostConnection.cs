@@ -120,6 +120,53 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
     void IAgentHostClient.OnModelsChanged(ModelsChangedNotification notification) =>
         Dispatcher.UIThread.Post(() => ModelsChanged?.Invoke(notification));
 
+    /// <summary>MCP 服务器状态或配置变化（UI 线程上触发）。</summary>
+    public event Action<McpChangedNotification>? McpChanged;
+
+    void IAgentHostClient.OnMcpChanged(McpChangedNotification notification) =>
+        Dispatcher.UIThread.Post(() => McpChanged?.Invoke(notification));
+
+    /// <summary>command / skill / role 的定义文件变化（UI 线程上触发）。</summary>
+    public event Action<AssetsChangedNotification>? AssetsChanged;
+
+    void IAgentHostClient.OnAssetsChanged(AssetsChangedNotification notification) =>
+        Dispatcher.UIThread.Post(() => AssetsChanged?.Invoke(notification));
+
+    /// <summary>MCP elicitation 的处理器（UI 线程上调用）；没有设置时一律 cancel。</summary>
+    public Func<McpElicitRequest, Task<McpElicitResponse>>? ElicitationHandler { get; set; }
+
+    async Task<McpElicitResponse> IAgentHostClient.RequestMcpElicitationAsync(McpElicitRequest request, CancellationToken cancellationToken)
+    {
+        var handler = ElicitationHandler;
+        if (handler is null)
+        {
+            return new McpElicitResponse("cancel");
+        }
+        return await Dispatcher.UIThread.InvokeAsync(() => handler(request)).WaitAsync(cancellationToken);
+    }
+
+    /// <summary>MCP OAuth：用系统默认浏览器打开授权页（Host 在本机回环地址等待回调）。</summary>
+    Task<McpOpenUrlResponse> IAgentHostClient.OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+        {
+            return Task.FromResult(new McpOpenUrlResponse(false));
+        }
+        try
+        {
+            var start = OperatingSystem.IsMacOS() ? new ProcessStartInfo("open") { ArgumentList = { uri.AbsoluteUri } }
+                : OperatingSystem.IsWindows() ? new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }
+                : new ProcessStartInfo("xdg-open") { ArgumentList = { uri.AbsoluteUri } };
+            using var process = Process.Start(start);
+            return Task.FromResult(new McpOpenUrlResponse(process is not null));
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            logger.LogWarning(ex, "Opening the MCP login page failed");
+            return Task.FromResult(new McpOpenUrlResponse(false));
+        }
+    }
+
     async Task<ToolApprovalResponse> IAgentHostClient.RequestToolApprovalAsync(ToolApprovalRequest request, CancellationToken cancellationToken)
     {
         var handler = ApprovalHandler;

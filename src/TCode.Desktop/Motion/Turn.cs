@@ -47,7 +47,7 @@ public static class Turn
         public Controller(Control control)
         {
             _control = control;
-            _gate = new MotionGate(control);
+            _gate = MotionGate.For(control);
             control.RenderTransform = _rotate;
             control.RenderTransformOrigin = RelativePoint.Center;
             _angle = new MotionValue(control, 0, a => _rotate.Angle = a);

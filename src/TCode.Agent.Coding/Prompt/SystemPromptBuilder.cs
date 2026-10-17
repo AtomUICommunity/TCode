@@ -15,7 +15,7 @@ public sealed record PromptSection(string Name, string Text);
 public static class SystemPromptBuilder
 {
     /// <summary>每个目录只取第一个命中的上下文文件。</summary>
-    public static readonly string[] ContextFileNames = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
+    public static readonly string[] ContextFileNames = ["AGENTS.override.md", "AGENTS.md"];
 
     /// <summary>project_context 节的总预算（UTF-8 字节）。</summary>
     public const int ContextBudgetBytes = 32 * 1024;
@@ -30,6 +30,7 @@ public static class SystemPromptBuilder
         "Show file paths clearly when working with files.",
         "Never revert changes you did not make unless the user explicitly asks; the workspace may contain edits by the user or other agents.",
         "Do not run destructive commands (for example `git reset --hard`, `git checkout --`, `git clean -f`, `git push --force`, `rm -rf`) unless the user explicitly asks.",
+        "In user messages, @path refers to a file or directory in the workspace, relative to the working directory. Read it with your tools when you need its contents; the message only carries the path.",
     ];
 
     public static IReadOnlyList<PromptSection> Build(WorkspaceRoots workspace, IReadOnlyList<IAgentTool> tools, ModelInfo model,

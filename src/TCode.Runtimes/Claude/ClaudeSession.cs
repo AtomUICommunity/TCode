@@ -97,7 +97,16 @@ internal sealed class ClaudeSession : IRuntimeSession
         }
         InitializeResponse = await init;
         _startupFailure.TrySetResult(null);
+        _host.OnCommands(ParseCommands(InitializeResponse));
     }
+
+    /// <summary>initialize 应答中的 commands：[{name, description, argumentHint}]（规格附录 e1）。</summary>
+    internal static IReadOnlyList<RuntimeCommand> ParseCommands(JsonElement initialize) =>
+        initialize.Arr("commands").Select(c => c.Str("name") is { Length: > 0 } name
+                ? new RuntimeCommand(name.TrimStart('/'), c.Str("description") is { Length: > 0 } d ? d : null,
+                    c.Str("argumentHint") is { Length: > 0 } hint ? hint : null)
+                : null)
+            .OfType<RuntimeCommand>().ToList();
 
     // ---------------- 轮次 ----------------
 
@@ -150,7 +159,7 @@ internal sealed class ClaudeSession : IRuntimeSession
     /// <summary>在线修改权限模式、模型与 effort（§5.3–§5.5）；模型与 effort 失败只忽略，本轮沿用当前设置。</summary>
     private async Task ApplyOptionsAsync(TurnOptions options, CancellationToken ct)
     {
-        var permission = ClaudeRuntime.PermissionModeFor(options.Permission);
+        var permission = ClaudeRuntime.PermissionModeFor(options);
         if (permission != _appliedPermissionMode)
         {
             // 权限切换失败时不能静默沿用旧模式（用户以为已经收紧或放开），直接报错
@@ -915,8 +924,21 @@ internal sealed class ClaudeSession : IRuntimeSession
     }
 
     /// <summary>拆除（§10.3）：在跑的轮次先中断（最多 2 秒），然后关闭 stdin，由 CliProcess 等待退出并结束进程树。</summary>
+    /// <summary>会话结束时删除的临时文件（--mcp-config）。</summary>
+    public string? TempFile { get; init; }
+
     public async ValueTask DisposeAsync()
     {
+        if (TempFile is { } temp)
+        {
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (IOException)
+            {
+            }
+        }
         if (_turn is { Done: false } turn)
         {
             Enqueue(() => InterruptAsync(turn));

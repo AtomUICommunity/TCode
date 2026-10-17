@@ -36,6 +36,8 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 
   "language": "zh-CN",              // zh-CN | en-US
   "theme": "system",                // system | dark | light
+  "reduceMotion": false,            // true：关闭界面动画（macOS 系统的“减少动态效果”同样生效）
+  "originalImages": false,          // true：Markdown 图片按原始清晰度显示；默认按显示尺寸压缩解码以节省内存，点击图片查看的始终是原图
 
   "providers": {
     // ① 内置厂商：只写 Key
@@ -81,6 +83,9 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 | `providers` | object | `{}` | 键为厂商 id |
 | `webSearch` | object | 无 | 内置 Agent 的 `web_search` 后端，见 §2.6；不配置就不提供该工具 |
 | `permissions` | object | 无 | `additionalDirectories`：除 cwd 外，也算作工作区的目录。这些目录内的只读操作不需要审批 |
+| `mcpServers` | object | `{}` | MCP 服务器，键为服务器名（`[A-Za-z0-9_-]{1,32}`），见 §2.7 |
+| `defaultRole` | string | `agent` | 新会话的模式：`agent`、`plan`、`acp`，或自定义模式（`roles/*.md`）的名字。当前项目没有这个自定义模式时退回 `agent`。见 [design/composer.md](design/composer.md) §10.3 |
+| `skills` | object | 无 | `autoDiscover`（默认 `true`）：在内置 Agent 的系统提示里列出 skill，让模型自己加载。设为 `false` 后只能在输入框里用 `/skill名` 显式调用。skill 的目录约定见 [design/composer.md](design/composer.md) §4 |
 
 ### 2.2 厂商（`providers.<id>`）
 
@@ -160,6 +165,36 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 | `baseUrl` | 自定义端点。使用 SearXNG 时必须填写，值为实例地址；实例必须在 `search.formats` 中开启 `json` |
 
 `web_fetch` 不需要配置。对外的网络请求在 Ask 档会按域名请求审批。
+
+### 2.7 MCP 服务器（`mcpServers`）
+
+设计见 [design/mcp.md](design/mcp.md)，协议规格见 [protocols/mcp.md](protocols/mcp.md)。
+
+```jsonc
+"mcpServers": {
+  "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"] },
+  "github": { "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer {env:GITHUB_TOKEN}" } },
+  "linear": { "url": "https://mcp.linear.app/mcp" },                 // 无 Authorization 头：401 时进入 OAuth 登录
+  "sentry": { "url": "https://mcp.sentry.dev/mcp", "enabled": false }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `command` / `args` / `env` / `cwd` / `envFile` | 本地（stdio）服务器。`cwd` 默认为会话的项目目录；`envFile` 为 dotenv 文件，其中的变量合并进 `env`（`env` 中写明的优先） |
+| `url` / `headers` | 远程服务器。默认使用 Streamable HTTP，不通时自动回退到旧版 HTTP+SSE |
+| `type` | `stdio` \| `http` \| `sse`，通常可以省略；写 `sse` 表示强制使用旧版 SSE |
+| `oauth` | `clientId` / `clientSecret`（预注册的客户端）、`callbackPort`（固定的回调端口）、`scopes` |
+| `enabled` | 默认 `true` |
+| `disabledTools` | 不暴露给模型的工具（MCP 原名） |
+| `alwaysAllow` | Ask 档下不需要审批的工具；`"*"` 表示整个服务器 |
+| `startupTimeout` / `toolTimeout` | 秒，默认分别为 30 和 600 |
+| `name` | 显示名 |
+
+- **变量**：所有字符串都支持 `{env:VAR}`、`$VAR`、`${VAR}`、`${VAR:-default}`、`${env:VAR}`、`${workspaceFolder}`、`${userHome}`。变量未设置时展开为空串，并在设置页提示。
+- **项目级配置**：项目根目录（git 根）的 `.mcp.json`，格式与 Claude Code 相同（顶层为 `mcpServers`），覆盖同名的全局服务器。项目服务器需要用户确认信任后才会启动；信任记录保存在 `~/.tcode/mcp/trust.json`，配置改变后需要重新确认。
+- **工具名**：模型看到的名字是 `mcp__<服务器>__<工具>`，长度上限 64。
+- **错误处理**：单个服务器的配置有误时，只停用该服务器，不影响整个文件。
 
 ## 3. 内置目录
 

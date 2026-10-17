@@ -17,6 +17,10 @@ public sealed class ImageAttachmentViewModel(string path, string mimeType, int n
     public int Number { get; } = number;
     public string FileName => System.IO.Path.GetFileName(Path);
     public string Placeholder => ImagePrompt.Placeholder(Number);
+
+    /// <summary>输入框里代表这张图片的 tag：显示「图片 #N」，纯文本投影为占位符「[图片 #N]」。</summary>
+    public TCode.Desktop.Controls.Composer.TagSegment Tag =>
+        new(TCode.Desktop.Controls.Composer.TagKind.Image, Number.ToString(System.Globalization.CultureInfo.InvariantCulture), Placeholder.Trim('[', ']'));
     public bool Exists => File.Exists(Path);
 
     public Bitmap? Thumbnail

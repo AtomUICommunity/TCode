@@ -1,0 +1,3 @@
+[submodule "external/StreamMark"]
+	path = external/StreamMark
+	url = https://github.com/239573049/StreamMark.git

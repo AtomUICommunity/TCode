@@ -89,7 +89,10 @@ public sealed class CodexRuntime(ExecutableLocator? locator = null) : IAgentRunt
         }
         var cli = CliProcess.Start(path, ["app-server"], request.Cwd, Environment, _locator);
         var session = new CodexSession(cli.StandardOutput, cli.StandardInput, request.Host, DeveloperInstructions, cli,
-            () => cli.DescribeExit("Codex"));
+            () => cli.DescribeExit("Codex"))
+        {
+            McpBridge = request.McpBridge,
+        };
         try
         {
             await session.InitializeAsync(cancellationToken);

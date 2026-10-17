@@ -46,6 +46,62 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
     /// <summary>审批交给 UI；未设置、异常或断连时一律拒绝。</summary>
     public Func<RuntimeApprovalRequest, CancellationToken, ValueTask<ApprovalDecision>>? ApprovalHandler { get; set; }
 
+    /// <summary>启动 CLI 时注入的 TCode MCP 桥接（返回 null 表示不注入）。</summary>
+    public Func<McpBridgeLaunch?>? McpBridge { get; set; }
+
+    // ---------------- 模式与命令（docs/design/composer.md §11） ----------------
+
+    private RuntimeMode _mode = RuntimeMode.Agent;
+    private string? _pendingReminder;
+
+    public bool SupportsSubagents => _runtime.Descriptor.Capabilities.SupportsSubagents;
+
+    public void SetMode(string name, bool readOnly, string? reminder)
+    {
+        lock (_gate)
+        {
+            _mode = new RuntimeMode(name, readOnly);
+            _pendingReminder = reminder;
+        }
+    }
+
+    /// <summary>运行时最近一次报告的斜杠命令。</summary>
+    public IReadOnlyList<RuntimeCommand> Commands { get; private set; } = [];
+
+    public event Action<IReadOnlyList<(string Name, string? Description, string? ArgumentHint)>>? CommandsChanged;
+
+    void IRuntimeHost.OnCommands(IReadOnlyList<RuntimeCommand> commands)
+    {
+        Commands = commands;
+        CommandsChanged?.Invoke(commands.Select(c => (c.Name, c.Description, c.ArgumentHint)).ToList());
+    }
+
+    /// <summary>取出待发的模式说明，放在发给 Agent 的用户消息最前面（转录中的消息不变）。</summary>
+    private UserMessage WithModeReminder(UserMessage message, out string? reminder)
+    {
+        // 以 /命令 开头的消息必须保持文字开头才会被运行时识别为命令：说明留到下一轮
+        if (message.Content.OfType<TextContent>().FirstOrDefault()?.Text.TrimStart().StartsWith('/') == true)
+        {
+            reminder = null;
+            return message;
+        }
+        lock (_gate)
+        {
+            reminder = _pendingReminder;
+            _pendingReminder = null;
+        }
+        return reminder is null ? message : message with { Content = [new TextContent(reminder), .. message.Content] };
+    }
+
+    /// <summary>本轮没有发出去（出错、中止）：说明留到下一轮，除非期间模式又变了。</summary>
+    private void RestoreReminder(string? reminder)
+    {
+        lock (_gate)
+        {
+            _pendingReminder ??= reminder;
+        }
+    }
+
     public bool IsRunning
     {
         get
@@ -203,7 +259,12 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
     private async Task<bool> RunTurnAsync(UserMessage message, CancellationToken ct)
     {
         await AppendAsync(message).ConfigureAwait(false);
-        var options = new TurnOptions(Model, ThinkingLevel, FastMode, PermissionMode);
+        TurnOptions options;
+        lock (_gate)
+        {
+            options = new TurnOptions(Model, ThinkingLevel, FastMode, PermissionMode) { Mode = _mode };
+        }
+        var outgoing = WithModeReminder(message, out var reminder);
         var writer = new TurnWriter(Model, e => EmitAsync(e), m =>
         {
             lock (_gate)
@@ -218,17 +279,19 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
             {
                 _writer = writer;
             }
-            await session.RunTurnAsync(message.ForModel(Model.SupportsImages), options, writer, ct).ConfigureAwait(false);
+            await session.RunTurnAsync(outgoing.ForModel(Model.SupportsImages), options, writer, ct).ConfigureAwait(false);
             await writer.CompleteAsync(ct.IsCancellationRequested ? StopReason.Aborted : StopReason.Stop).ConfigureAwait(false);
             return !ct.IsCancellationRequested;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            RestoreReminder(reminder);
             await writer.CompleteAsync(StopReason.Aborted, "Request aborted").ConfigureAwait(false);
             return false;
         }
         catch (Exception ex)
         {
+            RestoreReminder(reminder);
             await writer.CompleteAsync(StopReason.Error, ex.Message).ConfigureAwait(false);
             // 会话可能已损坏（进程退出、协议错误）：丢弃，下一次提问时用原生会话 id 重启并恢复。
             await ResetSessionAsync().ConfigureAwait(false);
@@ -245,7 +308,7 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
             {
                 return existing;
             }
-            var session = await _runtime.StartSessionAsync(new RuntimeSessionRequest(_cwd, options, _nativeSessionId, this), ct)
+            var session = await _runtime.StartSessionAsync(new RuntimeSessionRequest(_cwd, options, _nativeSessionId, this, McpBridge?.Invoke()), ct)
                 .ConfigureAwait(false);
             lock (_gate)
             {

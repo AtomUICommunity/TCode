@@ -24,7 +24,8 @@ public sealed record ModelDto(
     string Ref,
     string ProviderName,
     string? Runtime = null,
-    bool SupportsImages = false);
+    bool SupportsImages = false,
+    bool SupportsSubagents = true);
 
 /// <summary>Key 的来源：none（缺失）/ settings（settings.json 明文）/ environment（环境变量）/ notRequired（本地服务）。</summary>
 public enum KeySourceDto
@@ -153,8 +154,9 @@ public sealed record ModelsChangedNotification(IReadOnlyList<ModelDto> Models, I
 /// <summary>会话参数；为 null 的字段保持不变（新建会话时取模型默认值）。</summary>
 /// <param name="PermissionMode">权限档位：ask（询问，默认）/ autoApprove（自动放行，保留沙箱）/ fullAccess（完全授权，无沙箱）。
 /// 所有会话都有；重新打开会话时 fullAccess 回到 ask。</param>
+/// <param name="Role">会话的 role（docs/design/composer.md §10.3）：agent / ask / plan / 自定义 role 名。</param>
 public sealed record SessionOptionsDto(string? ThinkingLevel = null, bool? FastMode = null, int? ContextWindow = null,
-    string? PermissionMode = null);
+    string? PermissionMode = null, string? Role = null);
 
 public sealed record CreateSessionRequest(string Cwd, string ModelId, SessionOptionsDto? Options = null);
 
@@ -200,7 +202,8 @@ public sealed record HistoryMessageDto(
     string? StopReason = null,
     string? ErrorMessage = null,
     UsageDto? Usage = null,
-    string? Source = null);
+    string? Source = null,
+    IReadOnlyList<PromptSegmentDto>? Segments = null);
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(HistoryText), "text")]
@@ -228,8 +231,16 @@ public enum StreamingBehaviorDto
 }
 
 /// <param name="Images">图片附件（已保存在客户端附件目录）；AgentHost 读取文件、以 base64 发给模型，会话记录只保存路径。</param>
+/// <param name="McpResources">@ 引用的 MCP 资源（Host 读取后附在消息末尾）。</param>
+/// <param name="McpPrompt">/ 选择的 MCP 提示词（Host 展开后放在消息开头）。</param>
+/// <param name="Text">发给模型的文字（command tag 不在其中，由 Host 按 <paramref name="Segments"/> 展开后加在前面）。</param>
+/// <param name="Segments">输入框的内容（文字与 tag），用于展开 command 与在转录中显示；没有 tag 时可以省略。</param>
 public sealed record PromptRequest(string SessionId, string Text, StreamingBehaviorDto WhileRunning = StreamingBehaviorDto.FollowUp,
-    IReadOnlyList<ImageAttachmentDto>? Images = null);
+    IReadOnlyList<ImageAttachmentDto>? Images = null, IReadOnlyList<McpResourceRefDto>? McpResources = null, McpPromptRefDto? McpPrompt = null,
+    IReadOnlyList<PromptSegmentDto>? Segments = null);
+
+/// <summary>输入框的一段（docs/design/composer.md §12）：文字，或 tag（kind 为 file / folder / command / skill / mcpResource / mcpPrompt / image）。</summary>
+public sealed record PromptSegmentDto(string Kind, string? Text = null, string? Value = null, string? Label = null);
 
 public sealed record ImageAttachmentDto(string Path, string MimeType);
 

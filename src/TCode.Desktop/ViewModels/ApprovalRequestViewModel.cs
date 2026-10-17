@@ -26,6 +26,7 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
         "fileChange" => LucideKind.FileCode,
         "read" => LucideKind.Eye,
         "network" => LucideKind.Globe,
+        "mcp" => LucideKind.Plug,
         _ => LucideKind.Wrench,
     };
 
@@ -35,6 +36,7 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
         "fileChange" => TCodeLangResourceKind.ApprovalFileChange,
         "read" => TCodeLangResourceKind.ApprovalRead,
         "network" => TCodeLangResourceKind.ApprovalNetwork,
+        "mcp" => TCodeLangResourceKind.ApprovalMcp,
         _ => TCodeLangResourceKind.ApprovalTool,
     });
 
@@ -42,7 +44,10 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
     public string Title => string.IsNullOrWhiteSpace(Request.Title) ? Request.ToolName : Request.Title;
 
     /// <summary>内置 Agent 的参数 JSON（外部运行时一般已在 Title 中说明）。</summary>
-    public string? Details => string.IsNullOrWhiteSpace(Request.Title) && Request.ArgumentsJson is { Length: > 2 } args ? args : null;
+    /// <remarks>MCP 工具总是显示参数：调用第三方服务器之前让用户看到要发送的内容（规格 §4.2）。</remarks>
+    public string? Details => (string.IsNullOrWhiteSpace(Request.Title) || Request.Kind == "mcp") && Request.ArgumentsJson is { Length: > 2 } args
+        ? args
+        : null;
     public bool HasDetails => Details is not null;
     public string? Reason => Request.Reason;
     public bool HasReason => !string.IsNullOrWhiteSpace(Request.Reason);

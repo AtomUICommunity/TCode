@@ -49,6 +49,8 @@ public enum ToolAccess
     Write,
     Execute,
     Network,
+    /// <summary>外部工具（MCP 服务器）：Domain 为服务器名，Command 为工具名。</summary>
+    External,
 }
 
 /// <param name="Paths">涉及的文件 / 目录（绝对路径）。</param>

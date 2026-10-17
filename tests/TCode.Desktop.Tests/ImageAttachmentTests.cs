@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TCode.Desktop.Controls.Composer;
 using TCode.Desktop.Services;
 using TCode.Desktop.ViewModels;
 using TCode.Desktop.Views;
@@ -32,7 +33,6 @@ public sealed class ImageAttachmentTests
         Assert.Equal("[Image #1: /tmp/a.png]", ImagePrompt.Expand("", [a]));
         // 移除后再添加造成的编号空缺：按附件顺序重新编号
         Assert.Equal("[Image #1: /tmp/a.png] [Image #2: /tmp/c.png]", ImagePrompt.Expand("[图片 #1] [图片 #3]", [a, c]));
-        Assert.Equal("看 ", ImagePrompt.RemovePlaceholder("看 [图片 #1]", 1));
         Assert.DoesNotContain("/tmp/", ImagePrompt.Collapse(text));
     }
 
@@ -72,17 +72,17 @@ public sealed class ImageAttachmentTests
             var conversation = vm.Conversation;
             var a = conversation.AddAttachment(first, "image/png");
             var b = conversation.AddAttachment(second, "image/png");
-            conversation.ComposerText = $"对比 {a.Placeholder} 和 {b.Placeholder} 的配色差异";
+            conversation.Composer.SetContent([new TextSegment("对比 "), a.Tag, new TextSegment(" 和 "), b.Tag, new TextSegment(" 的配色差异")]);
             await Settle();
             var composer = window.GetVisualDescendants().OfType<ComposerView>().Single(c => c.Classes.Contains("compact"));
             Assert.Contains("multiline", composer.Classes);
             HeadlessApp.Save(window, "composer-images");
 
-            // 移除第二张：占位符一并去掉
+            // 移除第二张：图片 tag 一并去掉
             conversation.RemoveAttachmentCommand.Execute(b);
             Assert.Equal("对比 [图片 #1] 和  的配色差异", conversation.ComposerText);
             b = conversation.AddAttachment(second, "image/png");
-            conversation.ComposerText = $"对比 {a.Placeholder} 和 {b.Placeholder} 的配色差异";
+            conversation.Composer.SetContent([new TextSegment("对比 "), a.Tag, new TextSegment(" 和 "), b.Tag, new TextSegment(" 的配色差异")]);
 
             conversation.SendCommand.Execute(null);
             Assert.Empty(conversation.Attachments);

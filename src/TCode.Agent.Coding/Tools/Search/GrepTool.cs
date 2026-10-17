@@ -114,7 +114,7 @@ public sealed class GrepTool(ToolContext context) : IAgentTool
 
     private static List<string> RgArguments(Query q, string scope)
     {
-        List<string> args = ["--json", "--hidden", "--no-messages", "-g", "!.git"];
+        List<string> args = ["--json", "--hidden", "--no-require-git", "--no-messages", "-g", "!.git"];
         if (q.IgnoreCase)
         {
             args.Add("-i");

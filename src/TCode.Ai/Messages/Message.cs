@@ -32,6 +32,12 @@ public sealed record UserMessage(IReadOnlyList<ContentBlock> Content) : Message
     public string? Source { get; init; }
 
     /// <summary>
+    /// 用户在输入框里看到的内容（文字与 tag，docs/design/composer.md §12）。<see cref="Content"/> 是实际发给模型的版本
+    /// （command 已展开）；没有 tag 时为 null，直接显示 Content。
+    /// </summary>
+    public IReadOnlyList<MessageSegment>? Display { get; init; }
+
+    /// <summary>
     /// 发给模型的版本：模型不支持图片时去掉全部图片，否则只去掉没有数据的图片
     /// （提示词里已有图片路径，Agent 仍可自行读取）。没有需要去掉的图片时返回自身。
     /// </summary>
@@ -44,6 +50,9 @@ public sealed record UserMessage(IReadOnlyList<ContentBlock> Content) : Message
         return this with { Content = Content.Where(c => c is not ImageContent image || (supportsImages && image.HasData)).ToArray() };
     }
 }
+
+/// <summary>用户消息显示用的一段：文字（<see cref="Text"/>）或 tag（<see cref="Kind"/> 为 file / folder / command / skill / mcpResource / mcpPrompt / image）。</summary>
+public sealed record MessageSegment(string Kind, string? Text = null, string? Value = null, string? Label = null);
 
 public sealed record AssistantMessage(IReadOnlyList<ContentBlock> Content) : Message
 {

@@ -15,7 +15,9 @@ public sealed class SystemPromptTracker
     private readonly WorkspaceRoots _workspace;
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly IReadOnlyList<PromptSection>? _extra;
-    private readonly IReadOnlyList<PromptSection> _initial;
+    private IReadOnlyList<PromptSection> _initial;
+    /// <summary>新会话：开头快照写入会话文件之前，可按当时的动态节重建。</summary>
+    private readonly bool _initialMutable;
     /// <summary>会话文件中当前生效的快照；null 表示尚未记录（新会话在第一次运行时写入开头快照）。</summary>
     private IReadOnlyList<PromptSection>? _recorded;
 
@@ -28,7 +30,16 @@ public sealed class SystemPromptTracker
         _tools = tools;
         _initial = initial;
         _recorded = recorded;
+        _initialMutable = recorded is null;
     }
+
+    /// <summary>动态节（MCP 等），在 <see cref="UpdatesAsync"/> 之前由调用方更新。</summary>
+    public IReadOnlyList<PromptSection> Dynamic { get; set; } = [];
+
+    private IReadOnlyList<PromptSection>? Extra => Dynamic.Count == 0 ? _extra : [.. _extra ?? [], .. Dynamic];
+
+    /// <summary>当前生效的系统提示（尚未记录时为开头的）是否有这一节。</summary>
+    public bool HasSection(string name) => (_recorded ?? _initial).Any(s => s.Name == name);
 
     /// <summary>发给模型的开头系统提示。</summary>
     public string InitialPrompt => SystemPromptBuilder.Render(_initial);
@@ -46,12 +57,17 @@ public sealed class SystemPromptTracker
 
     public async ValueTask<IReadOnlyList<Message>> UpdatesAsync(ModelInfo model, CancellationToken cancellationToken)
     {
+        var current = SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra);
         if (_recorded is null)
         {
+            // 新会话第一轮：开头直接包含当时的动态节（例如已连上的 MCP 服务器），不必再追加补丁
+            if (_initialMutable)
+            {
+                _initial = current;
+            }
             await _store.AppendSystemPromptAsync(_initial, CancellationToken.None);
             _recorded = _initial;
         }
-        var current = SystemPromptBuilder.Build(_workspace, _tools, model, extra: _extra);
         if (SystemPromptBuilder.Diff(_recorded, current) is not { } patch)
         {
             return [];

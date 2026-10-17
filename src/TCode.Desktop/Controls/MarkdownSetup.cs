@@ -30,6 +30,9 @@ public static class MarkdownSetup
             {
                 DiskCacheDirectory = Path.Combine(ConfigPaths.Home, "cache", "images"),
                 SvgRasterizer = new SvgImageRasterizer(),
+                DecodeDensity = s_originalImages ? null : CompressedDecodeDensity,
+                // 缩小后的图片以 WebP 存进磁盘缓存，再次打开时不再解码原图
+                ThumbnailEncoder = new WebPImageEncoder(),
             }),
             // 文本区右键菜单暂时关闭：StreamMark 创建的是 Avalonia 原生 MenuFlyout，其 MenuFlyoutPresenter
             // 在 AtomUI 主题下没有模板（AtomUI 只为自己的 MenuFlyoutPresenter 提供），弹出后是 0 尺寸的空菜单。
@@ -59,6 +62,24 @@ public static class MarkdownSetup
     });
 
     public static MarkdownServices Services => Shared.Value;
+
+    // 默认压缩：文档内图片按逻辑尺寸解码（每个逻辑像素 1 个物理像素），Retina 上内存约为原来的 1/4；点击查看时加载原图
+    private const double CompressedDecodeDensity = 1;
+    private static bool s_originalImages;
+
+    /// <summary>Markdown 图片按原始清晰度显示（settings.json 的 originalImages）；修改后对之后排版的图片生效。</summary>
+    public static bool OriginalImages
+    {
+        get => s_originalImages;
+        set
+        {
+            s_originalImages = value;
+            if (Shared.IsValueCreated)
+            {
+                Shared.Value.Images.DecodeDensity = value ? null : CompressedDecodeDensity;
+            }
+        }
+    }
 
     /// <summary>允许读取本地图片的目录（项目目录）。</summary>
     public static void SetAllowedFileRoots(IEnumerable<string> roots)

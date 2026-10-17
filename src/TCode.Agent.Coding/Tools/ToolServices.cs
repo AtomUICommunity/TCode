@@ -16,4 +16,7 @@ public sealed record ToolServices
 
     /// <summary>子 Agent 与跨会话消息的协调器（null 表示不提供 agent / send_message / list_agents）。</summary>
     public IAgentCoordinator? Agents { get; init; }
+
+    /// <summary>为会话创建动态工具来源（MCP；null 表示没有）。每个会话（含子 Agent）各创建一个，会话关闭时释放。</summary>
+    public Func<ToolContext, IDynamicToolSource>? DynamicTools { get; init; }
 }

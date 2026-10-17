@@ -26,6 +26,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Sidebar = sidebar;
         Conversation = conversation;
         Workbench = workbench;
+        conversation.Files.OpenFiles = () => workbench.Tabs.OfType<FileTabViewModel>().Select(t => t.FilePath);
         Themes = themes;
         this.userSettings = userSettings;
         this.host = host;

@@ -272,3 +272,34 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
   - self-test 通过；
   - AOT Host 通过 RPC 端到端测试。
 
+
+## 13. 完成核对（2026-10-16）
+
+每一项都列出实现位置和验证方式。测试文件位于 `tests/`；“AOT”指在 NativeAOT 二进制中执行 `TCode.AgentHost --self-test`，或用 AOT Host 跑 `RpcEndToEndTests`。
+
+| 阶段 | 项目 | 实现 | 验证 |
+|---|---|---|---|
+| P1 | 工具契约 v2、并发（Exclusive）、进度有序、Details 持久化 | `TCode.Agent/AgentTool.cs`、`Agent.cs` | `ToolExecutionTests`（4 项） |
+| P1 | 系统提示分节、冻结开头、追加 SystemMessage 补丁、`systemPrompt` 快照与恢复 | `Agent.Coding/Prompt/*`、`SessionStore` | `SystemPromptTests`（4 项） |
+| P1 | 上下文文件（override > AGENTS > CLAUDE，止于仓库根，去重，32KiB） | `SystemPromptBuilder.LoadContextFiles` | `SystemPromptTests.ContextFiles_*` |
+| P1 | 工作区边界（符号链接）、审批策略、本会话允许、只读命令白名单 | `Workspace/PermissionPolicy.cs`、`ReadOnlyCommands.cs` | `PermissionPolicyTests`（20 项） |
+| P1 | RPC v13：`DetailsJson`、`ToolExecutionUpdated`、`Source` | `TCode.Rpc.Contracts`、`SessionManager.Map` | `RpcEndToEndTests`（含 AOT Host）、Desktop 端到端测试 |
+| P2 | read：行号、分页、图片、二进制、目录 | `Tools/Files/ReadTool.cs` | `FileToolTests.Read_*` |
+| P2 | write：先读后改、新建与 diff | `WriteTool.cs` | `FileToolTests.Write_*` |
+| P2 | edit：多段、唯一、重叠、归一化容错、保留 BOM 与 CRLF、过期检测、参数容错 | `EditTool.cs`、`FileStateTracker.cs` | `FileToolTests.Edit_*`、`Apply_*`、`ParseEdits_*`，AOT |
+| P2 | 子目录 AGENTS.md 按需加载 | `ToolContext.NestedInstructionsFor` | `FileToolTests.NestedContextFiles_*` |
+| P2 | ls / glob / grep（rg → git grep → 内置），.gitignore、点文件、三种输出模式 | `Tools/Search/*` | `SearchToolTests`：三种后端都实测过（rg 14.1.1、git grep、内置实现），另有 AOT 自检。rg 实测时发现非 git 目录不读 .gitignore，已加 `--no-require-git` 修复 |
+| P3 | bash：超时、终止进程树、尾部截断与日志、退出码 | `Tools/Shell/BashTool.cs`、`OutputCapture.cs` | `BashToolTests`（5 项） |
+| P3 | 后台任务、通知注入、自动开始下一轮、task_stop | `BackgroundTasks.cs`、`AgentSession.Deliver`、`TaskStopTool.cs` | `BashToolTests.Background_*`、`TaskStop_*`、`Session_InjectsTaskNotification_*` |
+| P4 | task_create / get / list / update、依赖、持久化与恢复 | `Tools/Tasks/*`、`TasksEntry` | `TaskAndWebToolTests.TaskTools_*`、`Tasks_ArePersisted*` |
+| P5 | HTML 转 Markdown、正文提取 | `Tools/Web/HtmlToMarkdown.cs`、`ReadabilityExtractor.cs` | `TaskAndWebToolTests.HtmlToMarkdown_*`、`Readability_*`，AOT |
+| P5 | web_fetch：SSRF、http 升级、同站 / 跨站重定向、分页、缓存 | `WebFetcher.cs`、`WebFetchTool.cs` | `Fetcher_*`（7 项）、`WebFetch_*`（2 项） |
+| P5 | web_search：四种后端、域名过滤、settings 配置 | `WebSearch.cs`、`WebSearchTool.cs`、`TCode.Config` | `WebSearch_*`、`Tavily_*`、`Exa_*`、`Searxng_*`、`Providers_*`：四种后端都用桩 HTTP 验证了请求（地址、认证头、请求体或查询参数、域名过滤）和响应解析，并覆盖 SearXNG 未开启 JSON 时的提示。没有 API Key，所以没有连真实服务 |
+| P6 | 子 Agent（类型、工具集、共享状态、审批转发、追问后通知） | `AgentCoordinator.cs`、`Tools/Agents/*` | `AgentCoordinatorTests.Subagent_*` |
+| P6 | send_message / list_agents（同一 Host） | `AgentCoordinator.SendAsync/ListAsync` | `AgentCoordinatorTests.SendMessage_*` |
+| P6 | 跨进程（UDS 加注册目录） | `Peers/PeerDirectory.cs`、`PeerHostService` | `AgentCoordinatorTests.Peers_*` |
+| P7 | diff、实时输出、子 Agent 统计、任务清单、通知样式、审批新类别 | `Views/ToolCallDetailView`、`TaskListView`、`ToolDetailsViewModels.cs` | `AgentToolsSnapshotTests`（headless 截图加断言） |
+| P7 | 真实 Host → RPC → UI 端到端 | Fake 模型调用 `task_create` | `AgentToolsSnapshotTests.RealHost_TaskCreate_ShowsTaskList` |
+| 全部 | NativeAOT | — | Host 与 Desktop 的 AOT 发布均为 0 个 IL/AOT 警告；AOT Host 的 self-test 与 RPC 端到端测试通过；Desktop AOT 二进制可以正常启动 |
+
+按项目约定，界面只用 headless 快照测试验证，不对真实窗口做模拟输入或截屏。

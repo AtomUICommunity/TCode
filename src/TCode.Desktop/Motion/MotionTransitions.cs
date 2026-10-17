@@ -29,30 +29,33 @@ public sealed class MotionBrushTransition : MotionTransition<IBrush?>
 {
     protected override IBrush? Lerp(IBrush? from, IBrush? to, double p)
     {
-        if (p >= 1)
+        if (p >= 1 || from is not (ISolidColorBrush or null) || to is not (ISolidColorBrush or null) || (from is null && to is null))
         {
             return to;
         }
-        Color? a = from switch
+        return new ImmutableSolidColorBrush(Mix(Effective(from), Effective(to), p));
+    }
+
+    private static Color Effective(IBrush? brush) => brush is ISolidColorBrush s
+        ? Color.FromArgb((byte)Math.Round(s.Color.A * Math.Clamp(s.Opacity, 0, 1)), s.Color.R, s.Color.G, s.Color.B)
+        : Colors.Transparent;
+
+    /// <summary>
+    /// 预乘 alpha 插值：透明端不贡献颜色（Transparent 是“透明的白色”，直接按 ARGB 插值会在中途出现一层半透明的浅灰 / 深灰），
+    /// 中间色始终落在两端之间。
+    /// </summary>
+    public static Color Mix(Color from, Color to, double p)
+    {
+        var a1 = from.A / 255.0;
+        var a2 = to.A / 255.0;
+        var a = a1 + (a2 - a1) * p;
+        if (a <= 0)
         {
-            ISolidColorBrush s => s.Color,
-            null => to is ISolidColorBrush t ? Color.FromArgb(0, t.Color.R, t.Color.G, t.Color.B) : null,
-            _ => null,
-        };
-        Color? b = to switch
-        {
-            ISolidColorBrush s => s.Color,
-            null => from is ISolidColorBrush f ? Color.FromArgb(0, f.Color.R, f.Color.G, f.Color.B) : null,
-            _ => null,
-        };
-        if (a is not { } ca || b is not { } cb)
-        {
-            return to;
+            return Color.FromArgb(0, to.R, to.G, to.B);
         }
-        static byte Lerp(byte x, byte y, double t) => (byte)Math.Round(x + (y - x) * t);
-        var opacity = (from?.Opacity ?? 1) + ((to?.Opacity ?? 1) - (from?.Opacity ?? 1)) * p;
-        return new ImmutableSolidColorBrush(
-            Color.FromArgb(Lerp(ca.A, cb.A, p), Lerp(ca.R, cb.R, p), Lerp(ca.G, cb.G, p), Lerp(ca.B, cb.B, p)), opacity);
+        byte Channel(byte c1, byte c2) =>
+            (byte)Math.Clamp(Math.Round((c1 * a1 * (1 - p) + c2 * a2 * p) / a), 0, 255);
+        return Color.FromArgb((byte)Math.Round(a * 255), Channel(from.R, to.R), Channel(from.G, to.G), Channel(from.B, to.B));
     }
 }
 

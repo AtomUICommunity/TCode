@@ -10,7 +10,9 @@ using TCode.Runtimes.Json;
 namespace TCode.Runtimes.Codex;
 
 /// <summary>线程级设置：线程启动时发送一次，之后只在变化时作为 turn/start 的覆盖发送（这些覆盖是 sticky 的）。</summary>
-internal sealed record CodexThreadSettings(string? Model, string ApprovalPolicy, bool FullAccess, bool NetworkAccess, string? ServiceTier);
+/// <param name="ReadOnly">只读沙箱（TCode 的 Plan 模式，docs/design/composer.md §11），优先于完全授权。</param>
+internal sealed record CodexThreadSettings(string? Model, string ApprovalPolicy, bool FullAccess, bool NetworkAccess, string? ServiceTier,
+    bool ReadOnly = false);
 
 /// <summary>
 /// 一个 Codex 会话 = 一个 <c>codex app-server</c> 进程 + 一个主线程（规格 docs/protocols/codex-app-server.md）。
@@ -130,6 +132,7 @@ internal sealed class CodexSession : IRuntimeSession
                 ServiceTier = response.Str("serviceTier"),
                 ApprovalPolicy = response.Str("approvalPolicy") ?? requested.ApprovalPolicy,
                 FullAccess = sandbox is { } sb ? sb.Str("type") == "dangerFullAccess" : requested.FullAccess,
+                ReadOnly = sandbox is { } ro ? ro.Str("type") == "readOnly" : requested.ReadOnly,
                 NetworkAccess = sandbox is { } net ? net.Bool("networkAccess") : requested.NetworkAccess,
             };
             // 新线程的累计用量从 0 开始；恢复的线程在本轮第一条用量通知时用 total − last 作为基线（§5.5）
@@ -138,7 +141,10 @@ internal sealed class CodexSession : IRuntimeSession
         _host.OnNativeSessionId(threadId);
     }
 
-    private JsonElement ThreadParams(string cwd, CodexThreadSettings settings, string? resumeThreadId) => JsonBuilder.Object(w =>
+    /// <summary>注入的 TCode MCP 桥接（StartThreadAsync 之前设置）。</summary>
+    public McpBridgeLaunch? McpBridge { get; set; }
+
+    internal JsonElement ThreadParams(string cwd, CodexThreadSettings settings, string? resumeThreadId) => JsonBuilder.Object(w =>
     {
         if (resumeThreadId is not null)
         {
@@ -151,7 +157,7 @@ internal sealed class CodexSession : IRuntimeSession
             w.WriteString("model", settings.Model);
         }
         w.WriteString("approvalPolicy", settings.ApprovalPolicy);
-        w.WriteString("sandbox", settings.FullAccess ? "danger-full-access" : "workspace-write");
+        w.WriteString("sandbox", settings.ReadOnly ? "read-only" : settings.FullAccess ? "danger-full-access" : "workspace-write");
         if (settings.ServiceTier is not null)
         {
             w.WriteString("serviceTier", settings.ServiceTier);
@@ -162,6 +168,13 @@ internal sealed class CodexSession : IRuntimeSession
         }
         w.WriteStartObject("config");
         w.WriteString("model_reasoning_summary", "auto");
+        if (McpBridge is { } bridge)
+        {
+            // TCode 的 MCP 桥接：按线程覆盖 config.toml 的 mcp_servers.tcode（点分键，§3）
+            w.WriteStartObject($"mcp_servers.{McpBridgeLaunch.ServerName}");
+            bridge.WriteObject(w);
+            w.WriteEndObject();
+        }
         w.WriteEndObject();
     });
 
@@ -174,7 +187,8 @@ internal sealed class CodexSession : IRuntimeSession
         options.AutoApprove ? "never" : "on-request",
         options.Permission == TCode.Agent.PermissionMode.FullAccess,
         options.Permission == TCode.Agent.PermissionMode.AutoApprove,
-        options.FastMode && options.Model.SupportsFastMode ? "priority" : null);
+        options.FastMode && options.Model.SupportsFastMode ? "priority" : null,
+        options.Mode.ReadOnly);
 
     // ---------------- 轮次 ----------------
 
@@ -268,10 +282,15 @@ internal sealed class CodexSession : IRuntimeSession
         {
             w.WriteString("approvalPolicy", wanted.ApprovalPolicy);
         }
-        if (wanted.FullAccess != current.FullAccess || (!wanted.FullAccess && wanted.NetworkAccess != current.NetworkAccess))
+        if (wanted.ReadOnly != current.ReadOnly || wanted.FullAccess != current.FullAccess ||
+            (!wanted.FullAccess && wanted.NetworkAccess != current.NetworkAccess))
         {
             w.WriteStartObject("sandboxPolicy");
-            if (wanted.FullAccess)
+            if (wanted.ReadOnly)
+            {
+                w.WriteString("type", "readOnly");
+            }
+            else if (wanted.FullAccess)
             {
                 w.WriteString("type", "dangerFullAccess");
             }
@@ -294,7 +313,7 @@ internal sealed class CodexSession : IRuntimeSession
             }
         }
         _thread = current with { Model = wanted.Model ?? current.Model, ApprovalPolicy = wanted.ApprovalPolicy, FullAccess = wanted.FullAccess,
-            NetworkAccess = wanted.FullAccess ? current.NetworkAccess : wanted.NetworkAccess, ServiceTier = wanted.ServiceTier };
+            NetworkAccess = wanted.FullAccess ? current.NetworkAccess : wanted.NetworkAccess, ServiceTier = wanted.ServiceTier, ReadOnly = wanted.ReadOnly };
 
         var efforts = options.Model.Compat?.ReasoningEfforts;
         var off = options.ThinkingLevel == ThinkingLevel.Off;

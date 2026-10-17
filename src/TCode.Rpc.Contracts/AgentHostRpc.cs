@@ -85,6 +85,36 @@ public sealed class AgentHostServerProxy(JsonRpcConnection rpc) : IAgentHostServ
 
     public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.CloseSession, new SessionIdParams(sessionId), J.SessionIdParams, cancellationToken);
+
+    public Task<McpServersDto> ListMcpServersAsync(string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpList, new McpCwdParams(cwd), J.McpCwdParams, J.McpServersDto, cancellationToken);
+
+    public Task<McpToolsDto> ListMcpToolsAsync(string key, string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpTools, new McpServerParams(key, cwd), J.McpServerParams, J.McpToolsDto, cancellationToken);
+
+    public Task<McpLogDto> GetMcpLogAsync(string key, string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpLog, new McpServerParams(key, cwd), J.McpServerParams, J.McpLogDto, cancellationToken);
+
+    public Task<McpTestResult> TestMcpServerAsync(McpTestRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpTest, request, J.McpTestRequest, J.McpTestResult, cancellationToken);
+
+    public Task RestartMcpServerAsync(string key, string? cwd, bool login, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpRestart, new McpRestartParams(key, cwd, login), J.McpRestartParams, cancellationToken);
+
+    public Task LogoutMcpServerAsync(string key, string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpLogout, new McpServerParams(key, cwd), J.McpServerParams, cancellationToken);
+
+    public Task TrustMcpServerAsync(string key, string cwd, bool trusted, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpTrust, new McpTrustParams(key, cwd, trusted), J.McpTrustParams, cancellationToken);
+
+    public Task<McpCatalogDto> GetMcpCatalogAsync(string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpCatalog, new McpCwdParams(cwd), J.McpCwdParams, J.McpCatalogDto, cancellationToken);
+
+    public Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.SearchFiles, request, J.FileSearchRequest, J.FileSearchResultDto, cancellationToken);
+
+    public Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ListAssets, new AssetsParams(cwd), J.AssetsParams, J.AgentAssetsDto, cancellationToken);
 }
 
 /// <summary>Host 侧：把 JSON-RPC 方法分发到 <see cref="IAgentHostServer"/> 实现。</summary>
@@ -122,6 +152,16 @@ public static class AgentHostServerDispatcher
         rpc.AddRequestHandler(RpcMethods.SetModel, j.SetModelParams, j.SessionOptionsDto, (p, ct) => server.SetModelAsync(p.SessionId, p.ModelId, ct));
         rpc.AddRequestHandler(RpcMethods.SetOptions, j.SetOptionsParams, j.SessionOptionsDto, (p, ct) => server.SetOptionsAsync(p.SessionId, p.Options, ct));
         rpc.AddRequestHandler(RpcMethods.CloseSession, j.SessionIdParams, (p, ct) => server.CloseSessionAsync(p.SessionId, ct));
+        rpc.AddRequestHandler(RpcMethods.McpList, j.McpCwdParams, j.McpServersDto, (p, ct) => server.ListMcpServersAsync(p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.McpTools, j.McpServerParams, j.McpToolsDto, (p, ct) => server.ListMcpToolsAsync(p.Key, p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.McpLog, j.McpServerParams, j.McpLogDto, (p, ct) => server.GetMcpLogAsync(p.Key, p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.McpTest, j.McpTestRequest, j.McpTestResult, server.TestMcpServerAsync);
+        rpc.AddRequestHandler(RpcMethods.McpRestart, j.McpRestartParams, (p, ct) => server.RestartMcpServerAsync(p.Key, p.Cwd, p.Login, ct));
+        rpc.AddRequestHandler(RpcMethods.McpLogout, j.McpServerParams, (p, ct) => server.LogoutMcpServerAsync(p.Key, p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.McpTrust, j.McpTrustParams, (p, ct) => server.TrustMcpServerAsync(p.Key, p.Cwd, p.Trusted, ct));
+        rpc.AddRequestHandler(RpcMethods.McpCatalog, j.McpCwdParams, j.McpCatalogDto, (p, ct) => server.GetMcpCatalogAsync(p.Cwd, ct));
+        rpc.AddRequestHandler(RpcMethods.SearchFiles, j.FileSearchRequest, j.FileSearchResultDto, server.SearchFilesAsync);
+        rpc.AddRequestHandler(RpcMethods.ListAssets, j.AssetsParams, j.AgentAssetsDto, (p, ct) => server.ListAssetsAsync(p.Cwd, ct));
     }
 }
 
@@ -138,6 +178,18 @@ public sealed class AgentHostClientProxy(JsonRpcConnection rpc) : IAgentHostClie
 
     public Task<ToolApprovalResponse> RequestToolApprovalAsync(ToolApprovalRequest request, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.ApproveTool, request, J.ToolApprovalRequest, J.ToolApprovalResponse, cancellationToken);
+
+    public void OnMcpChanged(McpChangedNotification notification) =>
+        rpc.Notify(RpcMethods.McpChanged, notification, J.McpChangedNotification);
+
+    public Task<McpElicitResponse> RequestMcpElicitationAsync(McpElicitRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpElicit, request, J.McpElicitRequest, J.McpElicitResponse, cancellationToken);
+
+    public Task<McpOpenUrlResponse> OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.McpOpenUrl, request, J.McpOpenUrlRequest, J.McpOpenUrlResponse, cancellationToken);
+
+    public void OnAssetsChanged(AssetsChangedNotification notification) =>
+        rpc.Notify(RpcMethods.AssetsChanged, notification, J.AssetsChangedNotification);
 }
 
 /// <summary>UI 侧：把 Host 发来的通知与请求分发到 <see cref="IAgentHostClient"/> 实现。</summary>
@@ -149,5 +201,9 @@ public static class AgentHostClientDispatcher
         rpc.AddNotificationHandler(RpcMethods.SessionEvent, j.SessionEventNotification, client.OnSessionEvent);
         rpc.AddNotificationHandler(RpcMethods.ModelsChanged, j.ModelsChangedNotification, client.OnModelsChanged);
         rpc.AddRequestHandler(RpcMethods.ApproveTool, j.ToolApprovalRequest, j.ToolApprovalResponse, client.RequestToolApprovalAsync);
+        rpc.AddNotificationHandler(RpcMethods.McpChanged, j.McpChangedNotification, client.OnMcpChanged);
+        rpc.AddRequestHandler(RpcMethods.McpElicit, j.McpElicitRequest, j.McpElicitResponse, client.RequestMcpElicitationAsync);
+        rpc.AddRequestHandler(RpcMethods.McpOpenUrl, j.McpOpenUrlRequest, j.McpOpenUrlResponse, client.OpenMcpUrlAsync);
+        rpc.AddNotificationHandler(RpcMethods.AssetsChanged, j.AssetsChangedNotification, client.OnAssetsChanged);
     }
 }

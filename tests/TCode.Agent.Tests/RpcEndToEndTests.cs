@@ -54,7 +54,7 @@ public sealed class RpcEndToEndTests
             // fake 模型不支持 fast mode：请求会被修正为 false
             // 完全授权：内置 Agent 的非只读工具也不再询问
             var options = await server.SetOptionsAsync(session.SessionId, new SessionOptionsDto("Low", FastMode: true, PermissionMode: "fullAccess"));
-            Assert.Equal(new SessionOptionsDto("Low", false, models[0].ContextWindows[0], "fullAccess"), options);
+            Assert.Equal(new SessionOptionsDto("Low", false, models[0].ContextWindows[0], "fullAccess", "agent"), options);
             var result = await server.PromptAsync(new PromptRequest(session.SessionId, "看看目录里有哪些文件"));
             Assert.True(result.Started);
 
@@ -147,5 +147,19 @@ public sealed class RpcEndToEndTests
 
         public Task<ToolApprovalResponse> RequestToolApprovalAsync(ToolApprovalRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(new ToolApprovalResponse(true));
+
+        public void OnMcpChanged(McpChangedNotification notification)
+        {
+        }
+
+        public void OnAssetsChanged(AssetsChangedNotification notification)
+        {
+        }
+
+        public Task<McpElicitResponse> RequestMcpElicitationAsync(McpElicitRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new McpElicitResponse("cancel"));
+
+        public Task<McpOpenUrlResponse> OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new McpOpenUrlResponse(false));
     }
 }

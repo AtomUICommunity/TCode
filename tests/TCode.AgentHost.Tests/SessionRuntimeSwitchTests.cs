@@ -51,13 +51,29 @@ public sealed class SessionRuntimeSwitchTests : IDisposable
         await sessions.DisposeAsync();
     }
 
+    [Fact]
+    public async Task ExternalSession_RefusesAcpWithoutSubagents_AndAcceptsPlan()
+    {
+        var (sessions, runtime, builtinModel) = Create();
+        var cwd = Directory.CreateTempSubdirectory("tcode-switch-cwd-").FullName;
+        var session = await sessions.SwitchRuntimeAsync(sessions.Create(cwd, builtinModel).Id, runtime, RuntimeModels.Create(runtime, "m1"));
+        Assert.False(session.External!.SupportsSubagents);
+
+        var options = SessionOptions.Apply(session, new TCode.Rpc.SessionOptionsDto(Role: "acp"));
+        Assert.Equal("agent", options.Role);
+        options = SessionOptions.Apply(session, new TCode.Rpc.SessionOptionsDto(Role: "plan"));
+        Assert.Equal("plan", options.Role);
+        Assert.True(session.Role.IsReadOnly);
+        await sessions.DisposeAsync();
+    }
+
     private static (SessionManager Sessions, IAgentRuntime Runtime, TCode.Ai.Models.ModelInfo Model) Create()
     {
         var catalog = new ModelCatalog(NullLogger<ModelCatalog>.Instance, new BuiltInCatalog(),
             new ModelDiscovery(new HttpClient(), NullLogger<ModelDiscovery>.Instance));
         var runtime = new FakeRuntime();
         var sessions = new SessionManager(new WireApiRegistry([new FakeWireApi()]), catalog, new RuntimeRegistry([runtime]),
-            new TCode.AgentHost.Peers.PeerDirectory(NullLogger<TCode.AgentHost.Peers.PeerDirectory>.Instance), NullLogger<SessionManager>.Instance);
+            new TCode.AgentHost.Peers.PeerDirectory(NullLogger<TCode.AgentHost.Peers.PeerDirectory>.Instance), new TCode.Mcp.McpManager(new TCode.Mcp.McpHost(), null, () => []), NullLogger<SessionManager>.Instance);
         return (sessions, runtime, FakeWireApi.Models[0]);
     }
 

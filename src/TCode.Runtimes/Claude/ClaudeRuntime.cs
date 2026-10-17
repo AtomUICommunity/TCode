@@ -33,6 +33,7 @@ public sealed partial class ClaudeRuntime(ExecutableLocator? locator = null) : I
         SupportsResume = true,
         SupportsModelSwitch = true,
         StreamsToolArguments = true,
+        SupportsSubagents = true,
     };
 
     /// <summary>所有会话都带的参数（§2.2）。</summary>
@@ -96,7 +97,7 @@ public sealed partial class ClaudeRuntime(ExecutableLocator? locator = null) : I
         // --allow-dangerously-skip-permissions 只是允许会话中途切换到 bypassPermissions（§5.3），本身不放开任何权限。
         var args = new List<string>(BaseArguments)
         {
-            "--permission-mode", PermissionModeFor(options.Permission), "--allow-dangerously-skip-permissions",
+            "--permission-mode", PermissionModeFor(options), "--allow-dangerously-skip-permissions",
         };
         if (model is not null)
         {
@@ -108,11 +109,22 @@ public sealed partial class ClaudeRuntime(ExecutableLocator? locator = null) : I
         }
         // --resume / --session-id 一律用 --flag=value 形式，防止以 '-' 开头的值被解析成参数（§2.2）
         args.Add(sessionId is not null ? $"--resume={sessionId}" : $"--session-id={newSessionId}");
+        string? mcpConfig = null;
+        if (request.McpBridge is { } bridge)
+        {
+            // TCode 的 MCP 桥接：配置写入 0600 临时文件（令牌在 env 中，不进命令行）；审批由 TCode 桥接完成，
+            // 因此让 Claude 对 tcode 服务器的工具免询问，避免同一调用问两次（docs/design/mcp.md §10）
+            mcpConfig = WriteMcpConfig(bridge);
+            args.AddRange(["--mcp-config", mcpConfig, $"--allowedTools=mcp__{McpBridgeLaunch.ServerName}"]);
+        }
 
         var cli = CliProcess.Start(path, args, request.Cwd, Environment(request.Cwd), _locator);
         var session = new ClaudeSession(cli.StandardOutput, cli.StandardInput, request.Host, sessionId ?? newSessionId, cli,
-            () => cli.DescribeExit("Claude"));
-        session.SetInitialOptions(options.Model.Id, effort, PermissionModeFor(options.Permission));
+            () => cli.DescribeExit("Claude"))
+        {
+            TempFile = mcpConfig,
+        };
+        session.SetInitialOptions(options.Model.Id, effort, PermissionModeFor(options));
         try
         {
             await session.StartAsync(cancellationToken);
@@ -146,6 +158,36 @@ public sealed partial class ClaudeRuntime(ExecutableLocator? locator = null) : I
 
     internal static string PermissionModeFor(TCode.Agent.PermissionMode mode) =>
         mode == TCode.Agent.PermissionMode.FullAccess ? "bypassPermissions" : "default";
+
+    /// <summary>只读模式（TCode 的 Plan）映射到 Claude 原生的 plan 权限模式（§5.3），优先于权限档位。</summary>
+    internal static string PermissionModeFor(TurnOptions options) =>
+        options.Mode.ReadOnly ? "plan" : PermissionModeFor(options.Permission);
+
+    internal static string WriteMcpConfig(McpBridgeLaunch bridge)
+    {
+        var json = JsonBuilder.Object(w =>
+        {
+            w.WriteStartObject("mcpServers");
+            w.WriteStartObject(McpBridgeLaunch.ServerName);
+            bridge.WriteObject(w);
+            w.WriteEndObject();
+            w.WriteEndObject();
+        });
+        var path = Path.Combine(Path.GetTempPath(), $"tcode-mcp-{Guid.NewGuid():N}.json");
+        using (var stream = OperatingSystem.IsWindows()
+                   ? new FileStream(path, FileMode.CreateNew, FileAccess.Write)
+                   : new FileStream(path, new FileStreamOptions
+                   {
+                       Mode = FileMode.CreateNew,
+                       Access = FileAccess.Write,
+                       UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                   }))
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            json.WriteTo(writer);
+        }
+        return path;
+    }
 
     /// <summary>ThinkingLevel → --effort / effortLevel；模型不支持 effort 时返回 null（§2.2）。</summary>
     internal static string? EffortFor(ModelInfo model, ThinkingLevel level)

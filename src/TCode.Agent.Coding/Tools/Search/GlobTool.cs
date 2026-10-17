@@ -68,7 +68,7 @@ public sealed class GlobTool(ToolContext context) : IAgentTool
     {
         if (SearchBackend.RipgrepPath is { } rg)
         {
-            var result = await ProcessRunner.RunAsync(rg, ["--files", "--hidden", "--no-messages", "-g", "!.git", "-g", pattern], root, ct);
+            var result = await ProcessRunner.RunAsync(rg, ["--files", "--hidden", "--no-require-git", "--no-messages", "-g", "!.git", "-g", pattern], root, ct);
             if (result.ExitCode is 0 or 1)
             {
                 return result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(SearchBackend.NormalizeRelative).ToArray();

@@ -7,7 +7,7 @@ namespace TCode.AgentHost;
 /// <summary>
 /// 监听 ~/.tcode/settings.json。编辑器保存时常见“写临时文件 + 改名”或多次写入，统一在 500ms 防抖后重新加载。
 /// </summary>
-public sealed class SettingsWatcher(ModelCatalog catalog, ILogger<SettingsWatcher> logger) : IHostedService, IDisposable
+public sealed class SettingsWatcher(ModelCatalog catalog, TCode.Mcp.McpManager mcp, ILogger<SettingsWatcher> logger) : IHostedService, IDisposable
 {
     private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(500);
     private FileSystemWatcher? _watcher;
@@ -59,6 +59,7 @@ public sealed class SettingsWatcher(ModelCatalog catalog, ILogger<SettingsWatche
         try
         {
             catalog.Reload();
+            mcp.Reload();
         }
         catch (Exception ex)
         {

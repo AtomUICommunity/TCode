@@ -101,6 +101,46 @@ public sealed class AgentToolsSnapshotTests
         }, TestContext.Current.CancellationToken);
     }
 
+    /// <summary>
+    /// 端到端：真实 Host 中的内置 Agent 调用 task_create（Fake 模型），任务清单经 RPC 的 DetailsJson 到达界面并显示。
+    /// </summary>
+    [Fact]
+    public async Task RealHost_TaskCreate_ShowsTaskList()
+    {
+        var home = Directory.CreateTempSubdirectory("tcode-ui-home-").FullName;
+        var project = Directory.CreateTempSubdirectory("tcode-ui-project-").FullName;
+        Environment.SetEnvironmentVariable("TCODE_HOME", home);
+        Environment.SetEnvironmentVariable("TCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "../../../../../src/TCode.AgentHost/bin/Debug/net10.0")));
+        Environment.SetEnvironmentVariable("TCODE_FAKE_PROVIDER", "1");
+        Environment.SetEnvironmentVariable("TCODE_EXTERNAL_RUNTIMES", "0");
+        var settings = new StateService(Path.Combine(home, "state.json"));
+        settings.Current.Workspaces.Add(project);
+        settings.Save();
+
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        Program.ConfigureServices(services);
+        await using var provider = services.BuildServiceProvider();
+
+        await HeadlessApp.Session.Dispatch(async () =>
+        {
+            var vm = provider.GetRequiredService<MainWindowViewModel>();
+            var window = new MainWindow { DataContext = vm, Width = 1100, Height = 760 };
+            window.Show();
+            await WaitUntil(() => vm.Conversation.Picker.Selected is not null, "models loaded");
+            vm.Conversation.ComposerText = "帮我建个任务";
+            vm.Conversation.SendCommand.Execute(null);
+            await WaitUntil(() => vm.Conversation.Active is { IsRunning: false, TaskList.Items.Count: 1 }, "task created through the real host");
+            var session = vm.Conversation.Active!;
+            Assert.True(session.TaskList.IsVisible);
+            Assert.Equal("Fake task", session.TaskList.Items[0].Subject);
+            HeadlessApp.Save(window, "agent-tools-real-host");
+            window.Close();
+            return true;
+        }, TestContext.Current.CancellationToken);
+    }
+
     private static void Apply(SessionViewModel session, params SessionEvent[] events)
     {
         foreach (var e in events)

@@ -21,15 +21,24 @@ public sealed record SessionEventNotification(string SessionId, long Seq, Sessio
 [JsonDerivedType(typeof(ToolExecutionStarted), "toolExecutionStarted")]
 [JsonDerivedType(typeof(ToolExecutionUpdated), "toolExecutionUpdated")]
 [JsonDerivedType(typeof(ToolExecutionEnded), "toolExecutionEnded")]
+[JsonDerivedType(typeof(CommandsChanged), "commandsChanged")]
 public abstract record SessionEvent;
 
 public sealed record AgentStarted : SessionEvent;
+
+/// <summary>外部运行时自带的斜杠命令（整体替换，docs/design/composer.md §11）。</summary>
+public sealed record CommandsChanged(IReadOnlyList<RuntimeCommandDto> Commands) : SessionEvent;
+
+/// <param name="Name">不带斜杠的命令名。</param>
+public sealed record RuntimeCommandDto(string Name, string? Description, string? ArgumentHint);
 
 public sealed record AgentEnded : SessionEvent;
 
 /// <summary>Role：user / assistant / toolResult。用户消息附带文本与附图路径；助手消息内容随后以增量到达。</summary>
 /// <param name="Source">非用户输入的来源：task-notification / session-message；null 表示用户输入。</param>
-public sealed record MessageStarted(string MessageId, string Role, string? Text, IReadOnlyList<string>? Images = null, string? Source = null) : SessionEvent;
+/// <param name="Segments">用户消息在输入框里的样子（含 tag）；没有 tag 时为 null。</param>
+public sealed record MessageStarted(string MessageId, string Role, string? Text, IReadOnlyList<string>? Images = null, string? Source = null,
+    IReadOnlyList<PromptSegmentDto>? Segments = null) : SessionEvent;
 
 public sealed record TextDelta(string MessageId, int ContentIndex, string Delta) : SessionEvent;
 

@@ -61,7 +61,10 @@ public sealed class AcpRuntime(AcpAgentDefinition agent, RuntimeCache? cache = n
         }
         var process = CliProcess.Start(path, agent.Arguments, request.Cwd, agent.Environment, _locator);
         var session = new AcpSession(process.StandardOutput, process.StandardInput, agent, request.Host, process,
-            () => process.DescribeExit(DisplayName));
+            () => process.DescribeExit(DisplayName))
+        {
+            McpBridge = request.McpBridge,
+        };
         try
         {
             await session.StartAsync(request.Cwd, request.ResumeSessionId, cancellationToken);

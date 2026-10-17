@@ -208,6 +208,79 @@ public sealed class TaskAndWebToolTests
         Assert.Single(Assert.IsType<WebSearchDetails>(ToolDetails.FromJson(result.Details)).Results);
     }
 
+    private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
+        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    [Fact]
+    public async Task Tavily_SendsBearerAndDomains_AndParsesResults()
+    {
+        string? body = null;
+        var handler = new StubHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("https://api.tavily.com/search", request.RequestUri!.ToString());
+            Assert.Equal("Bearer tvly-key", request.Headers.Authorization!.ToString());
+            body = request.Content!.ReadAsStringAsync().Result;
+            return Json("""{"query":"q","results":[{"title":"Tavily hit","url":"https://docs.example.com/a","content":"snippet a","score":0.9}]}""");
+        });
+        var provider = WebSearchProviders.Create("tavily", "tvly-key", null, handler);
+        var results = await provider.SearchAsync("aot trimming", 5, ["docs.example.com"], CancellationToken.None);
+        Assert.Equal(("Tavily hit", "https://docs.example.com/a", "snippet a"), (results[0].Title, results[0].Url, results[0].Snippet));
+        using var doc = JsonDocument.Parse(body!);
+        Assert.Equal("aot trimming", doc.RootElement.GetProperty("query").GetString());
+        Assert.Equal(5, doc.RootElement.GetProperty("max_results").GetInt32());
+        Assert.Equal("docs.example.com", doc.RootElement.GetProperty("include_domains")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Exa_SendsApiKeyHeaderAndHighlights_AndJoinsHighlights()
+    {
+        string? body = null;
+        var handler = new StubHandler(request =>
+        {
+            Assert.Equal("https://api.exa.ai/search", request.RequestUri!.ToString());
+            Assert.Equal("exa-key", request.Headers.GetValues("x-api-key").Single());
+            body = request.Content!.ReadAsStringAsync().Result;
+            return Json("""{"results":[{"title":"Exa hit","url":"https://exa.example.com/p","highlights":["first part","second part"]}]}""");
+        });
+        var provider = WebSearchProviders.Create("exa", "exa-key", null, handler);
+        var results = await provider.SearchAsync("semantic", 3, null, CancellationToken.None);
+        Assert.Equal("first part … second part", results.Single().Snippet);
+        using var doc = JsonDocument.Parse(body!);
+        Assert.Equal(3, doc.RootElement.GetProperty("numResults").GetInt32());
+        Assert.True(doc.RootElement.GetProperty("contents").TryGetProperty("highlights", out _));
+        Assert.False(doc.RootElement.TryGetProperty("includeDomains", out _));
+    }
+
+    [Fact]
+    public async Task Searxng_UsesJsonFormatAndSiteFilter_AndExplainsDisabledJson()
+    {
+        var handler = new StubHandler(request =>
+        {
+            var query = Uri.UnescapeDataString(request.RequestUri!.Query);
+            Assert.StartsWith("https://search.local.example/search?", request.RequestUri.ToString());
+            Assert.Contains("format=json", query);
+            Assert.Contains("site:learn.microsoft.com", query);
+            return Json("""{"results":[{"title":"S1","url":"https://learn.microsoft.com/x","content":"c1"},{"title":"S2","url":"https://learn.microsoft.com/y","content":"c2"}]}""");
+        });
+        var provider = WebSearchProviders.Create("searxng", null, "https://search.local.example/", handler);
+        var results = await provider.SearchAsync("nativeaot", 1, ["learn.microsoft.com"], CancellationToken.None);
+        Assert.Equal("S1", Assert.Single(results).Title);
+
+        var forbidden = WebSearchProviders.Create("searxng", null, "https://search.local.example", new StubHandler(_ => Json("{}", HttpStatusCode.Forbidden)));
+        var error = await Assert.ThrowsAsync<WebSearchException>(() => forbidden.SearchAsync("x", 3, null, CancellationToken.None));
+        Assert.Contains("search.formats", error.Message);
+    }
+
+    [Fact]
+    public void Providers_RequireKeysAndBaseUrl()
+    {
+        Assert.Throws<WebSearchException>(() => WebSearchProviders.Create("tavily", null, null));
+        Assert.Throws<WebSearchException>(() => WebSearchProviders.Create("exa", "", null));
+        Assert.Throws<WebSearchException>(() => WebSearchProviders.Create("searxng", null, null));
+        Assert.Throws<WebSearchException>(() => WebSearchProviders.Create("bing", "k", null));
+    }
+
     [Fact]
     public void ToolSet_ControlsAvailableTools()
     {

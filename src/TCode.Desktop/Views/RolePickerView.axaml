@@ -1,0 +1,66 @@
+<!--
+  role 选择器（docs/design/composer.md §10.3）：芯片（图标 + 当前 role）+ 弹层（内置三种与自定义 role）。
+  Agent 时芯片只显示图标，其余 role 显示名称并用强调色，提醒当前处于受限模式。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:motion="using:TCode.Desktop.Motion"
+             xmlns:vm="using:TCode.Desktop.ViewModels"
+             xmlns:icons="using:TCode.Desktop.Icons"
+             xmlns:loc="using:TCode.Desktop.Localization"
+             x:Class="TCode.Desktop.Views.RolePickerView"
+             x:DataType="vm:RolePickerViewModel">
+    <Panel>
+        <Button x:Name="Chip" Theme="{StaticResource TCode.ChipButton}" Classes.selected="{Binding #Popup.IsOpen}"
+                Padding="6,0" VerticalAlignment="Center" Click="OnChipClick">
+            <ToolTip.Tip>
+                <StackPanel>
+                    <TextBlock Text="{loc:TCodeLangResource RoleTitle}" />
+                    <TextBlock Classes="secondary" FontSize="11" Text="{loc:TCodeLangResource RoleCycleHint}" />
+                </StackPanel>
+            </ToolTip.Tip>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+                <icons:LucideIcon Kind="{Binding Current.Icon}" Width="14" Height="14" VerticalAlignment="Center"
+                                  StrokeBrush="{DynamicResource TCode.TextSecondary}" IsVisible="{Binding IsAgent}" />
+                <icons:LucideIcon Kind="{Binding Current.Icon}" Width="14" Height="14" VerticalAlignment="Center"
+                                  StrokeBrush="{DynamicResource TCode.AccentText}" IsVisible="{Binding !IsAgent}" />
+                <TextBlock Classes="secondary" FontSize="12" VerticalAlignment="Center" Text="{Binding Current.Title}" IsVisible="{Binding IsAgent}" />
+                <TextBlock FontSize="12" VerticalAlignment="Center" Text="{Binding Current.Title}" IsVisible="{Binding !IsAgent}"
+                           Foreground="{DynamicResource TCode.AccentText}" />
+            </StackPanel>
+        </Button>
+
+        <motion:Popover x:Name="Popup" PlacementTarget="{Binding #Chip}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
+                        IsLightDismissEnabled="True">
+            <Border Classes="menu" Width="300" Margin="0,0,24,24">
+                <StackPanel Margin="4">
+                    <Grid ColumnDefinitions="*,Auto" Margin="8,4,8,6">
+                        <TextBlock Classes="tertiary" FontSize="11" Text="{loc:TCodeLangResource RoleTitle}" />
+                        <TextBlock Grid.Column="1" Classes="tertiary" FontSize="11" Text="{loc:TCodeLangResource RoleCycleHint}" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Roles}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RoleOptionViewModel">
+                                <Button Theme="{StaticResource TCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="40" Margin="0,1"
+                                        Command="{Binding $parent[UserControl].((vm:RolePickerViewModel)DataContext).ChooseCommand, FallbackValue={x:Null}}"
+                                        CommandParameter="{Binding}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                        <icons:LucideIcon Kind="{Binding Icon}" Width="15" Height="15" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                            <TextBlock Classes="strong" Text="{Binding Title}" />
+                                            <TextBlock Classes="secondary" FontSize="12" TextWrapping="Wrap" Text="{Binding Description}"
+                                                       IsVisible="{Binding HasDescription}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Classes="tertiary" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                   Text="{Binding Source}" />
+                                        <icons:LucideIcon Grid.Column="3" Kind="Check" Width="13" Height="13" Margin="8,0,0,0" IsVisible="{Binding IsSelected}" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </motion:Popover>
+    </Panel>
+</UserControl>

@@ -1,0 +1,63 @@
+ UL  ~/…/tests/ref/tab_rendering  copy-tabs  echo '\tb\na\tb\naa\tb\naaa\tb\naaaa\tb\naaaaa\tb\naaaaaa\tb\naaaaaaa\t
+b\naaaaaaaa\tb\naaaaaaaaa\tb\naaaaaaaaaa\tb'
+        b
+a       b
+aa      b
+aaa     b
+aaaa    b
+aaaaa   b
+aaaaaa  b
+aaaaaaa b
+aaaaaaaa        b
+aaaaaaaaa       b
+aaaaaaaaaa      b
+ UL  ~/…/tests/ref/tab_rendering  copy-tabs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -19,6 +19,7 @@ public sealed class TranscriptAdapter
     private readonly HashSet<AssistantMessageItemViewModel> _watched = [];
     private readonly Dictionary<AssistantBlockViewModel, ActivityGroupViewModel> _groups = new(ReferenceEqualityComparer.Instance);
     private SessionViewModel? _session;
+    private bool _attaching;
 
     public TranscriptAdapter(ObservableCollection<TranscriptEntry> target)
     {
@@ -60,7 +61,15 @@ public sealed class TranscriptAdapter
             session.Items.CollectionChanged += OnItemsChanged;
             session.PropertyChanged += OnSessionPropertyChanged;
         }
-        Rebuild();
+        _attaching = true;
+        try
+        {
+            Rebuild();
+        }
+        finally
+        {
+            _attaching = false;
+        }
     }
 
     private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -202,8 +211,14 @@ public sealed class TranscriptAdapter
         {
             _target.RemoveAt(i);
         }
+        // 会话进行中追加的条目播入场动画；初次挂载与加载更早的历史不播
+        var animate = !_attaching && _session is { IsLoadingEarlier: false };
         for (var i = prefix; i < desired.Count - suffix; i++)
         {
+            if (animate && desired[i] is ContentEntry { Content: { } content })
+            {
+                Motion.Entrance.Mark(content);
+            }
             _target.Insert(i, desired[i]);
         }
     }

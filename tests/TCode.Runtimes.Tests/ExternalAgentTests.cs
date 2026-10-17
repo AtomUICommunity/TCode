@@ -192,6 +192,59 @@ public sealed class ExternalAgentTests
         return events;
     }
 
+    [Fact]
+    public async Task ModeReminder_IsSentOnce_NotStored_AndWaitsForSlashCommands()
+    {
+        var sent = new List<UserMessage>();
+        var fail = false;
+        var runtime = new ScriptedRuntime(async (msg, writer, host, ct) =>
+        {
+            sent.Add(msg);
+            if (fail)
+            {
+                throw new InvalidOperationException("boom");
+            }
+            await writer.TextAsync("ok");
+        });
+        var agent = new ExternalAgent(runtime, Model, "/tmp");
+
+        // 新会话：没有说明
+        await agent.PromptAsync(UserMessage.FromText("hi"));
+        Assert.Equal("hi", TextOf(sent[^1]));
+        Assert.False(runtime.LastOptions!.Mode.ReadOnly);
+
+        // 切到只读模式：下一轮带说明，转录里的用户消息不带
+        agent.SetMode("plan", readOnly: true, "<system-reminder>plan</system-reminder>");
+        await agent.PromptAsync(UserMessage.FromText("design it"));
+        Assert.Equal("<system-reminder>plan</system-reminder>design it", TextOf(sent[^1]));
+        Assert.Equal(("plan", true), (runtime.LastOptions!.Mode.Name, runtime.LastOptions.Mode.ReadOnly));
+        Assert.Equal("design it", TextOf(agent.Messages.OfType<UserMessage>().Last()));
+        await agent.PromptAsync(UserMessage.FromText("again"));
+        Assert.Equal("again", TextOf(sent[^1]));
+
+        // 以 /命令 开头：说明留到下一轮
+        agent.SetMode("agent", readOnly: false, "<system-reminder>agent</system-reminder>");
+        await agent.PromptAsync(UserMessage.FromText("/compact"));
+        Assert.Equal("/compact", TextOf(sent[^1]));
+        // 出错：说明保留
+        fail = true;
+        await agent.PromptAsync(UserMessage.FromText("x"));
+        fail = false;
+        await agent.PromptAsync(UserMessage.FromText("y"));
+        Assert.Equal("<system-reminder>agent</system-reminder>y", TextOf(sent[^1]));
+    }
+
+    [Fact]
+    public void Commands_AreRaisedAndKept()
+    {
+        var agent = new ExternalAgent(new ScriptedRuntime((_, _, _, _) => Task.CompletedTask), Model, "/tmp");
+        IReadOnlyList<(string Name, string? Description, string? ArgumentHint)>? raised = null;
+        agent.CommandsChanged += c => raised = c;
+        ((IRuntimeHost)agent).OnCommands([new RuntimeCommand("review", "Review", "[focus]")]);
+        Assert.Equal([("review", "Review", "[focus]")], raised);
+        Assert.Equal("review", Assert.Single(agent.Commands).Name);
+    }
+
     internal static string TextOf(UserMessage m) => TextOf(m.Content);
     internal static string TextOf(IReadOnlyList<ContentBlock> content) => string.Concat(content.OfType<TextContent>().Select(t => t.Text));
 }
@@ -201,6 +254,7 @@ internal sealed class ScriptedRuntime(Func<UserMessage, TurnWriter, IRuntimeHost
 {
     public int Starts;
     public RuntimeSessionRequest? LastRequest;
+    public TurnOptions? LastOptions;
 
     public string Id => "fake-cli";
     public string DisplayName => "Fake";
@@ -220,8 +274,11 @@ internal sealed class ScriptedRuntime(Func<UserMessage, TurnWriter, IRuntimeHost
     {
         public string? NativeSessionId => nativeId;
 
-        public Task RunTurnAsync(UserMessage message, TurnOptions options, TurnWriter writer, CancellationToken cancellationToken) =>
-            owner._turn(message, writer, host, cancellationToken);
+        public Task RunTurnAsync(UserMessage message, TurnOptions options, TurnWriter writer, CancellationToken cancellationToken)
+        {
+            owner.LastOptions = options;
+            return owner._turn(message, writer, host, cancellationToken);
+        }
 
         public ValueTask<bool> SteerAsync(UserMessage message, CancellationToken cancellationToken) => ValueTask.FromResult(false);
 

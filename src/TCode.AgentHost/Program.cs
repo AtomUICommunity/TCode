@@ -10,11 +10,17 @@ if (args.Contains("--self-test"))
 {
     return await TCode.AgentHost.SelfTest.RunAsync();
 }
+// 外部运行时启动的 MCP 桥接进程（docs/design/mcp.md §10）
+if (args.Contains("--mcp-bridge"))
+{
+    return await TCode.AgentHost.McpBridgeClient.RunAsync();
+}
 
 // stdout 专用于 JSON-RPC 帧，所有日志必须写到 stderr。
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+builder.Logging.AddProvider(new TCode.AgentHost.FileLoggerProvider(Path.Combine(TCode.Agent.Coding.TCodePaths.Home, "logs")));
 
 // 所有 HTTP 适配器共享一个 HttpClient；流式请求由适配器自己的空闲超时控制，这里不设总超时。
 builder.Services.AddSingleton(_ => new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) })
@@ -45,6 +51,15 @@ builder.Services.AddSingleton<TCode.Runtimes.RuntimeRegistry>();
 builder.Services.AddHostedService<RuntimeProbeService>();
 builder.Services.AddSingleton<SessionIndex>();
 builder.Services.AddSingleton<TCode.AgentHost.Peers.PeerDirectory>();
+// MCP：Host 内共享的连接池（docs/design/mcp.md §6）
+builder.Services.AddSingleton(sp => new TCode.Mcp.McpManager(new TCode.Mcp.McpHost
+{
+    LoggerFactory = sp.GetRequiredService<ILoggerFactory>(),
+    Logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mcp"),
+}));
+builder.Services.AddSingleton<McpService>();
+builder.Services.AddSingleton<FileIndexService>();
+builder.Services.AddSingleton(_ => new TCode.Agent.Coding.Assets.AgentAssetStore());
 builder.Services.AddSingleton<SessionManager>();
 builder.Services.AddSingleton<AgentHostServer>();
 builder.Services.AddHostedService<RpcHostService>();

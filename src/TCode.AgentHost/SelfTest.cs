@@ -67,6 +67,26 @@ public static class SelfTest
             Check(ReadOnlyCommands.IsReadOnly("git status && rg -n x | head") && !ReadOnlyCommands.IsReadOnly("rm -rf x"), "read-only commands");
             new TaskList().Create("t", "d", null);
             Directory.Delete(root, recursive: true);
+
+            // MCP：TCODE_SELFTEST_MCP 指向一个 stdio MCP 服务器（例如 AOT 发布的 tests/TCode.Mcp.TestServer）时，实际连上并调用 echo
+            if (Environment.GetEnvironmentVariable("TCODE_SELFTEST_MCP") is { Length: > 0 } mcpServer)
+            {
+                var config = TCode.Config.McpServerConfig.From("selftest", new TCode.Config.McpServerSettings { Command = mcpServer, StartupTimeout = 20 },
+                    TCode.Config.McpConfigSource.Global);
+                await using var mcp = new TCode.Mcp.McpManager(new TCode.Mcp.McpHost(), new TCode.Mcp.McpTrustStore(Path.GetTempFileName()), () => [config]);
+                var source = mcp.CreateSource(new ToolContext(new WorkspaceRoots(Path.GetTempPath()), "selftest-mcp"));
+                var set = await source.RefreshAsync(true, CancellationToken.None);
+                var echo = set.Tools.FirstOrDefault(t => t.Name == "mcp__selftest__echo");
+                Check(echo is not null && set.Sections.Count == 1, "mcp tools/list");
+                if (echo is not null)
+                {
+                    using var echoArgs = JsonDocument.Parse("""{"text":"aot"}""");
+                    var result = await echo.ExecuteAsync(new ToolInvocation("3", echoArgs.RootElement), CancellationToken.None);
+                    Check(string.Concat(result.Content.OfType<TextContent>().Select(t => t.Text)) == "echo: aot" && result.Details is { Length: > 0 },
+                        "mcp tools/call");
+                }
+                await source.DisposeAsync();
+            }
         }
         catch (Exception ex)
         {

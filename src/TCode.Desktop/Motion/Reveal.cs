@@ -9,7 +9,7 @@ namespace TCode.Desktop.Motion;
 /// 占用的尺寸随进度从 0 变到内容尺寸（周围布局跟着平滑重排），内容同时淡入并从 Offset 处滑到原位；收起播完才隐藏内容。
 /// Orientation=Horizontal 时按宽度展开（侧栏）。
 /// </summary>
-public class Reveal : Decorator
+public class Reveal : Decorator, IMotionGated
 {
     public static readonly StyledProperty<bool> IsOpenProperty =
         AvaloniaProperty.Register<Reveal, bool>(nameof(IsOpen), defaultValue: true);
@@ -33,7 +33,7 @@ public class Reveal : Decorator
     public Reveal()
     {
         ClipToBounds = true;
-        _gate = new MotionGate(this);
+        _gate = MotionGate.For(this);
         _progress = new MotionValue(this, 1, _ => OnProgress());
     }
 

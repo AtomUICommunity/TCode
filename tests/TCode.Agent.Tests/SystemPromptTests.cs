@@ -70,6 +70,44 @@ public sealed class SystemPromptTests
     }
 
     [Fact]
+    public async Task Role_FiltersToolsAndAddsSection_FromTheNextBatch()
+    {
+        var repo = NewRepo();
+        var apis = new WireApiRegistry([new FakeWireApi(TimeSpan.Zero)]);
+        await using var session = AgentSession.Create(apis, FakeWireApi.Models[1], repo, Path.Combine(repo, ".sessions"));
+        var agent = (Agent)session.Agent;
+        session.Prompt("hello");
+        await agent.WaitForIdleAsync();
+        Assert.Contains(agent.Tools, t => t.Name == "write");
+
+        // 切到 Plan：下一批输入前去掉写工具，并以补丁加入 role 节
+        session.Role = TCode.Agent.Coding.Assets.SessionRole.Plan;
+        session.Prompt("explain");
+        await agent.WaitForIdleAsync();
+        Assert.DoesNotContain(agent.Tools, t => t.Name is "write" or "edit");
+        Assert.Contains(agent.Tools, t => t.Name == "read");
+        var patch = Assert.Single(agent.Messages.OfType<SystemMessage>());
+        Assert.Contains("You are in Plan mode", patch.Text);
+
+        // 回到 Agent：工具恢复，模式节换成“可以动手了”的说明（不是直接删掉）
+        session.Role = TCode.Agent.Coding.Assets.SessionRole.Agent;
+        session.Prompt("do it");
+        await agent.WaitForIdleAsync();
+        Assert.Contains(agent.Tools, t => t.Name == "write");
+        var resumed = agent.Messages.OfType<SystemMessage>().Last().Text;
+        Assert.StartsWith("Updated system prompt section \"mode\"", resumed);
+        Assert.Contains("You are in Agent mode again", resumed);
+
+        // 新会话一开始就是 Agent：没有模式节；@path 的说明在 rules 里
+        await using var fresh = AgentSession.Create(apis, FakeWireApi.Models[1], repo, Path.Combine(repo, ".sessions"));
+        var freshAgent = (Agent)fresh.Agent;
+        fresh.Prompt("hi");
+        await freshAgent.WaitForIdleAsync();
+        Assert.DoesNotContain("<mode>", freshAgent.SystemPrompt);
+        Assert.Contains("@path refers to a file or directory in the workspace", freshAgent.SystemPrompt);
+    }
+
+    [Fact]
     public async Task Session_FreezesInitialPrompt_AppendsPatchOnChange_AndRestoresFromFile()
     {
         var repo = NewRepo();

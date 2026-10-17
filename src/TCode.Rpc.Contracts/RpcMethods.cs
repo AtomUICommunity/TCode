@@ -30,11 +30,25 @@ public static class RpcMethods
     public const string SetModel = "session/setModel";
     public const string SetOptions = "session/setOptions";
     public const string CloseSession = "session/close";
+    public const string McpList = "mcp/list";
+    public const string McpTools = "mcp/tools";
+    public const string McpLog = "mcp/log";
+    public const string McpTest = "mcp/test";
+    public const string McpRestart = "mcp/restart";
+    public const string McpLogout = "mcp/logout";
+    public const string McpTrust = "mcp/trust";
+    public const string McpCatalog = "mcp/catalog";
+    public const string SearchFiles = "workspace/searchFiles";
+    public const string ListAssets = "assets/list";
 
     // Host → UI
     public const string SessionEvent = "session/event";
     public const string ModelsChanged = "models/changed";
     public const string ApproveTool = "tool/approve";
+    public const string McpChanged = "mcp/changed";
+    public const string McpElicit = "mcp/elicit";
+    public const string McpOpenUrl = "mcp/openUrl";
+    public const string AssetsChanged = "assets/changed";
 }
 
 /// <summary>多参数或基础类型参数的方法统一以具名对象作为 params。</summary>

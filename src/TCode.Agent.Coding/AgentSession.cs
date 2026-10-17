@@ -1,3 +1,4 @@
+using TCode.Agent.Coding.Assets;
 using TCode.Agent.Coding.Prompt;
 using TCode.Agent.Coding.Sessions;
 using TCode.Agent.Coding.Tools;
@@ -56,6 +57,28 @@ public sealed class AgentSession : IAsyncDisposable
 
     /// <summary>内置工具共享的会话状态（外部运行时为 null）。</summary>
     public ToolContext? Tools { get; }
+
+    private SessionRole _role = SessionRole.Agent;
+
+    /// <summary>会话的 role（docs/design/composer.md §10.3）。内置 Agent 在下一批用户输入前按它过滤工具、更新 role 节。</summary>
+    public SessionRole Role
+    {
+        get => _role;
+        set
+        {
+            var previous = _role;
+            _role = value;
+            if (Tools is not null)
+            {
+                Tools.Role = value;
+            }
+            // 外部运行时：只读由运行时原生收紧，说明随下一条用户消息发送一次（docs/design/composer.md §11）
+            if (External is { } external)
+            {
+                external.SetMode(value.Name, value.IsReadOnly, SessionRole.ExternalReminder(previous, value));
+            }
+        }
+    }
 
     /// <summary>“本会话允许”的审批记录（仅内存）。</summary>
     public SessionApprovals Approvals { get; init; } = new();
@@ -117,7 +140,37 @@ public sealed class AgentSession : IAsyncDisposable
             SessionId = store.SessionId,
             GetApiKey = getApiKey,
         };
-        agent.ContextUpdates = ct => prompt.UpdatesAsync(agent.Model, ct);
+        var dynamic = options.Services.DynamicTools?.Invoke(toolContext);
+        toolContext.DynamicTools = dynamic;
+        var firstTurn = true;
+        agent.ContextUpdates = async ct =>
+        {
+            // 每批用户输入之前：取当前的 MCP 工具、skills 与 role，同一轮内保持不变
+            var set = DynamicToolSet.Empty;
+            if (dynamic is not null)
+            {
+                try
+                {
+                    set = await dynamic.RefreshAsync(firstTurn, ct);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                }
+            }
+            firstTurn = false;
+            var role = toolContext.Role ?? SessionRole.Agent;
+            // 从其他模式切回 Agent：模式节换成“可以动手了”的说明，而不是直接删掉（docs/design/composer.md §18.4）
+            if (role.Section is null && role.Name == SessionRole.AgentName && prompt.HasSection(SessionRole.SectionName))
+            {
+                role = SessionRole.AgentResumed;
+            }
+            IReadOnlyList<IAgentTool> all = set.Tools.Count == 0 ? tools : [.. tools, .. set.Tools];
+            agent.Tools = role.Tools is ["all"] ? all : all.Where(role.Allows).ToArray();
+            prompt.Dynamic = role.Section is { } section ? [.. set.Sections, section] : set.Sections;
+            var updates = await prompt.UpdatesAsync(agent.Model, ct);
+            agent.SystemPrompt = prompt.InitialPrompt;
+            return updates;
+        };
         toolContext.ModelSupportsImages = () => agent.Model.SupportsImages;
         toolContext.CurrentModel = () => agent.Model;
         return (agent, toolContext);
@@ -204,6 +257,10 @@ public sealed class AgentSession : IAsyncDisposable
         }
         Agent.Abort();
         await Agent.WaitForIdleAsync();
+        if (Tools?.DynamicTools is { } dynamic)
+        {
+            await dynamic.DisposeAsync();
+        }
         _persistence.Dispose();
         if (Agent is IExternalAgentLoop external)
         {

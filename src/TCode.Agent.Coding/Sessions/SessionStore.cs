@@ -120,6 +120,7 @@ public sealed class SessionStore
         int? contextWindow = null;
         RuntimeSessionEntry? runtime = null;
         TCode.Agent.PermissionMode? permission = null;
+        string? role = null;
         IReadOnlyList<PromptSection>? initialPrompt = null;
         IReadOnlyList<PromptSection>? currentPrompt = null;
         IReadOnlyList<TCode.Agent.Coding.Tools.TaskItem>? tasks = null;
@@ -145,6 +146,7 @@ public sealed class SessionStore
                     fast = o.FastMode ?? fast;
                     contextWindow = o.ContextWindow ?? contextWindow;
                     permission = o.PermissionMode ?? permission;
+                    role = o.Role ?? role;
                     break;
                 case RuntimeSessionEntry r:
                     runtime = r;
@@ -157,6 +159,7 @@ public sealed class SessionStore
             InitialSystemPrompt = initialPrompt,
             SystemPrompt = currentPrompt,
             Tasks = tasks,
+            Role = role,
         };
     }
 
@@ -167,8 +170,8 @@ public sealed class SessionStore
         => AppendTreeAsync(parent => new ModelChangeEntry(NewEntryId(), parent, provider, modelId), ct);
 
     public Task AppendOptionsChangeAsync(ThinkingLevel? thinkingLevel, bool? fastMode, int? contextWindow, CancellationToken ct = default,
-        TCode.Agent.PermissionMode? permissionMode = null)
-        => AppendTreeAsync(parent => new OptionsChangeEntry(NewEntryId(), parent, thinkingLevel, fastMode, contextWindow, permissionMode), ct);
+        TCode.Agent.PermissionMode? permissionMode = null, string? role = null)
+        => AppendTreeAsync(parent => new OptionsChangeEntry(NewEntryId(), parent, thinkingLevel, fastMode, contextWindow, permissionMode, role), ct);
 
     public Task AppendSystemPromptAsync(IReadOnlyList<PromptSection> sections, CancellationToken ct = default)
         => AppendTreeAsync(parent => new SystemPromptEntry(NewEntryId(), parent, sections), ct);
@@ -268,6 +271,9 @@ public sealed record SessionSnapshot(
 
     /// <summary>当前生效的系统提示（含中途变化）。</summary>
     public IReadOnlyList<PromptSection>? SystemPrompt { get; init; }
+
+    /// <summary>会话的 role 名（null 表示 agent）。</summary>
+    public string? Role { get; init; }
 
     /// <summary>任务清单的最新快照。</summary>
     public IReadOnlyList<TCode.Agent.Coding.Tools.TaskItem>? Tasks { get; init; }

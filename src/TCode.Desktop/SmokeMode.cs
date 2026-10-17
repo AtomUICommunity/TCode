@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using StreamMark.Avalonia.Rendering;
 using StreamMark.Avalonia.Transcript;
 using TCode.Desktop.Controls;
+using TCode.Desktop.Controls.Composer;
 using TCode.Desktop.Previews;
 using TCode.Desktop.Services;
 using TCode.Desktop.ViewModels;
@@ -37,6 +38,10 @@ internal static class SmokeMode
         var home = Directory.CreateTempSubdirectory("tcode-smoke-home-").FullName;
         var project = Directory.CreateTempSubdirectory("tcode-smoke-project-").FullName;
         File.WriteAllText(Path.Combine(project, "README.md"), "# smoke\n\nA **sample** project with `code`.\n");
+        Directory.CreateDirectory(Path.Combine(project, ".agents", "commands"));
+        File.WriteAllText(Path.Combine(project, ".agents", "commands", "hello.md"), "---\ndescription: Say hello\n---\nSay hello.\n");
+        Directory.CreateDirectory(Path.Combine(project, ".agents", "skills", "greet"));
+        File.WriteAllText(Path.Combine(project, ".agents", "skills", "greet", "SKILL.md"), "---\nname: greet\ndescription: Greeting rules\n---\nBe brief.\n");
         Environment.SetEnvironmentVariable("TCODE_HOME", home);
         Environment.SetEnvironmentVariable("TCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TCODE_EXTERNAL_RUNTIMES", "0");
@@ -92,6 +97,37 @@ internal static class SmokeMode
             }
 
             CheckFilePreviews(Check, vm, window, project);
+            CheckComposer(Check, window);
+
+            // @ 文件：Host 的文件索引（rg 或内置遍历）与 workspace/searchFiles 在 AOT 下可用
+            var search = Task.Run(async () =>
+            {
+                var server = await provider.GetRequiredService<AgentHostConnection>().GetServerAsync();
+                return await server.SearchFilesAsync(new TCode.Rpc.FileSearchRequest(project, "readme", 10));
+            });
+            // command / skill / role：frontmatter 解析与 assets/list 在 AOT 下可用
+            var assets = Task.Run(async () =>
+            {
+                var server = await provider.GetRequiredService<AgentHostConnection>().GetServerAsync();
+                return await server.ListAssetsAsync(project);
+            });
+            Check("assets.list", WaitUntil(() => assets.IsCompleted) && assets.Result.Commands.Any(c => c.Name == "hello" && c.Description == "Say hello"),
+                assets.IsCompletedSuccessfully ? string.Join(", ", assets.Result.Commands.Select(c => c.Name)) : assets.Exception?.GetBaseException().Message);
+            // command：发送时 Host 展开 .md 正文；用户消息的显示片段经会话记录（AiJsonContext）保存
+            vm.Conversation.Composer.SetContent([new TagSegment(TagKind.Command, "hello", "hello"), new TextSegment(" world "),
+                new TagSegment(TagKind.Skill, "greet", "greet")]);
+            vm.Conversation.SendCommand.Execute(null);
+            var commandTurn = WaitUntil(() => vm.Conversation.Active is { IsRunning: false } a && a.Items.OfType<UserMessageItemViewModel>().Count() == 2);
+            var commandMessage = vm.Conversation.Active?.Items.OfType<UserMessageItemViewModel>().LastOrDefault();
+            Check("command.expanded", commandTurn && commandMessage is { HasSegments: true } &&
+                commandMessage.Text.Contains("<skill name=\"greet\"", StringComparison.Ordinal) && commandMessage.Text.EndsWith("Say hello.\n\nworld /greet", StringComparison.Ordinal),
+                commandMessage?.Text);
+            // 模式：Host 解析 role、过滤工具并写入会话记录
+            vm.Conversation.RolePicker.Choose("plan");
+            var planApplied = WaitUntil(() => vm.Conversation.Active?.Options.Role == "plan");
+            Check("role.plan", planApplied, vm.Conversation.Active?.Options.Role);
+            Check("files.search", WaitUntil(() => search.IsCompleted) && search.Result.Items.FirstOrDefault()?.Path == "README.md",
+                search.IsCompletedSuccessfully ? string.Join(", ", search.Result.Items.Select(i => i.Path)) : search.Exception?.GetBaseException().Message);
 
             using var frame = window.CaptureRenderedFrame();
             Check("ui.frame", frame is not null, null);
@@ -111,6 +147,25 @@ internal static class SmokeMode
 
         Console.WriteLine(failures == 0 ? "SMOKE OK" : $"SMOKE FAILED ({failures})");
         return failures == 0 ? 0 : 1;
+    }
+
+    // 输入框：tag 排版与绘制、剪贴板内部格式（源生成 JSON）在 AOT 下都要可用
+    private static void CheckComposer(Action<string, bool, string?> check, MainWindow window)
+    {
+        var editor = window.GetVisualDescendants().OfType<ComposerEditor>().FirstOrDefault(e => e.IsEffectivelyVisible);
+        check("composer.editor", editor is not null, null);
+        if (editor is null)
+        {
+            return;
+        }
+        var tag = new TagSegment(TagKind.File, "README.md", "README.md");
+        editor.Document.SetContent([new TextSegment("看下 "), tag, new TextSegment(" 的内容")]);
+        Pump(5);
+        check("composer.tag-width", editor.CaretBounds(4).X - editor.CaretBounds(3).X > 20, null);
+        var json = ComposerClipboard.Serialize(editor.Document.Segments);
+        var restored = ComposerClipboard.Deserialize(json);
+        check("composer.clipboard-json", restored is not null && restored.SequenceEqual(editor.Document.Segments), json);
+        editor.Document.SetContent([]);
     }
 
     // 文件预览：图片（含动图解码与 SVG 栅格化）与源码着色在 AOT 下都要可用

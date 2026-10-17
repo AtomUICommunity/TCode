@@ -137,18 +137,28 @@ public sealed partial class FileExplorerViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 收起目录前由视图播放子节点的折叠动画（MainWindow 设置）：参数为目录与将被移除的子孙节点；
+    /// 动画期间目录又被展开时视图把子节点恢复原样，返回后这里不再移除。
+    /// </summary>
+    public Func<FileNodeViewModel, IReadOnlyList<FileNodeViewModel>, Task>? CollapseAnimation { get; set; }
+
+    private readonly HashSet<FileNodeViewModel> _collapsing = [];
+
     private void Toggle(FileNodeViewModel node)
     {
-        var index = VisibleNodes.IndexOf(node);
         if (node.IsExpanded)
         {
-            node.IsExpanded = false;
-            while (index + 1 < VisibleNodes.Count && VisibleNodes[index + 1].Depth > node.Depth)
-            {
-                VisibleNodes.RemoveAt(index + 1);
-            }
+            _ = CollapseAsync(node);
             return;
         }
+        if (_collapsing.Contains(node))
+        {
+            // 折叠动画还没播完：子节点仍在列表里，视图会把它们恢复
+            node.IsExpanded = true;
+            return;
+        }
+        var index = VisibleNodes.IndexOf(node);
         node.IsExpanded = true;
         var children = ReadChildren(node.FullPath, node.Depth + 1);
         for (var i = 0; i < children.Count; i++)
@@ -156,6 +166,43 @@ public sealed partial class FileExplorerViewModel : ObservableObject
             VisibleNodes.Insert(index + 1 + i, children[i]);
         }
         SetSelected(_workbench.ActiveFilePath);
+    }
+
+    private async Task CollapseAsync(FileNodeViewModel node)
+    {
+        node.IsExpanded = false;
+        var descendants = Descendants(node);
+        if (CollapseAnimation is { } animate && descendants.Count > 0 && _collapsing.Add(node))
+        {
+            try
+            {
+                await animate(node, descendants);
+            }
+            finally
+            {
+                _collapsing.Remove(node);
+            }
+            if (node.IsExpanded || !VisibleNodes.Contains(node))
+            {
+                return;
+            }
+        }
+        var index = VisibleNodes.IndexOf(node);
+        while (index >= 0 && index + 1 < VisibleNodes.Count && VisibleNodes[index + 1].Depth > node.Depth)
+        {
+            VisibleNodes.RemoveAt(index + 1);
+        }
+    }
+
+    private List<FileNodeViewModel> Descendants(FileNodeViewModel node)
+    {
+        var result = new List<FileNodeViewModel>();
+        var index = VisibleNodes.IndexOf(node);
+        for (var i = index + 1; index >= 0 && i < VisibleNodes.Count && VisibleNodes[i].Depth > node.Depth; i++)
+        {
+            result.Add(VisibleNodes[i]);
+        }
+        return result;
     }
 
     private async Task RefreshAsync()

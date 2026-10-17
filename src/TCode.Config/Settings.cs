@@ -13,6 +13,9 @@ public sealed record TCodeSettings
 
     /// <summary>减少动态效果：true 时界面动效直接跳到终态（macOS 系统的“减少动态效果”同样生效）。</summary>
     public bool? ReduceMotion { get; init; }
+
+    /// <summary>Markdown 中的图片按原始清晰度显示：默认（false）按显示尺寸压缩解码以节省内存，点击图片查看时仍是原图。</summary>
+    public bool? OriginalImages { get; init; }
     public Dictionary<string, ProviderSettings> Providers { get; init; } = new(StringComparer.Ordinal);
 
     /// <summary>内置 Agent 的 web_search 后端；未配置时不提供该工具。</summary>
@@ -20,6 +23,15 @@ public sealed record TCodeSettings
 
     /// <summary>内置 Agent 的权限相关设置。</summary>
     public PermissionSettings? Permissions { get; init; }
+
+    /// <summary>新会话的默认模式：agent / plan / acp，或自定义 role 名（docs/design/composer.md §10.3）；null 为 agent。</summary>
+    public string? DefaultRole { get; init; }
+
+    /// <summary>skills（~/.tcode/skills 与项目 .agents/skills）。</summary>
+    public SkillsSettings? Skills { get; init; }
+
+    /// <summary>MCP 服务器（原样保留，按项单独解析，一项出错不影响其他项；见 <see cref="McpServerConfig.ParseServers"/>）。</summary>
+    public JsonObject? McpServers { get; init; }
 }
 
 public sealed record WebSearchSettings
@@ -32,6 +44,12 @@ public sealed record WebSearchSettings
 
     /// <summary>自定义端点（SearXNG 必填：实例地址）。</summary>
     public string? BaseUrl { get; init; }
+}
+
+public sealed record SkillsSettings
+{
+    /// <summary>在系统提示里列出 skill，让模型自己发现并加载（默认 true）；关闭后只能用 /skill 名 显式调用。</summary>
+    public bool? AutoDiscover { get; init; }
 }
 
 public sealed record PermissionSettings
@@ -86,4 +104,5 @@ public sealed record SettingsLoadResult(TCodeSettings? Settings, IReadOnlyList<s
     AllowTrailingCommas = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(TCodeSettings))]
+[JsonSerializable(typeof(McpServerSettings))]
 internal sealed partial class SettingsJsonContext : JsonSerializerContext;

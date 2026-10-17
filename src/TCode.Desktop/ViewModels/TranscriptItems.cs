@@ -4,18 +4,27 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StreamMark.Avalonia;
 using TCode.Desktop.Localization;
+using TCode.Rpc;
 
 namespace TCode.Desktop.ViewModels;
 
 public abstract class TranscriptItemViewModel : ObservableObject;
 
-public sealed class UserMessageItemViewModel(string text, IReadOnlyList<string>? images = null) : TranscriptItemViewModel
+/// <param name="segments">输入框里的样子（含 tag）；没有 tag 时为 null。</param>
+public sealed class UserMessageItemViewModel(string text, IReadOnlyList<string>? images = null, IReadOnlyList<PromptSegmentDto>? segments = null)
+    : TranscriptItemViewModel
 {
-    /// <summary>发送的原文（含「[Image #N: 路径]」引用）。</summary>
+    /// <summary>发送的原文（含「[Image #N: 路径]」引用；command 已展开）。</summary>
     public string Text { get; } = text;
 
+    /// <summary>有 tag 时按输入框的样子显示（只读的 <see cref="Controls.Composer.ComposerEditor"/>）。</summary>
+    public Controls.Composer.ComposerDocument? Segments { get; } =
+        segments is { Count: > 0 } ? new Controls.Composer.ComposerDocument(Controls.Composer.ComposerSegments.FromDto(segments)) : null;
+
+    public bool HasSegments => Segments is not null;
+
     /// <summary>显示用：图片引用折叠为「[图片 #N]」。</summary>
-    public string DisplayText { get; } = ImagePrompt.Collapse(text);
+    public string DisplayText { get; } = McpMentions.Collapse(ImagePrompt.Collapse(text));
 
     /// <summary>附图（显示在气泡上方，点击全屏查看）。</summary>
     public IReadOnlyList<ImageAttachmentViewModel> Images { get; } =
@@ -144,7 +153,7 @@ public sealed partial class TextBlockViewModel : AssistantBlockViewModel
 {
     public TextBlockViewModel(bool live = false)
     {
-        Stream = new MarkdownStream(smooth: live);
+        Stream = new MarkdownStream(smooth: live, profile: Controls.MarkdownSetup.Services.Profile);
     }
 
     private TextBlockViewModel(string historyText)

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using TCode.Agent;
 using TCode.Ai.Messages;
+using TCode.Ai.Models;
 using TCode.Runtimes.Claude;
 using TCode.Runtimes.Tests.Fixtures;
 using Xunit;
@@ -218,6 +219,23 @@ public sealed class ClaudeFixtureTests
             await session.StartAsync(cancellationToken);
             return session;
         }
+    }
+
+    [Fact]
+    public void InitializeCommands_AndPlanModeMapping()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""
+            {"commands":[{"name":"compact","description":"Clear conversation history but keep a summary in context","argumentHint":"<optional custom summarization instructions>"},{"name":"review","description":"Review a pull request","argumentHint":""}]}
+            """);
+        Assert.Equal([("compact", "Clear conversation history but keep a summary in context", "<optional custom summarization instructions>"), ("review", "Review a pull request", null)],
+            ClaudeSession.ParseCommands(doc.RootElement).Select(c => (c.Name, c.Description, c.ArgumentHint)));
+
+        var model = new ModelInfo { Id = "default", Name = "Default", Provider = "claude-code", Api = "claude-code" };
+        var options = new TurnOptions(model, ThinkingLevel.Medium, false, TCode.Agent.PermissionMode.FullAccess);
+        Assert.Equal("bypassPermissions", ClaudeRuntime.PermissionModeFor(options));
+        // 只读模式优先于权限档位：映射到 Claude 原生的 plan 权限模式
+        Assert.Equal("plan", ClaudeRuntime.PermissionModeFor(options with { Mode = new RuntimeMode("plan", true) }));
+        Assert.Equal("default", ClaudeRuntime.PermissionModeFor(options with { Permission = TCode.Agent.PermissionMode.Ask, Mode = new RuntimeMode("acp", false) }));
     }
 
     private sealed class NullHost : IRuntimeHost

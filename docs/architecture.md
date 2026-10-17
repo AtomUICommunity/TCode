@@ -38,6 +38,7 @@ TCode.Desktop ──(JSON-RPC over stdio)──▶ TCode.AgentHost
 | `TCode.Agent.Coding` | pi-coding-agent | `AgentSession`；`SessionStore`（JSONL）；按节的系统提示；工作区与审批策略；内置工具（文件、搜索、bash/后台任务、任务清单、网页、子 Agent 与消息，见 [builtin-agent-tools.md](design/builtin-agent-tools.md)） |
 | `TCode.Rpc.Contracts` | pi RPC 模式 | `IAgentHostServer`（UI→Host）、`IAgentHostClient`（Host→UI）、只含增量的 `SessionEvent` |
 | `TCode.AgentHost` | — | 独立进程，托管多个会话，把 Agent 事件翻译为 RPC 通知 |
+| `TCode.Mcp` | — | MCP 客户端（官方 C# SDK）：Host 内的共享连接池、把 MCP 工具适配为 `IAgentTool`、OAuth、资源与提示词；设计见 [design/mcp.md](design/mcp.md) |
 | `TCode.Desktop` | — | Avalonia 应用：主题、窗口、视图与 ViewModel、Host 连接 |
 
 ## 3. 协议层（TCode.Ai）

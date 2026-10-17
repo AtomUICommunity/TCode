@@ -39,7 +39,7 @@ public sealed record ModelChangeEntry(string Id, string? ParentId, string Provid
 
 /// <summary>会话参数变化；为 null 的字段保持不变。</summary>
 public sealed record OptionsChangeEntry(string Id, string? ParentId, ThinkingLevel? ThinkingLevel, bool? FastMode, int? ContextWindow,
-    TCode.Agent.PermissionMode? PermissionMode = null)
+    TCode.Agent.PermissionMode? PermissionMode = null, string? Role = null)
     : TreeEntry(Id, ParentId);
 
 /// <summary>外部运行时的原生会话 id（Claude session_id / Codex threadId / ACP sessionId），用于恢复。</summary>

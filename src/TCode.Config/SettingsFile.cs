@@ -19,7 +19,7 @@ public static class SettingsFile
         AllowTrailingCommas = true,
     };
 
-    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions" };
+    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers" };
     private static readonly HashSet<string> WebSearchKeys = new(StringComparer.OrdinalIgnoreCase) { "provider", "apiKey", "baseUrl" };
     private static readonly HashSet<string> WebSearchProviders = new(StringComparer.OrdinalIgnoreCase) { "brave", "tavily", "exa", "searxng" };
     private static readonly HashSet<string> PermissionKeys = new(StringComparer.OrdinalIgnoreCase) { "additionalDirectories" };
@@ -121,6 +121,15 @@ public static class SettingsFile
         {
             Check(permissions, PermissionKeys, "permissions.", warnings);
         }
+        if (obj["mcpServers"] is { } mcp && mcp is not JsonObject)
+        {
+            errors.Add("mcpServers: must be an object.");
+        }
+        else if (obj["mcpServers"] is JsonObject mcpServers)
+        {
+            // 单个服务器的错误只停用该服务器（在设置页显示），不让整个文件失效
+            _ = McpServerConfig.ParseServers(mcpServers, McpConfigSource.Global, warnings);
+        }
         if (errors.Count > 0)
         {
             return new SettingsLoadResult(null, errors, warnings);
@@ -169,6 +178,28 @@ public static class SettingsFile
             providers[id] = provider;
         }
         return provider;
+    }
+
+    /// <summary>设置或删除（null）mcpServers.&lt;key&gt;。</summary>
+    public static void SetMcpServer(JsonObject root, string key, JsonObject? server)
+    {
+        if (root["mcpServers"] is not JsonObject servers)
+        {
+            if (server is null)
+            {
+                return;
+            }
+            servers = new JsonObject();
+            root["mcpServers"] = servers;
+        }
+        if (server is null)
+        {
+            servers.Remove(key);
+        }
+        else
+        {
+            servers[key] = server;
+        }
     }
 
     public static void RemoveProvider(JsonObject root, string id)

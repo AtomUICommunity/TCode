@@ -27,6 +27,8 @@ public sealed class AppState
     public int? LastContextWindow { get; set; }
     /// <summary>每个项目（路径）上次选择的权限档位：ask / autoApprove（完全授权不记住）。</summary>
     public Dictionary<string, string> PermissionModes { get; set; } = [];
+    /// <summary>每个工作区最近在输入框里 @ 过的路径（相对路径，目录以 / 结尾，最近的在前）。</summary>
+    public Dictionary<string, List<string>> RecentMentions { get; set; } = [];
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

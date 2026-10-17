@@ -17,7 +17,7 @@ public sealed class AgentCoordinatorTests
         var catalog = new ModelCatalog(NullLogger<ModelCatalog>.Instance, new BuiltInCatalog(),
             new ModelDiscovery(new HttpClient(), NullLogger<ModelDiscovery>.Instance));
         return new SessionManager(new WireApiRegistry([new FakeWireApi(TimeSpan.Zero)]), catalog, new RuntimeRegistry([]),
-            peers ?? new PeerDirectory(NullLogger<PeerDirectory>.Instance), NullLogger<SessionManager>.Instance);
+            peers ?? new PeerDirectory(NullLogger<PeerDirectory>.Instance), new TCode.Mcp.McpManager(new TCode.Mcp.McpHost(), null, () => []), NullLogger<SessionManager>.Instance);
     }
 
     private static string TempDir() => Directory.CreateTempSubdirectory("tcode-coord-").FullName;
@@ -91,5 +91,26 @@ public sealed class AgentCoordinatorTests
         Assert.Contains("delivered", result);
         await target.Agent.WaitForIdleAsync();
         Assert.Contains("hello from afar", ((TextContent)target.Agent.Messages.OfType<UserMessage>().Single().Content[0]).Text);
+    }
+
+    [Fact]
+    public async Task Subagent_SurvivesParentTurnAbort_ButIsStoppedWithParentSession()
+    {
+        await using var sessions = CreateManager();
+        var parent = sessions.Create(TempDir(), FakeWireApi.Models[1]);
+        var handle = await sessions.Coordinator.SpawnAsync(
+            new SubagentRequest(parent.Id, "say hi", "Reply with a greeting.", SubagentTypes.Explore, null, null), CancellationToken.None);
+
+        // 中止父会话当前这一轮不应影响子 Agent
+        parent.Agent.Abort();
+        var outcome = await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("completed", outcome.Status);
+
+        // 关闭父会话：尚在运行的子 Agent 以 stopped 收尾
+        var second = await sessions.Coordinator.SpawnAsync(
+            new SubagentRequest(parent.Id, "again", "Reply with a greeting.", SubagentTypes.Explore, null, "again"), CancellationToken.None);
+        await sessions.CloseAsync(parent.Id);
+        var closed = await second.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Contains(closed.Status, new[] { "stopped", "completed" });
     }
 }

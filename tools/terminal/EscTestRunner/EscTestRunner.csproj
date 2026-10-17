@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- esctest2 无头驱动（docs/terminal/11-testing-benchmarks.md §1.1.4）：真实 PTY + TCode 核心（一致性测试模式）。只在 CI / 本地运行，不随产品发布。 -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <AssemblyName>esctest-runner</AssemblyName>
+        <IsPackable>false</IsPackable>
+        <InvariantGlobalization>true</InvariantGlobalization>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\src\TCode.Terminal.Pty\TCode.Terminal.Pty.csproj" />
+    </ItemGroup>
+</Project>

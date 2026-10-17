@@ -9,6 +9,7 @@
              xmlns:controls="using:TCode.Desktop.Controls"
              xmlns:loc="using:TCode.Desktop.Localization"
              x:Class="TCode.Desktop.Views.MainWindow"
+        xmlns:composer="using:TCode.Desktop.Controls.Composer"
              x:DataType="vm:MainWindowViewModel"
              Title="TCode"
              Icon="avares://TCode/Assets/app-logo.png"
@@ -166,7 +167,7 @@
                                                     <TextBlock Text="{Binding ProjectInitial}" FontSize="9" FontWeight="Bold"
                                                                Foreground="{DynamicResource TCode.BadgeFg}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
-                                                <TextBlock Grid.Column="3" Classes="strong" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
+                                                <TextBlock Grid.Column="3" Classes="strong" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" MaxLines="1"
                                                            VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" />
                                                 <!-- 行内重命名：Enter 保存，Esc 取消，失去焦点保存 -->
                                                 <atom:LineEdit Grid.Column="3" Grid.ColumnSpan="2" SizeType="Small" IsVisible="{Binding IsRenaming}"
@@ -211,7 +212,7 @@
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="8,0,0,0"
                                         motion:Presence.IsPresent="{Binding !Conversation.IsEmpty}" motion:Presence.Effect="SlideRight">
                                 <icons:ProviderLogo Key="{Binding Conversation.HeaderIconKey}" Width="15" Height="15" VerticalAlignment="Center" />
-                                <TextBlock Classes="strong" Text="{Binding Conversation.HeaderTitle}" MaxWidth="360" TextTrimming="CharacterEllipsis"
+                                <TextBlock Classes="strong" Text="{Binding Conversation.HeaderTitle}" MaxWidth="360" TextTrimming="CharacterEllipsis" MaxLines="1"
                                            VerticalAlignment="Center" />
                                 <TextBlock Classes="secondary" Text="{Binding Conversation.HeaderSubtitle}" FontSize="12" VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" MaxWidth="320" />
@@ -248,6 +249,8 @@
                                 <views:BranchPickerView DataContext="{Binding Conversation.BranchPicker}" />
                                 <!-- 权限档位（询问 / 自动放行 / 完全授权） -->
                                 <views:PermissionPickerView DataContext="{Binding Conversation.Permission}" Margin="4,0,0,0" />
+                                <!-- 模式（Agent / Ask / Plan / 自定义 role） -->
+                                <views:RolePickerView x:Name="EmptyRolePicker" DataContext="{Binding Conversation.RolePicker}" Margin="2,0,0,0" />
                             </StackPanel>
 
                             <motion:Reveal IsOpen="{Binding Conversation.StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -343,8 +346,12 @@
                                     </StackPanel>
                                 </Border>
                                 </motion:Reveal>
+                                <!-- MCP 服务器请求用户输入 -->
+                                <motion:Reveal IsOpen="{Binding Conversation.Active.HasPendingElicitation, FallbackValue=False}" Offset="12">
+                                    <views:McpElicitationView DataContext="{Binding Conversation.Active.CurrentElicitation, FallbackValue={x:Null}}" />
+                                </motion:Reveal>
                                 <views:ComposerView x:Name="DockedComposer" Classes="compact" DataContext="{Binding Conversation}" />
-                                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="6,0">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="6,0">
                                     <Button Theme="{StaticResource TCode.ChipButton}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <icons:LucideIcon Kind="Folder" Width="12" Height="12" VerticalAlignment="Center" />
@@ -353,7 +360,8 @@
                                     </Button>
                                     <views:BranchPickerView Grid.Column="1" DataContext="{Binding Conversation.BranchPicker}" />
                                     <views:PermissionPickerView Grid.Column="2" DataContext="{Binding Conversation.Permission}" Margin="4,0,0,0" />
-                                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                    <views:RolePickerView x:Name="DockedRolePicker" Grid.Column="3" DataContext="{Binding Conversation.RolePicker}" Margin="2,0,0,0" />
+                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                                 IsVisible="{Binding Conversation.HasContextUsage}" ToolTip.Tip="{Binding Conversation.ContextUsageTip}"
                                                 Background="Transparent">
                                         <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
@@ -394,7 +402,8 @@
                                         </StackPanel>
                                     </DataTemplate>
                                     <DataTemplate DataType="vm:UserMessageItemViewModel">
-                                        <StackPanel HorizontalAlignment="Right" MaxWidth="560" Margin="0,8,0,4" Spacing="6">
+                                        <StackPanel HorizontalAlignment="Right" MaxWidth="560" Margin="0,8,0,4" Spacing="6"
+                                                    motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="14">
                                             <!-- 附图：点击全屏查看；附件文件已删除时显示占位 -->
                                             <ItemsControl ItemsSource="{Binding Images}" IsVisible="{Binding HasImages}" HorizontalAlignment="Right">
                                                 <ItemsControl.ItemsPanel>
@@ -423,7 +432,12 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                             <Border Background="{DynamicResource TCode.UserBubble}" CornerRadius="14" Padding="14,9" HorizontalAlignment="Right">
-                                                <SelectableTextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" />
+                                                <Panel>
+                                                    <SelectableTextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" IsVisible="{Binding !HasSegments}" />
+                                                    <!-- 带 tag 的消息：与输入框相同的样子（只读，可选择复制） -->
+                                                    <composer:ComposerEditor IsReadOnly="True" IsVisible="{Binding HasSegments}" Cursor="Arrow"
+                                                                             Document="{Binding Segments, FallbackValue={x:Null}}" />
+                                                </Panel>
                                             </Border>
                                         </StackPanel>
                                     </DataTemplate>
@@ -438,7 +452,7 @@
                                     </DataTemplate>
                                     <!-- 单独的一段思考（其后紧跟正文）：› 思考过程 -->
                                     <DataTemplate DataType="vm:ThinkingBlockViewModel">
-                                        <StackPanel>
+                                        <StackPanel motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="6">
                                             <Button Theme="{StaticResource TCode.ChipButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
@@ -461,7 +475,7 @@
                                     </DataTemplate>
                                     <!-- 活动组：› 思考 2 次 · 运行 4 条命令；展开后引导线串起每个步骤 -->
                                     <DataTemplate DataType="vm:ActivityGroupViewModel">
-                                        <StackPanel>
+                                        <StackPanel motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="6">
                                             <StackPanel.Styles>
                                                 <Style Selector="SelectableTextBlock.output.failed">
                                                     <Setter Property="Foreground" Value="{DynamicResource TCode.Danger}" />
@@ -538,7 +552,7 @@
                                         </StackPanel>
                                     </DataTemplate>
                                     <DataTemplate DataType="vm:AssistantMessageItemViewModel">
-                                        <StackPanel Spacing="8">
+                                        <StackPanel Spacing="8" motion:Entrance.Effect="Fade">
                                             <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasError}">
                                                 <icons:LucideIcon Kind="CircleAlert" Width="14" Height="14" StrokeBrush="{DynamicResource TCode.Danger}" />
                                                 <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource TCode.Danger}" FontSize="12" />
@@ -555,7 +569,7 @@
                                     </DataTemplate>
                                     <!-- 等待输出：彩色点阵 + 随机动词 + 计时（琢磨中… 6s） -->
                                     <DataTemplate DataType="vm:SessionViewModel">
-                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4" motion:Entrance.Effect="SlideRight" motion:Entrance.Distance="8">
                                             <controls:DotSpinner Width="12" Height="12" VerticalAlignment="Center" />
                                             <TextBlock Classes="secondary" Text="{Binding PonderVerb}" FontSize="13" VerticalAlignment="Center" />
                                             <TextBlock Classes="tertiary" Text="{Binding PonderText}" FontSize="12" VerticalAlignment="Center" />
@@ -683,7 +697,7 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <ContentControl Content="{Binding Workbench.ActiveTab}" IsVisible="{Binding Workbench.HasTabs}">
+                        <ContentControl x:Name="ActiveTabContent" Content="{Binding Workbench.ActiveTab}" IsVisible="{Binding Workbench.HasTabs}">
                             <ContentControl.DataTemplates>
                                 <!-- 文件：面包屑 + 查看方式切换 + 预览器内容 -->
                                 <DataTemplate DataType="vm:FileTabViewModel">
@@ -727,7 +741,7 @@
                         <TextBlock Classes="tertiary" Text="{loc:TCodeLangResource NoWorkspaceFiles}" Margin="16,8" TextWrapping="Wrap"
                                    IsVisible="{Binding !Explorer.HasRoot}" />
                         <ScrollViewer atom:ScrollViewer.IsLiteMode="True" IsVisible="{Binding Explorer.HasRoot}">
-                            <ItemsControl ItemsSource="{Binding Explorer.VisibleNodes}" Margin="4,0,4,8" motion:ItemsMotion.Enter="SlideDown">
+                            <ItemsControl x:Name="ExplorerList" ItemsSource="{Binding Explorer.VisibleNodes}" Margin="4,0,4,8" motion:ItemsMotion.Enter="SlideDown">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
@@ -809,10 +823,12 @@
                     <!-- 结果数量变化时高度平滑过渡；进入 / 返回子页时列表横向滑入 -->
                     <motion:SmoothSize>
                     <ScrollViewer x:Name="PaletteList" MaxHeight="340" atom:ScrollViewer.IsLiteMode="True">
+                        <motion:IndicatorPanel IndicatorBrush="{DynamicResource TCode.MenuItemHoverBg}" IndicatorRadius="6">
                         <ItemsControl ItemsSource="{Binding Palette.Items}" Margin="6">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PaletteItemViewModel">
                                     <Button Theme="{StaticResource TCode.MenuItem}" Classes.selected="{Binding IsHighlighted}" MinHeight="32" Margin="0,1"
+                                            motion:IndicatorPanel.IsCurrent="{Binding IsHighlighted}"
                                             Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Palette.ExecuteCommand}"
                                             CommandParameter="{Binding}">
                                         <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
@@ -835,6 +851,7 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        </motion:IndicatorPanel>
                     </ScrollViewer>
                     </motion:SmoothSize>
                     <motion:Reveal IsOpen="{Binding Palette.IsEmpty}">

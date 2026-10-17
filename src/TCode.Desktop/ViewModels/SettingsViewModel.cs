@@ -18,6 +18,8 @@ public enum SettingsSection
     General,
     Providers,
     Agents,
+    Mcp,
+    Assets,
     About,
 }
 
@@ -694,6 +696,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             new(SettingsSection.General, LucideKind.SlidersHorizontal, TCodeLangResourceKind.SettingsGeneral) { IsSelected = true },
             new(SettingsSection.Providers, LucideKind.Box, TCodeLangResourceKind.SettingsProviders),
             new(SettingsSection.Agents, LucideKind.Bot, TCodeLangResourceKind.SettingsAgents),
+            new(SettingsSection.Mcp, LucideKind.Plug, TCodeLangResourceKind.SettingsMcp),
+            new(SettingsSection.Assets, LucideKind.SquareTerminal, TCodeLangResourceKind.SettingsAssets),
             new(SettingsSection.About, LucideKind.CircleAlert, TCodeLangResourceKind.SettingsAbout),
         ];
         settings.Changed += () =>
@@ -701,6 +705,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             RefreshGeneral();
             _ = RefreshProvidersAsync();
         };
+        Mcp = new McpSettingsViewModel(settings, host, () => conversation.Active?.Cwd ?? conversation.Workspace?.Path, logger);
+        Assets = new AssetsSettingsViewModel(host, settings, () => conversation.CurrentCwd, logger);
         conversation.ModelsChanged += OnModelsChanged;
         Strings.LanguageChanged += (_, _) => RefreshLanguage();
         RefreshGeneral();
@@ -715,6 +721,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     public IReadOnlyList<SettingsNavItemViewModel> Nav { get; }
+
+    /// <summary>设置 › MCP 服务器。</summary>
+    public McpSettingsViewModel Mcp { get; }
+
+    /// <summary>设置 › 命令、Skills 与模式。</summary>
+    public AssetsSettingsViewModel Assets { get; }
     public ObservableCollection<SettingsChoiceViewModel> Languages { get; } = [];
     public ObservableCollection<SettingsChoiceViewModel> Themes { get; } = [];
     public ObservableCollection<SettingsChoiceViewModel> DefaultModels { get; } = [];
@@ -734,13 +746,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     public bool HasErrors => Errors.Count > 0;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsGeneral), nameof(IsProviders), nameof(IsAgents), nameof(IsAbout))]
+    [NotifyPropertyChangedFor(nameof(IsGeneral), nameof(IsProviders), nameof(IsAgents), nameof(IsMcp), nameof(IsAssets), nameof(IsAbout), nameof(IsScrollSection))]
     public partial SettingsSection Section { get; private set; }
 
     public bool IsGeneral => Section == SettingsSection.General;
     public bool IsProviders => Section == SettingsSection.Providers;
     public bool IsAbout => Section == SettingsSection.About;
     public bool IsAgents => Section == SettingsSection.Agents;
+    public bool IsMcp => Section == SettingsSection.Mcp;
+    public bool IsAssets => Section == SettingsSection.Assets;
+
+    /// <summary>通用 / 外部智能体 / 关于：共用一个滚动区域；主从双栏的分区各自滚动。</summary>
+    public bool IsScrollSection => !IsProviders && !IsMcp;
 
     // ---- 外部智能体（自动发现，免配置） ----
 
@@ -848,6 +865,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         await RefreshProvidersAsync();
         await RefreshCatalogStatusAsync();
         await RefreshRuntimesAsync();
+        await Mcp.RefreshAsync();
     }
 
     // ---- 模型目录（models.dev，手动检查 → 查看差异 → 应用） ----
@@ -998,6 +1016,24 @@ public sealed partial class SettingsViewModel : ObservableObject
             n.IsSelected = n == item;
         }
         Section = item.Section;
+        if (item.Section == SettingsSection.Assets)
+        {
+            _ = Assets.RefreshAsync();
+        }
+    }
+
+    /// <summary>Markdown 图片按原始清晰度显示（settings.json 的 originalImages）。</summary>
+    public bool OriginalImages
+    {
+        get => _settings.Current.OriginalImages == true;
+        set
+        {
+            if (value != OriginalImages)
+            {
+                _settings.SetOriginalImages(value);
+                OnPropertyChanged();
+            }
+        }
     }
 
     [RelayCommand]
@@ -1358,6 +1394,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void RefreshGeneral()
     {
         OnPropertyChanged(nameof(ReduceMotion));
+        OnPropertyChanged(nameof(OriginalImages));
         var language = _settings.Current.Language ?? "zh-CN";
         Fill(Languages, [("zh-CN", Strings.Get(TCodeLangResourceKind.LanguageChinese)), ("en-US", Strings.Get(TCodeLangResourceKind.LanguageEnglish))], language);
         Fill(Themes,
@@ -1418,27 +1455,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    private void OpenWithShell(string path)
-    {
-        try
-        {
-            if (OperatingSystem.IsMacOS())
-            {
-                Process.Start(new ProcessStartInfo("open") { ArgumentList = { path }, UseShellExecute = false });
-            }
-            else if (OperatingSystem.IsWindows())
-            {
-                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-            }
-            else
-            {
-                Process.Start(new ProcessStartInfo("xdg-open") { ArgumentList = { path }, UseShellExecute = false });
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to open {Path}", path);
-        }
-    }
+    private void OpenWithShell(string path) => ShellOpen.Open(path, _logger);
 }
 

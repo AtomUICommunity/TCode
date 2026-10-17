@@ -48,7 +48,24 @@ public sealed class FakeWireApi : IWireApi
                 builder.EndBlock(thinking);
             }
 
-            if (last is UserMessage user && hasListTool && WantsFiles(user))
+            if (last is UserMessage mcpUser && McpCall(mcpUser, context) is { } mcp)
+            {
+                // 开发 / 测试用：“mcp:<工具名> <JSON 参数>” 直接调用该 MCP 工具
+                var call = builder.BeginToolCall($"call_{Guid.NewGuid():N}"[..20], mcp.Name);
+                await EmitAsync(builder, call, mcp.Arguments, ct);
+                builder.EndBlock(call);
+            }
+            else if (last is UserMessage taskUser && context.Tools.Any(t => t.Name == "task_create") && WantsTask(taskUser))
+            {
+                var text = builder.BeginText();
+                await EmitAsync(builder, text, "我先把这件事记进任务清单。", ct);
+                builder.EndBlock(text);
+
+                var call = builder.BeginToolCall($"call_{Guid.NewGuid():N}"[..20], "task_create");
+                await EmitAsync(builder, call, """{"subject":"Fake task","description":"Created by the fake provider","activeForm":"Doing the fake task"}""", ct);
+                builder.EndBlock(call);
+            }
+            else if (last is UserMessage user && hasListTool && WantsFiles(user))
             {
                 var text = builder.BeginText();
                 await EmitAsync(builder, text, "我先看一下当前工作区的目录结构。", ct);
@@ -93,6 +110,26 @@ public sealed class FakeWireApi : IWireApi
         }
     }
 
+    private static (string Name, string Arguments)? McpCall(UserMessage user, LlmContext context)
+    {
+        var text = string.Concat(user.Content.OfType<TextContent>().Select(t => t.Text)).Trim();
+        if (!text.StartsWith("mcp:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+        var rest = text[4..].Trim();
+        var space = rest.IndexOf(' ');
+        var name = space < 0 ? rest : rest[..space];
+        var args = space < 0 ? "{}" : rest[(space + 1)..].Trim();
+        return context.Tools.Any(t => t.Name == name) ? (name, args) : null;
+    }
+
+    private static bool WantsTask(UserMessage user)
+    {
+        var text = string.Concat(user.Content.OfType<TextContent>().Select(t => t.Text));
+        return text.Contains("任务", StringComparison.Ordinal) || text.Contains("task", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool WantsFiles(UserMessage user)
     {
         var text = string.Concat(user.Content.OfType<TextContent>().Select(t => t.Text));
@@ -103,7 +140,7 @@ public sealed class FakeWireApi : IWireApi
     private static string ComposeReply(Message? last) => last switch
     {
         ToolResultMessage result => $"""
-            目录读取完成（`{result.ToolName}`）。这是 **Fake Provider** 的模拟回复：
+            工具 `{result.ToolName}` 已执行完成。这是 **Fake Provider** 的模拟回复：
 
             - 工具调用、结果回传与下一轮推理都走的是真实的 Agent 循环
             - 接入真实协议适配器后，这里会是模型的实际输出
@@ -114,7 +151,7 @@ public sealed class FakeWireApi : IWireApi
             当前连接的是 **Fake Provider**，用于验证界面与 Agent 运行时：
 
             1. 流式文本与思考块
-            2. 工具调用卡片（试试输入「看看目录里有哪些文件」）
+            2. 工具调用卡片（试试输入「看看目录里有哪些文件」或「建个任务」）
             3. 中止、排队与会话持久化
             """,
         _ => "你好，我是 TCode。",

@@ -262,4 +262,22 @@ public sealed class CodexFixtureTests
             return session;
         }
     }
+
+    [Fact]
+    public void ReadOnlyMode_StartsThreadWithReadOnlySandbox()
+    {
+        var session = new CodexSession(new MemoryStream(), new MemoryStream(), new NullRuntimeHost(), null);
+        var json = session.ThreadParams("/tmp", new CodexThreadSettings(null, "on-request", FullAccess: true, false, null, ReadOnly: true), null);
+        Assert.Equal("read-only", json.GetProperty("sandbox").GetString());
+    }
+
+    private sealed class NullRuntimeHost : IRuntimeHost
+    {
+        public ValueTask<ApprovalDecision> RequestApprovalAsync(RuntimeApprovalRequest request, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(ApprovalDecision.Deny());
+
+        public void OnNativeSessionId(string nativeSessionId)
+        {
+        }
+    }
 }

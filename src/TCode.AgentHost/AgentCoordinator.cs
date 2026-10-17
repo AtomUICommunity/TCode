@@ -72,7 +72,11 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
         {
             SpawnRun = new TaskCompletionSource<SubagentOutcome>(TaskCreationOptions.RunContinuationsAsynchronously),
         };
-        var handle = new SubagentHandle(child.Id, name, request.AgentType, child.SpawnRun.Task, () => session.Agent.Abort());
+        var handle = new SubagentHandle(child.Id, name, request.AgentType, child.SpawnRun.Task, () =>
+        {
+            logger.LogWarning("Subagent {Name} abort requested by its parent's task controls", name);
+            session.Agent.Abort();
+        });
         if (session.Agent is Agent.Agent builtin)
         {
             builtin.BeforeToolCall = (ctx, ct) => sessions.ApproveAsync(request.ParentSessionId, session, ctx, ct, name);
@@ -110,6 +114,8 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
                     _ => "completed",
                 };
                 child.Status = status;
+                logger.LogInformation("Subagent {Name} run ended: {Status}, {ToolUses} tool uses, {Tokens} tokens, stopReason {StopReason}, error {Error}",
+                    child.Name, status, child.ToolUses, child.Tokens, last?.StopReason, last?.ErrorMessage);
                 var report = last is null ? "" : string.Concat(last.Content.OfType<TextContent>().Select(t => t.Text));
                 if (status == "failed" && last?.ErrorMessage is { } error)
                 {
@@ -261,6 +267,8 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
         foreach (var child in _children.Values.Where(c => c.ParentId == parentSessionId).ToArray())
         {
             _children.TryRemove(child.Id, out _);
+            logger.LogWarning("Subagent {Name} closed with parent session {Parent} (running: {Running}, {ToolUses} tool uses)",
+                child.Name, parentSessionId, child.Session.Agent.IsRunning, child.ToolUses);
             child.Subscription?.Dispose();
             Interlocked.Exchange(ref child.SpawnRun, null)?.TrySetResult(new SubagentOutcome("stopped", "The parent session was closed.", child.ToolUses, child.Tokens));
             await child.Session.DisposeAsync();

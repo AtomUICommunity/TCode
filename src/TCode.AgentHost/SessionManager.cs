@@ -2,12 +2,14 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using TCode.Agent;
 using TCode.Agent.Coding;
+using TCode.Agent.Coding.Assets;
 using TCode.Agent.Coding.Sessions;
 using TCode.Agent.Coding.Tools;
 using TCode.Agent.Coding.Tools.Web;
 using TCode.Agent.Coding.Workspace;
 using TCode.AgentHost.Peers;
 using TCode.Config;
+using TCode.Mcp;
 using TCode.Ai;
 using TCode.Ai.Messages;
 using TCode.Ai.Models;
@@ -32,13 +34,37 @@ public sealed class SessionManager : IAsyncDisposable
     private (string? Signature, IWebSearchProvider? Provider) _webSearch;
     private IAgentHostClient? _client;
 
-    public SessionManager(WireApiRegistry apis, ModelCatalog catalog, RuntimeRegistry runtimes, PeerDirectory peers, ILogger<SessionManager> logger)
+    public SessionManager(WireApiRegistry apis, ModelCatalog catalog, RuntimeRegistry runtimes, PeerDirectory peers, McpManager mcp,
+        ILogger<SessionManager> logger, AgentAssetStore? assets = null)
     {
+        Mcp = mcp;
+        _assets = assets;
+        // OAuth 的浏览器与 elicitation 弹窗经 UI 完成（没有 UI 时：浏览器用系统默认程序打开，elicitation 一律 cancel）
+        mcp.Host.OAuth ??= new McpOAuth(new McpAuthStore(), OpenMcpUrlAsync);
+        mcp.Host.Elicit ??= ElicitAsync;
+        Bridge = new McpBridgeServer(this, mcp, logger);
         this.apis = apis;
         this.catalog = catalog;
         this.runtimes = runtimes;
         this.logger = logger;
         Coordinator = new AgentCoordinator(this, peers, logger);
+    }
+
+    /// <summary>MCP 连接池。</summary>
+    public McpManager Mcp { get; }
+
+    private AgentAssetStore? _assets;
+
+    /// <summary>command / skill / role（全局与各项目 .agents）。测试中没有注入时按需创建。</summary>
+    public AgentAssetStore Assets => _assets ??= new AgentAssetStore();
+
+    /// <summary>外部运行时的 MCP 桥接。</summary>
+    public McpBridgeServer Bridge { get; }
+
+    private ExternalAgent WithBridge(ExternalAgent agent, Func<string> sessionId, string cwd)
+    {
+        agent.McpBridge = () => Bridge.LaunchFor(sessionId(), cwd);
+        return agent;
     }
 
     /// <summary>子 Agent 与跨会话消息。</summary>
@@ -58,6 +84,11 @@ public sealed class SessionManager : IAsyncDisposable
         WebFetcher = _webFetcher,
         WebSearch = CurrentWebSearch(),
         Agents = Coordinator,
+        // MCP 工具与 skills（docs/design/composer.md §10.1）
+        DynamicTools = context => new CompositeToolSource([
+            Mcp.CreateSource(context),
+            new SkillToolSource(Assets, context, () => SettingsFile.Load().Settings?.Skills?.AutoDiscover != false),
+        ]),
     };
 
     private IWebSearchProvider? CurrentWebSearch()
@@ -109,6 +140,90 @@ public sealed class SessionManager : IAsyncDisposable
         _client = client;
         catalog.Changed += OnCatalogChanged;
         runtimes.Changed += NotifyModelsChanged;
+        Mcp.Changed += OnMcpChanged;
+        Assets.Changed += root =>
+        {
+            try
+            {
+                _client?.OnAssetsChanged(new AssetsChangedNotification(root));
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Failed to send assets/changed");
+            }
+        };
+    }
+
+    private async Task<bool> OpenMcpUrlAsync(string server, string url, CancellationToken ct)
+    {
+        if (_client is { } client)
+        {
+            try
+            {
+                return (await client.OpenMcpUrlAsync(new McpOpenUrlRequest(server, url), ct)).Opened;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "mcp/openUrl failed; falling back to the system browser");
+            }
+        }
+        return McpOAuth.OpenWithSystemBrowser(url);
+    }
+
+    /// <summary>MCP elicitation → UI（规格 §5.1）；没有 UI 或请求失败时 cancel。</summary>
+    private async ValueTask<ModelContextProtocol.Protocol.ElicitResult> ElicitAsync(McpElicitation e, CancellationToken ct)
+    {
+        var cancel = new ModelContextProtocol.Protocol.ElicitResult { Action = "cancel" };
+        if (_client is not { } client)
+        {
+            return cancel;
+        }
+        var json = System.Text.Json.JsonSerializer.SerializeToNode(e.Request,
+            ModelContextProtocol.McpJsonUtilities.DefaultOptions.GetTypeInfo(typeof(ModelContextProtocol.Protocol.ElicitRequestParams)));
+        var request = new McpElicitRequest(e.SessionId, e.ServerKey, e.ServerTitle, string.IsNullOrEmpty(e.Request.Mode) ? "form" : e.Request.Mode,
+            e.Request.Message, json?["requestedSchema"]?.ToJsonString(), e.Request.Url);
+        McpElicitResponse response;
+        try
+        {
+            response = await client.RequestMcpElicitationAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "mcp/elicit failed");
+            return cancel;
+        }
+        var result = new ModelContextProtocol.Protocol.ElicitResult { Action = response.Action };
+        if (response.Action == "accept" && response.ContentJson is { Length: > 0 } content)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            result.Content = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                ? doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone())
+                : null;
+        }
+        return result;
+    }
+
+    private int _mcpNotifyPending;
+
+    /// <summary>MCP 状态变化合并成一次通知（200ms 内的变化只推送一次），UI 收到后重新拉取列表。</summary>
+    private void OnMcpChanged()
+    {
+        if (Interlocked.Exchange(ref _mcpNotifyPending, 1) == 1)
+        {
+            return;
+        }
+        _ = Task.Delay(200).ContinueWith(_ =>
+        {
+            Interlocked.Exchange(ref _mcpNotifyPending, 0);
+            try
+            {
+                _client?.OnMcpChanged(new McpChangedNotification(null));
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Failed to send mcp/changed");
+            }
+        }, TaskScheduler.Default);
     }
 
     /// <summary>
@@ -149,11 +264,12 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>由外部运行时承载的新会话；CLI 进程在第一次提问时启动。</summary>
     public AgentSession CreateExternal(string cwd, IAgentRuntime runtime, ModelInfo model) =>
-        Register(AgentSession.Create(cwd, _ => new ExternalAgent(runtime, model, cwd)));
+        Register(AgentSession.Create(cwd, store => WithBridge(new ExternalAgent(runtime, model, cwd), () => store.SessionId, cwd)));
 
     /// <summary>打开外部运行时的会话：第一次提问时用记录的原生会话 id 恢复。</summary>
     public AgentSession OpenExternal(string filePath, IAgentRuntime runtime, ModelInfo model) =>
-        Register(AgentSession.Open(filePath, (store, snapshot) => new ExternalAgent(runtime, model, store.Cwd, snapshot.NativeSessionId)));
+        Register(AgentSession.Open(filePath, (store, snapshot) =>
+            WithBridge(new ExternalAgent(runtime, model, store.Cwd, snapshot.NativeSessionId), () => store.SessionId, store.Cwd)));
 
     /// <summary>
     /// 换承载会话的运行时（<paramref name="runtime"/> 为 null 表示内置 Agent）。只允许尚无消息、未在运行的会话：
@@ -174,7 +290,7 @@ public sealed class SessionManager : IAsyncDisposable
         logger.LogInformation("Session {SessionId} switched to {Runtime}", sessionId, runtime?.Id ?? "builtin");
         return Register(runtime is null
             ? AgentSession.CreateBuiltin(apis, model, old.Store, catalog.GetApiKey, OptionsFor(old.Cwd))
-            : AgentSession.Rebind(old.Store, new ExternalAgent(runtime, model, old.Cwd)));
+            : AgentSession.Rebind(old.Store, WithBridge(new ExternalAgent(runtime, model, old.Cwd), () => old.Store.SessionId, old.Cwd)));
     }
 
     /// <summary>按会话文件查找已打开的会话（同一文件只允许一个 Agent 写入）。</summary>
@@ -195,6 +311,8 @@ public sealed class SessionManager : IAsyncDisposable
         else if (session.Agent is ExternalAgent external)
         {
             external.ApprovalHandler = (request, ct) => ApproveExternalAsync(session.Id, request, ct);
+            external.CommandsChanged += commands => Publish(entry,
+                new CommandsChanged(commands.Select(c => new RuntimeCommandDto(c.Name, c.Description, c.ArgumentHint)).ToList()));
         }
         _sessions[session.Id] = entry;
         logger.LogInformation("Session {SessionId} registered in {Cwd}", session.Id, session.Cwd);
@@ -208,12 +326,14 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task CloseAsync(string sessionId)
     {
+        logger.LogInformation("Closing session {SessionId}", sessionId);
         await Coordinator.CloseChildrenAsync(sessionId);
         if (_sessions.TryRemove(sessionId, out var entry))
         {
             entry.Subscription?.Dispose();
             await entry.Session.DisposeAsync();
         }
+        await Bridge.ForgetAsync(sessionId);
     }
 
     public async ValueTask DisposeAsync()
@@ -222,6 +342,7 @@ public sealed class SessionManager : IAsyncDisposable
         {
             await CloseAsync(id);
         }
+        await Bridge.DisposeAsync();
     }
 
     /// <summary>
@@ -283,10 +404,18 @@ public sealed class SessionManager : IAsyncDisposable
 
     private ValueTask ForwardAsync(Entry entry, AgentEvent e)
     {
-        var mapped = Map(e);
-        if (mapped is null || _client is null)
+        if (Map(e) is { } mapped)
         {
-            return ValueTask.CompletedTask;
+            Publish(entry, mapped);
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    private void Publish(Entry entry, SessionEvent mapped)
+    {
+        if (_client is null)
+        {
+            return;
         }
         try
         {
@@ -297,7 +426,6 @@ public sealed class SessionManager : IAsyncDisposable
         {
             logger.LogWarning(ex, "Failed to forward session event");
         }
-        return ValueTask.CompletedTask;
     }
 
     private static SessionEvent? Map(AgentEvent e) => e switch
@@ -306,7 +434,7 @@ public sealed class SessionManager : IAsyncDisposable
         AgentEndEvent => new AgentEnded(),
         MessageStartEvent { Message: UserMessage user } s => new MessageStarted(s.MessageId, "user", TextOf(user.Content),
             user.Content.OfType<ImageContent>().Select(i => i.Path).OfType<string>().ToArray() is { Length: > 0 } images ? images : null,
-            user.Source),
+            user.Source, ToDto(user.Display)),
         MessageStartEvent { Message: ToolResultMessage or SystemMessage } => null,
         MessageStartEvent s => new MessageStarted(s.MessageId, "assistant", null),
         MessageUpdateEvent { Event: TextDeltaEvent d } u => new TextDelta(u.MessageId, d.ContentIndex, d.Delta),
@@ -323,6 +451,9 @@ public sealed class SessionManager : IAsyncDisposable
             t.Duration.TotalMilliseconds, t.Result.Details),
         _ => null,
     };
+
+    public static IReadOnlyList<PromptSegmentDto>? ToDto(IReadOnlyList<MessageSegment>? segments) =>
+        segments?.Select(s => new PromptSegmentDto(s.Kind, s.Text, s.Value, s.Label)).ToArray();
 
     private static string TextOf(IReadOnlyList<ContentBlock> content) => string.Concat(content.OfType<TextContent>().Select(t => t.Text));
 

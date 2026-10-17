@@ -63,4 +63,16 @@ public interface IExternalAgentLoop : IAgentLoop, IAsyncDisposable
 
     /// <summary>原生会话 id 首次确定或改变（例如恢复失败后新建）时触发。</summary>
     event Action<string>? NativeSessionIdChanged;
+
+    /// <summary>运行时能派生子 Agent（ACP 协调模式依赖它）。</summary>
+    bool SupportsSubagents { get; }
+
+    /// <summary>
+    /// 设置会话的模式（docs/design/composer.md §11）：<paramref name="readOnly"/> 由运行时原生收紧；
+    /// <paramref name="reminder"/> 在下一轮随用户消息发给 Agent 一次（只发给 Agent，不进转录），null 表示不需要说明。
+    /// </summary>
+    void SetMode(string name, bool readOnly, string? reminder);
+
+    /// <summary>运行时自带的斜杠命令列表变化：(名称, 描述, 参数提示)。</summary>
+    event Action<IReadOnlyList<(string Name, string? Description, string? ArgumentHint)>>? CommandsChanged;
 }

@@ -53,6 +53,9 @@ public sealed record RuntimeCapabilities
 
     /// <summary>工具参数是否流式到达（否则 ToolCallStarted/Delta/Ended 连续发出）。</summary>
     public bool StreamsToolArguments { get; init; }
+
+    /// <summary>主 Agent 能派生子 Agent（ACP 协调模式依赖它，docs/design/composer.md §11）。</summary>
+    public bool SupportsSubagents { get; init; }
 }
 
 public sealed record RuntimeDescriptor(
@@ -68,9 +71,26 @@ public sealed record RuntimeDescriptor(
     public IReadOnlyList<ModelInfo> Models { get; init; } = [];
 }
 
+/// <summary>
+/// 会话的模式在外部运行时上的投影（docs/design/composer.md §11）：<see cref="ReadOnly"/> 时运行时用原生手段收紧
+/// （Claude 的 plan 权限模式、Codex 的只读沙箱）；说明文字由 <see cref="ExternalAgent"/> 在模式变化后的第一轮注入。
+/// </summary>
+/// <param name="Name">模式名（agent / plan / acp / 自定义）。</param>
+public sealed record RuntimeMode(string Name, bool ReadOnly)
+{
+    public static RuntimeMode Agent { get; } = new("agent", false);
+}
+
+/// <summary>运行时自带的斜杠命令（Claude initialize 的 commands、ACP available_commands_update）。</summary>
+/// <param name="Name">不带斜杠的命令名。</param>
+public sealed record RuntimeCommand(string Name, string? Description, string? ArgumentHint);
+
 /// <summary>每轮生效的参数（模型与思考档位可在两轮之间改变）。</summary>
 public sealed record TurnOptions(ModelInfo Model, ThinkingLevel ThinkingLevel, bool FastMode, TCode.Agent.PermissionMode Permission)
 {
+    /// <summary>会话的模式；默认 Agent。</summary>
+    public RuntimeMode Mode { get; init; } = RuntimeMode.Agent;
+
     /// <summary>审批自动允许（自动放行与完全授权）。</summary>
     public bool AutoApprove => Permission != TCode.Agent.PermissionMode.Ask;
 }
@@ -80,7 +100,52 @@ public sealed record RuntimeSessionRequest(
     TurnOptions Options,
     /// <summary>恢复时的原生会话 id；null 表示新建。</summary>
     string? ResumeSessionId,
-    IRuntimeHost Host);
+    IRuntimeHost Host,
+    /// <summary>TCode 的 MCP 桥接服务器（没有配置 MCP 服务器时为 null，不注入）。</summary>
+    McpBridgeLaunch? McpBridge = null);
+
+/// <summary>
+/// 以 stdio MCP 服务器的形式注入外部运行时的 TCode 桥接（docs/design/mcp.md §10）：服务器名固定为 tcode，
+/// 身份令牌与 socket 路径放在环境变量中，不出现在命令行参数里。
+/// </summary>
+public sealed record McpBridgeLaunch(string Command, IReadOnlyList<string> Args, IReadOnlyDictionary<string, string> Env)
+{
+    public const string ServerName = "tcode";
+
+    /// <summary>写 {command, args, env:{…}}（Claude --mcp-config 与 Codex mcp_servers 的写法）。</summary>
+    internal void WriteObject(System.Text.Json.Utf8JsonWriter w, bool envAsArray = false)
+    {
+        w.WriteString("command", Command);
+        w.WriteStartArray("args");
+        foreach (var arg in Args)
+        {
+            w.WriteStringValue(arg);
+        }
+        w.WriteEndArray();
+        if (envAsArray)
+        {
+            // ACP：env 为 [{name, value}]
+            w.WriteStartArray("env");
+            foreach (var (name, value) in Env)
+            {
+                w.WriteStartObject();
+                w.WriteString("name", name);
+                w.WriteString("value", value);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
+        else
+        {
+            w.WriteStartObject("env");
+            foreach (var (name, value) in Env)
+            {
+                w.WriteString(name, value);
+            }
+            w.WriteEndObject();
+        }
+    }
+}
 
 /// <summary>会话向 TCode 发起的交互：审批与提问。实现方负责超时与断连时的拒绝。</summary>
 public interface IRuntimeHost
@@ -89,6 +154,11 @@ public interface IRuntimeHost
 
     /// <summary>原生会话 id 确定或改变（例如恢复失败后新建）。</summary>
     void OnNativeSessionId(string nativeSessionId);
+
+    /// <summary>运行时自带的斜杠命令列表（每次整体替换）。</summary>
+    void OnCommands(IReadOnlyList<RuntimeCommand> commands)
+    {
+    }
 }
 
 /// <summary>

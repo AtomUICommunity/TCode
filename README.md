@@ -165,4 +165,4 @@ Issues and pull requests are welcome once the project settles. Please keep these
 
 ## License
 
-No license has been chosen yet. Until one is added, all rights are reserved by the authors.
+TCode is licensed under the [Apache License 2.0](LICENSE).

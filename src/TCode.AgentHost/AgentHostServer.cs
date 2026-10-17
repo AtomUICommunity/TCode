@@ -16,6 +16,8 @@ public sealed class AgentHostServer(
     TCode.AgentHost.Catalog.CatalogSync catalogSync,
     RuntimeRegistry runtimes,
     SessionIndex index,
+    McpService mcp,
+    FileIndexService files,
     ILogger<AgentHostServer> logger)
     : IAgentHostServer
 {
@@ -40,7 +42,7 @@ public sealed class AgentHostServer(
 
     public static IEnumerable<ModelDto> RuntimeModelDtos(RuntimeRegistry runtimes) =>
         runtimes.All.Where(r => r.Descriptor.Status == RuntimeStatus.Ready)
-            .SelectMany(r => r.Descriptor.Models.Select(m => SessionOptions.ToDto(m, r.DisplayName, r.Id)));
+            .SelectMany(r => r.Descriptor.Models.Select(m => SessionOptions.ToDto(m, r.DisplayName, r.Id, r.Descriptor.Capabilities.SupportsSubagents)));
 
     public Task<IReadOnlyList<RuntimeDto>> ListRuntimesAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<RuntimeDto>>(runtimes.All.Select(r => r.Descriptor).Select(d => new RuntimeDto(
@@ -81,6 +83,7 @@ public sealed class AgentHostServer(
     public Task ReloadSettingsAsync(CancellationToken cancellationToken = default)
     {
         catalog.Reload();
+        sessions.Mcp.Reload();
         return Task.CompletedTask;
     }
 
@@ -110,10 +113,10 @@ public sealed class AgentHostServer(
         var session = external is var (runtime, _) ? sessions.CreateExternal(request.Cwd, runtime, model) : sessions.Create(request.Cwd, model);
         SessionOptions.Initialize(session);
         await session.Store.AppendModelChangeAsync(model.Provider, model.Id, cancellationToken);
-        var options = SessionOptions.Apply(session, request.Options);
+        var options = SessionOptions.Apply(session, request.Options, sessions.Assets.Get(session.Cwd));
         // 会话文件在第一条消息时才创建；这条参数记录先缓存在 SessionStore 中，随第一条消息写入。
         await session.Store.AppendOptionsChangeAsync(session.Agent.ThinkingLevel, session.Agent.FastMode, session.ContextWindow, cancellationToken,
-            session.Agent.PermissionMode);
+            session.Agent.PermissionMode, session.Role.Name);
         return new SessionDto(session.Id, session.Cwd, ModelCatalog.RefOf(model), session.Store.FilePath, options, session.External?.RuntimeId);
     }
 
@@ -198,7 +201,7 @@ public sealed class AgentHostServer(
             await store.AppendModelChangeAsync(snapshot.ModelProvider ?? "", snapshot.ModelId, cancellationToken);
         }
         var permission = snapshot.PermissionMode is TCode.Agent.PermissionMode.FullAccess ? TCode.Agent.PermissionMode.Ask : snapshot.PermissionMode;
-        await store.AppendOptionsChangeAsync(snapshot.ThinkingLevel, snapshot.FastMode, snapshot.ContextWindow, cancellationToken, permission);
+        await store.AppendOptionsChangeAsync(snapshot.ThinkingLevel, snapshot.FastMode, snapshot.ContextWindow, cancellationToken, permission, snapshot.Role);
         if (snapshot.CustomTitle is { } title)
         {
             await store.AppendMetaAsync(title, null, cancellationToken);
@@ -259,22 +262,67 @@ public sealed class AgentHostServer(
         SessionOptions.Initialize(session);
         // 完全授权不沿用：重新打开的会话回到“询问”；其余档位按记录恢复
         var permission = snapshot.PermissionMode is TCode.Agent.PermissionMode.FullAccess or null ? TCode.Agent.PermissionMode.Ask : snapshot.PermissionMode.Value;
+        // role 按记录恢复；自定义 role 已被删除时回到 agent
         SessionOptions.Apply(session, new SessionOptionsDto(snapshot.ThinkingLevel?.ToString(), snapshot.FastMode, snapshot.ContextWindow,
-            PermissionMode: SessionOptions.ToWire(permission)));
+            PermissionMode: SessionOptions.ToWire(permission), Role: snapshot.Role), sessions.Assets.Get(session.Cwd));
         return Task.FromResult(Describe(session, turnLimit));
     }
 
-    public Task<PromptResult> PromptAsync(PromptRequest request, CancellationToken cancellationToken = default)
+    public async Task<PromptResult> PromptAsync(PromptRequest request, CancellationToken cancellationToken = default)
     {
         var behavior = request.WhileRunning == StreamingBehaviorDto.Steer ? StreamingBehavior.Steer : StreamingBehavior.FollowUp;
-        var message = TCode.Agent.Coding.Sessions.ImageAttachments.CreatePrompt(request.Text,
-            (request.Images ?? []).Select(i => (i.Path, i.MimeType)));
-        var disposition = sessions.Get(request.SessionId).Prompt(message, behavior);
-        return Task.FromResult(new PromptResult(disposition == PromptDisposition.Started));
+        var session = sessions.Get(request.SessionId);
+        var message = TCode.Agent.Coding.Sessions.ImageAttachments.CreatePrompt(ExpandCommands(session.Cwd, request),
+            (request.Images ?? []).Select(i => (i.Path, i.MimeType))) with
+        {
+            Display = request.Segments?.Select(s => new MessageSegment(s.Kind, s.Text, s.Value, s.Label)).ToArray(),
+        };
+        if (request.McpPrompt is not null || request.McpResources is { Count: > 0 })
+        {
+            message = await mcp.ExpandAsync(session.Cwd, request, message, session.Agent.Model.SupportsImages, cancellationToken);
+        }
+        var disposition = session.Prompt(message, behavior);
+        return new PromptResult(disposition == PromptDisposition.Started);
+    }
+
+    /// <summary>
+    /// 输入框里的 command 与 skill tag（docs/design/composer.md §9.2、§10.2）：
+    /// skill 的说明以 &lt;skill&gt; 块、command 的 .md 正文依次放在用户文字之前（skill 的名字仍留在用户文字里）。
+    /// 找不到的 command / skill 报错（不悄悄当作普通文字发出去）。
+    /// </summary>
+    private string ExpandCommands(string cwd, PromptRequest request)
+    {
+        var tags = request.Segments?.Where(s => s.Kind is "command" or "skill" && s.Value is not null).ToList() ?? [];
+        if (tags.Count == 0)
+        {
+            return request.Text;
+        }
+        var catalog = sessions.Assets.Get(cwd);
+        var parts = new List<string>();
+        foreach (var skill in tags.Where(t => t.Kind == "skill").Select(t => t.Value!).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var asset = catalog.FindSkill(skill) ?? throw new InvalidOperationException($"Unknown skill /{skill}.");
+            var body = TCode.Agent.Coding.Assets.AgentAssetStore.ReadBody(asset.Path)
+                       ?? throw new InvalidOperationException($"Cannot read skill /{skill} ({asset.Path}).");
+            parts.Add(TCode.Agent.Coding.Assets.SkillBlock.Render(asset, body));
+        }
+        foreach (var name in tags.Where(t => t.Kind == "command").Select(t => t.Value!))
+        {
+            var asset = catalog.FindCommand(name) ?? throw new InvalidOperationException($"Unknown command /{name}.");
+            var body = TCode.Agent.Coding.Assets.AgentAssetStore.ReadBody(asset.Path)
+                       ?? throw new InvalidOperationException($"Cannot read command /{name} ({asset.Path}).");
+            parts.Add(body.Trim());
+        }
+        if (request.Text.Trim().Length > 0)
+        {
+            parts.Add(request.Text.Trim());
+        }
+        return string.Join("\n\n", parts);
     }
 
     public Task AbortAsync(string sessionId, CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("Abort requested for session {SessionId} (user stop)", sessionId);
         sessions.Get(sessionId).Agent.Abort();
         return Task.CompletedTask;
     }
@@ -300,9 +348,9 @@ public sealed class AgentHostServer(
     public async Task<SessionOptionsDto> SetOptionsAsync(string sessionId, SessionOptionsDto options, CancellationToken cancellationToken = default)
     {
         var session = sessions.Get(sessionId);
-        var applied = SessionOptions.Apply(session, options);
+        var applied = SessionOptions.Apply(session, options, options.Role is null ? null : sessions.Assets.Get(session.Cwd));
         await session.Store.AppendOptionsChangeAsync(session.Agent.ThinkingLevel, session.Agent.FastMode, session.ContextWindow, cancellationToken,
-            session.Agent.PermissionMode);
+            session.Agent.PermissionMode, session.Role.Name);
         return applied;
     }
 
@@ -340,7 +388,7 @@ public sealed class AgentHostServer(
             TextContent t => new HistoryText(t.Text),
             ImageContent { Path: { } path } => (HistoryBlockDto?)new HistoryImage(path),
             _ => null,
-        }).OfType<HistoryBlockDto>().ToArray(), Source: u.Source),
+        }).OfType<HistoryBlockDto>().ToArray(), Source: u.Source, Segments: SessionManager.ToDto(u.Display)),
         AssistantMessage a => new HistoryMessageDto("assistant", a.Timestamp,
             a.Content.Select(ToHistory).OfType<HistoryBlockDto>().ToArray(),
             a.StopReason.ToString(), a.ErrorMessage,
@@ -366,4 +414,45 @@ public sealed class AgentHostServer(
     private static bool SamePath(string a, string b) =>
         string.Equals(Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    public Task<McpServersDto> ListMcpServersAsync(string? cwd, CancellationToken cancellationToken = default) => Task.FromResult(mcp.List(cwd));
+
+    public Task<McpToolsDto> ListMcpToolsAsync(string key, string? cwd, CancellationToken cancellationToken = default) =>
+        mcp.ToolsAsync(key, cwd, cancellationToken);
+
+    public Task<McpLogDto> GetMcpLogAsync(string key, string? cwd, CancellationToken cancellationToken = default) => Task.FromResult(mcp.Log(key, cwd));
+
+    public Task<McpTestResult> TestMcpServerAsync(McpTestRequest request, CancellationToken cancellationToken = default) =>
+        mcp.TestAsync(request, cancellationToken);
+
+    public Task RestartMcpServerAsync(string key, string? cwd, bool login, CancellationToken cancellationToken = default) =>
+        mcp.RestartAsync(key, cwd, login);
+
+    public Task LogoutMcpServerAsync(string key, string? cwd, CancellationToken cancellationToken = default) => mcp.LogoutAsync(key, cwd);
+
+    public Task<McpCatalogDto> GetMcpCatalogAsync(string? cwd, CancellationToken cancellationToken = default) => mcp.CatalogAsync(cwd, cancellationToken);
+
+    public Task<FileSearchResultDto> SearchFilesAsync(FileSearchRequest request, CancellationToken cancellationToken = default) =>
+        files.SearchAsync(request, cancellationToken);
+
+    public Task<AgentAssetsDto> ListAssetsAsync(string? cwd, CancellationToken cancellationToken = default)
+    {
+        var catalog = sessions.Assets.Get(cwd);
+        var root = cwd is not null && Directory.Exists(cwd) ? TCode.Agent.Coding.Assets.AgentAssetLoader.ProjectRoot(cwd) : null;
+        return Task.FromResult(new AgentAssetsDto(root,
+            catalog.Commands.Select(ToDto).ToList(),
+            catalog.Skills.Select(ToDto).ToList(),
+            catalog.Roles.Select(ToDto).ToList(),
+            catalog.Shadowed.Select(s => new AgentAssetShadowDto(ToDto(s.Hidden), ToDto(s.By))).ToList(),
+            catalog.Problems.Select(p => new AgentAssetProblemDto(p.Path, p.Message)).ToList()));
+    }
+
+    private static AgentAssetDto ToDto(TCode.Agent.Coding.Assets.AgentAsset a) => new(
+        a.Kind.ToString().ToLowerInvariant(), a.Name, a.Description, a.Source.ToString().ToLowerInvariant(), a.Path, a.DisplayName, a.Tools, a.Model, a.Icon);
+
+    public Task TrustMcpServerAsync(string key, string cwd, bool trusted, CancellationToken cancellationToken = default)
+    {
+        mcp.Trust(key, cwd, trusted);
+        return Task.CompletedTask;
+    }
 }

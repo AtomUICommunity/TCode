@@ -1,10 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TCode.Rpc;
 
 namespace TCode.Desktop.ViewModels;
 
 /// <summary>Agent 运行中发送、排队等待的一条消息：可编辑、移除，或立即插入当前轮。</summary>
-public sealed partial class QueuedPromptViewModel(string text, IReadOnlyList<ImageAttachmentViewModel> images, SessionViewModel session)
+/// <param name="segments">输入框里的样子（含 tag，发送时 Host 据此展开 command）；没有 tag 时为 null。</param>
+public sealed partial class QueuedPromptViewModel(string text, IReadOnlyList<ImageAttachmentViewModel> images, SessionViewModel session,
+    IReadOnlyList<PromptSegmentDto>? segments = null)
     : ObservableObject
 {
     public QueuedPromptViewModel(string text, SessionViewModel session) : this(text, [], session)
@@ -18,8 +21,13 @@ public sealed partial class QueuedPromptViewModel(string text, IReadOnlyList<Ima
     [NotifyPropertyChangedFor(nameof(DisplayText))]
     public partial string Text { get; set; } = text;
 
-    /// <summary>显示用：图片引用折叠为「[图片 #N]」。</summary>
-    public string DisplayText => ImagePrompt.Collapse(Text);
+    /// <summary>输入框的片段；编辑文字后只保留其中的 command tag。</summary>
+    public IReadOnlyList<PromptSegmentDto>? Segments { get; private set; } = segments;
+
+    /// <summary>显示用：command 显示为 /名称，图片引用折叠为「[图片 #N]」。</summary>
+    public string DisplayText => ImagePrompt.Collapse(CommandPrefix + Text);
+
+    private string CommandPrefix => string.Concat((Segments ?? []).Where(s => s.Kind == "command").Select(s => $"/{s.Value} "));
 
     public IReadOnlyList<ImageAttachmentViewModel> Images { get; } = images;
 
@@ -59,6 +67,9 @@ public sealed partial class QueuedPromptViewModel(string text, IReadOnlyList<Ima
         }
         else
         {
+            // 编辑的是文字部分：command tag 保留，其余 tag 变成编辑后的纯文字
+            var commands = (Segments ?? []).Where(s => s.Kind == "command").ToList();
+            Segments = commands.Count > 0 ? [.. commands, new PromptSegmentDto("text", " " + text)] : null;
             Text = text;
         }
     }

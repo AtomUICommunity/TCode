@@ -37,6 +37,9 @@ public sealed class AcpFixtureTests
             Assert.IsType<TextContent>(assistant.Content[1]).Text);
         Assert.Equal("sess_7f3a9c", agent.NativeSessionId);
         Assert.IsType<AgentEndEvent>(events[^1]);
+        // available_commands_update：整体替换命令列表（§7.8）
+        Assert.Equal([("init", "Analyze the project and create an AGENTS.md file", null), ("review", "Review pending changes", "optional focus area")],
+            agent.Commands.Select(c => (c.Name, c.Description, c.ArgumentHint)));
     }
 
     [Fact]
@@ -188,6 +191,23 @@ public sealed class AcpFixtureTests
     }
 
     [Fact]
+    public async Task EarlyCommandsUpdate_ReachesHostAfterSessionResponse()
+    {
+        var peer = new ScriptedPeer();
+        var host = new RecordingHost();
+        var session = new AcpSession(peer.ClientInput, peer.ClientOutput, Agent, host);
+        var start = session.StartAsync(Cwd, null, CancellationToken.None);
+        await peer.RunAsync(TranscriptFixture.Load(Spec, "### A.6 夹具 F").Take(5));
+        await start.WaitAsync(TimeSpan.FromSeconds(15));
+        for (var i = 0; i < 50 && host.Commands is null; i++)
+        {
+            await Task.Delay(20);
+        }
+        Assert.Equal("compress", Assert.Single(host.Commands!).Name);
+        await session.DisposeAsync();
+    }
+
+    [Fact]
     public async Task UnknownAgentRequests_GetMethodNotFound_AndElicitationInvalidParams()
     {
         var peer = new ScriptedPeer();
@@ -251,5 +271,7 @@ public sealed class AcpFixtureTests
         public ValueTask<ApprovalDecision> RequestApprovalAsync(RuntimeApprovalRequest request, CancellationToken cancellationToken) =>
             ValueTask.FromResult(ApprovalDecision.Deny());
         public void OnNativeSessionId(string nativeSessionId) => SessionIds.Add(nativeSessionId);
+        public IReadOnlyList<RuntimeCommand>? Commands { get; private set; }
+        public void OnCommands(IReadOnlyList<RuntimeCommand> commands) => Commands = commands;
     }
 }

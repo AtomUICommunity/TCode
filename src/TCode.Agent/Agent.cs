@@ -40,8 +40,12 @@ public sealed class Agent : IAgentLoop
     }
 
     public ModelInfo Model { get; set; }
-    public string SystemPrompt { get; }
-    public IReadOnlyList<IAgentTool> Tools { get; }
+
+    /// <summary>开头的系统提示。只应在 <see cref="ContextUpdates"/> 中替换（新会话首轮前按当时的动态节重建），同一轮内不变。</summary>
+    public string SystemPrompt { get; set; }
+
+    /// <summary>工具集。只应在 <see cref="ContextUpdates"/> 中替换（例如 MCP 工具变化），同一轮内不变。</summary>
+    public IReadOnlyList<IAgentTool> Tools { get; set; }
     public ThinkingLevel ThinkingLevel { get; set; } = ThinkingLevel.Medium;
     /// <summary>请求 fast mode（模型不支持时由适配器忽略）。</summary>
     public bool FastMode { get; set; }

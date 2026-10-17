@@ -171,6 +171,8 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             {
                 vm.Conversation.ConfirmDangerAsync = ConfirmDangerAsync;
                 vm.Conversation.SetClipboardAsync = text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask;
+                // /role：打开当前可见的那个模式选择器
+                vm.Conversation.RolePickerRequested += () => (DockedRolePicker.IsEffectivelyVisible ? DockedRolePicker : EmptyRolePicker).Toggle();
                 vm.PropertyChanged += OnViewModelPropertyChanged;
                 vm.Conversation.PropertyChanged += (_, e) =>
                 {
@@ -178,6 +180,16 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
                     {
                         _transcript.Attach(vm.Conversation.Active);
                         Transcript.ScrollToEnd();
+                        // 切换会话：会话内容淡入并轻微上移
+                        if (vm.Conversation.Active is not null)
+                        {
+                            Motion.Presence.PlayEnter(Transcript, Motion.PresenceEffect.SlideUp);
+                        }
+                    }
+                    // 发送第一条消息：底部输入框从居中输入框的位置落到底部
+                    if (e.PropertyName == nameof(ConversationViewModel.IsEmpty) && !vm.Conversation.IsEmpty && EmptyComposer.IsLoaded)
+                    {
+                        Motion.Morph.Fly(EmptyComposer, DockedComposer, ConversationColumn);
                     }
                     if (e.PropertyName is nameof(ConversationViewModel.Active) or nameof(ConversationViewModel.Workspace))
                     {
@@ -193,8 +205,14 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
                     {
                         UpdateColumns(vm);
                     }
+                    // 切换标签页：内容淡入
+                    if (e.PropertyName == nameof(WorkbenchViewModel.ActiveTab) && vm.Workbench.ActiveTab is not null && ActiveTabContent.IsLoaded)
+                    {
+                        Motion.Presence.PlayEnter(ActiveTabContent, Motion.PresenceEffect.Fade);
+                    }
                 };
                 vm.Palette.PropertyChanged += OnPalettePropertyChanged;
+                vm.Explorer.CollapseAnimation = AnimateTreeCollapse;
                 vm.Palette.NewProjectFolderRequested += () => OnAddProjectClick(null, new RoutedEventArgs());
                 UpdateHeaderInsets(vm);
                 UpdateColumns(vm, animate: false);
@@ -216,8 +234,8 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
                 }
             }
         };
-        // 加载页退场时主界面从略小处放大入场
-        Splash.Dismissing += () => Motion.Presence.PlayEnter(AppPage, Motion.PresenceEffect.Zoom);
+        // 加载页退场时主界面淡入（只动透明度：AtomUI 弹层按触发按钮当时的变换后边界定位，入场期间打开下拉不会偏位）
+        Splash.Dismissing += () => Motion.Presence.PlayEnter(AppPage, Motion.PresenceEffect.Fade);
     }
 
     /// <summary>
@@ -387,6 +405,51 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             control.ClearValue(HorizontalAlignmentProperty);
         }
         _frozen.Clear();
+    }
+
+    /// <summary>文件树收起目录：子节点一起收起高度并淡出，播完再移除；中途再次展开时恢复原样。</summary>
+    private Task AnimateTreeCollapse(FileNodeViewModel folder, IReadOnlyList<FileNodeViewModel> nodes)
+    {
+        var rows = nodes.Select(n => ExplorerList.ContainerFromItem(n)).OfType<Control>().Select(c => (Row: c, Height: c.Bounds.Height)).ToList();
+        if (!Motion.MotionSettings.IsEnabled || rows.Count == 0 || !ExplorerList.IsEffectivelyVisible)
+        {
+            return Task.CompletedTask;
+        }
+        var done = new TaskCompletionSource();
+        void Restore()
+        {
+            foreach (var (row, _) in rows)
+            {
+                row.ClearValue(OpacityProperty);
+                row.ClearValue(MaxHeightProperty);
+            }
+        }
+        var progress = new Motion.MotionValue(ExplorerList, 1, p =>
+        {
+            var q = Math.Clamp(p, 0, 1);
+            foreach (var (row, height) in rows)
+            {
+                row.Opacity = q;
+                row.MaxHeight = height * q;
+            }
+        });
+        void OnFolderChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(FileNodeViewModel.IsExpanded) && folder.IsExpanded)
+            {
+                progress.AnimateTo(1, Motion.MotionTokens.Standard, Finish);
+            }
+        }
+        void Finish()
+        {
+            folder.PropertyChanged -= OnFolderChanged;
+            // 先让视图模型移除行（同步续体），再清掉本地值，回收的容器不会带着折叠状态
+            done.TrySetResult();
+            Restore();
+        }
+        folder.PropertyChanged += OnFolderChanged;
+        progress.AnimateTo(0, Motion.MotionTokens.Exit, Finish);
+        return done.Task;
     }
 
     private void OnAddPanelClick(object? sender, RoutedEventArgs e) => AddPanelPopup.IsOpen = !AddPanelPopup.IsOpen;

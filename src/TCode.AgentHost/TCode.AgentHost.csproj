@@ -9,6 +9,10 @@
         <ProjectReference Include="..\TCode.Rpc.Contracts\TCode.Rpc.Contracts.csproj" />
         <ProjectReference Include="..\TCode.Config\TCode.Config.csproj" />
         <ProjectReference Include="..\TCode.Runtimes\TCode.Runtimes.csproj" />
+        <ProjectReference Include="..\TCode.Mcp\TCode.Mcp.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TCode.AgentHost.Tests" />
     </ItemGroup>
     <ItemGroup>
         <!-- 裁剪后的 models.dev 快照，由 tools/gen_catalog.py 生成 -->

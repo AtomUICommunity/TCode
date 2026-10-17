@@ -14,6 +14,10 @@ public enum ToolCategory
     Fetch,
     Task,
     Plan,
+    /// <summary>MCP 服务器的工具（mcp__&lt;服务器&gt;__&lt;工具&gt;）。</summary>
+    Mcp,
+    /// <summary>加载 skill（内置 Agent 的 skill、Claude 的 Skill）。</summary>
+    Skill,
     Other,
 }
 
@@ -23,7 +27,7 @@ public enum ToolCategory
 /// </summary>
 public static class ToolPresentation
 {
-    public static ToolCategory Classify(string toolName) => toolName.ToLowerInvariant() switch
+    public static ToolCategory Classify(string toolName) => toolName.StartsWith("mcp__", StringComparison.Ordinal) ? ToolCategory.Mcp : toolName.ToLowerInvariant() switch
     {
         "bash" or "shell" or "run_shell_command" or "exec" or "exec_command" or "run_terminal_cmd" or "terminal"
             or "local_shell" or "bashoutput" => ToolCategory.Command,
@@ -34,6 +38,7 @@ public static class ToolPresentation
             or "grep_search" or "toolsearch" => ToolCategory.Search,
         "webfetch" or "web_fetch" or "websearch" or "web_search" or "fetch" => ToolCategory.Fetch,
         "task" or "agent" => ToolCategory.Task,
+        "skill" => ToolCategory.Skill,
         "task_create" or "task_update" or "task_get" or "task_list" or "todowrite" or "update_plan" or "taskcreate" or "taskupdate"
             => ToolCategory.Plan,
         _ => ToolCategory.Other,
@@ -48,6 +53,8 @@ public static class ToolPresentation
         ToolCategory.Fetch => LucideKind.Globe,
         ToolCategory.Task => LucideKind.Bot,
         ToolCategory.Plan => LucideKind.ListChecks,
+        ToolCategory.Mcp => LucideKind.Plug,
+        ToolCategory.Skill => LucideKind.Sparkles,
         _ => LucideKind.Wrench,
     };
 
@@ -61,8 +68,24 @@ public static class ToolPresentation
         ToolCategory.Fetch => Strings.Get(TCodeLangResourceKind.StepFetch),
         ToolCategory.Task => Strings.Get(TCodeLangResourceKind.StepTask),
         ToolCategory.Plan => Strings.Get(TCodeLangResourceKind.StepPlan),
+        ToolCategory.Mcp => McpLabel(toolName),
+        ToolCategory.Skill => Strings.Get(TCodeLangResourceKind.StepSkill),
         _ => toolName,
     };
+
+    /// <summary>
+    /// MCP 工具名 → “服务器 · 工具”。内置 Agent 与 Codex 为 mcp__&lt;服务器&gt;__&lt;工具&gt;；
+    /// 外部运行时经 TCode 桥接时为 mcp__tcode__&lt;服务器&gt;__&lt;工具&gt;。
+    /// </summary>
+    public static string McpLabel(string toolName)
+    {
+        var parts = toolName["mcp__".Length..].Split("__", 3);
+        if (parts.Length == 3 && parts[0] == "tcode")
+        {
+            return $"{parts[1]} · {parts[2]}";
+        }
+        return parts.Length >= 2 ? $"{parts[0]} · {string.Join("__", parts[1..])}" : toolName;
+    }
 
     private static readonly string[] CommandKeys = ["command", "cmd"];
     private static readonly string[] PathKeys = ["file_path", "path", "filePath", "target_file", "notebook_path", "uri"];
@@ -70,6 +93,7 @@ public static class ToolPresentation
     private static readonly string[] FetchKeys = ["url", "query"];
     private static readonly string[] TaskKeys = ["description", "prompt"];
     private static readonly string[] PlanKeys = ["subject", "status", "task_id"];
+    private static readonly string[] SkillKeys = ["name", "skill", "command"];
 
     /// <summary>主参数（完整文本，可能多行）；参数不是完整 JSON（仍在流式）时返回 null。</summary>
     public static string? PrimaryArgument(ToolCategory category, string argumentsJson)
@@ -97,6 +121,7 @@ public static class ToolPresentation
             ToolCategory.Fetch => First(args, FetchKeys),
             ToolCategory.Task => First(args, TaskKeys),
             ToolCategory.Plan => First(args, PlanKeys),
+            ToolCategory.Skill => First(args, SkillKeys),
             _ => FirstString(args),
         };
     }
@@ -116,6 +141,7 @@ public static class ToolPresentation
             ToolCategory.Search => SearchKeys,
             ToolCategory.Fetch => FetchKeys,
             ToolCategory.Task => TaskKeys,
+            ToolCategory.Skill => SkillKeys,
             _ => null,
         };
         if (keys is null)

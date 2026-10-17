@@ -45,7 +45,7 @@
 | `Spring` | 自定义 `Easing`（阻尼比约 0.72，轻微过冲） | 弹层缩放、面板、卡片入场 |
 | `Stagger` | 每项 24ms，最多 8 项 | 列表逐项入场 |
 
-**统一开关**：AtomUI 的 `EnableMotion` 为 false、设置里的“减少动态效果”（新增 `ui.reduceMotion`，写入 settings.json），或 macOS 的“减少动态效果”（`NSWorkspace.accessibilityDisplayShouldReduceMotion`，通过 ObjC P/Invoke 读取，AOT 安全）其中任一生效时，所有时长归零，只保留状态结果。
+**统一开关**：设置里的“减少动态效果”（settings.json 的 `reduceMotion`），或 macOS 的“减少动态效果”（`NSWorkspace.accessibilityDisplayShouldReduceMotion`，通过 ObjC P/Invoke 读取，AOT 安全）其中任一生效时，所有时长归零，只保留状态结果。
 
 **可打断**：所有动画都从当前进度反向，不从头重播。连续快速点击展开 / 收起不会跳变。
 
@@ -160,3 +160,39 @@
 | P3 输入框 | 单行 ↔ 多行变形、自动增高、空状态 → 停靠的过渡 |
 | P4 面板 | 侧栏、编辑区、文件树、最大化的宽度动画与降载 |
 | P5 微交互与入场 | 按钮颜色过渡与按下反馈、滑动指示条、卡片 / 按钮 / 附件的出现消失、会话内容入场（需要 StreamMark API） |
+
+## 8. 实现状态（2026-10-16）
+
+代码在 `src/TCode.Desktop/Motion/`，测试在 `tests/TCode.Desktop.Tests/MotionTests.cs`、`PanelMotionTests.cs`、`SplashTests.cs`。
+
+| 件 | 文件 | 说明 |
+|---|---|---|
+| 帧时钟 / 动画值 | `MotionValue.cs` | `MotionValue`（弹簧或补间，反向时保留速度）；`MotionTicker` 按 TopLevel 合并 `RequestAnimationFrame`；手动时钟 `IsManual` / `Advance` / `Delay` 供测试精确推进 |
+| 曲线与规范 | `MotionCurve.cs`、`MotionTokens.cs` | `SpringCurve(response, dampingRatio)`、`TweenCurve`、归一化 `SpringEase`（给 AtomUI 弹层与 Transitions 用） |
+| 开关 | `MotionSettings.cs` | `reduceMotion`、macOS 系统设置（窗口激活时刷新）、测试的 `ForceDisabled` |
+| 是否该播 | `MotionGate.cs` | 未加载、所在区域不可见、刚换 DataContext（虚拟化回收、切换会话）时直接到终态 |
+| 展开收起 | `Reveal.cs` | 尺寸随进度变化，内容淡入 + 位移；`Orientation=Horizontal` 用于侧栏 |
+| 出现消失 | `Presence.cs` | `Fade/Pop/Slide*/Zoom`，`AnimateExit=False` 用于同一 StackPanel 内互斥的分区，`PlayEnter` 代码触发 |
+| 尺寸平滑 | `SmoothSize.cs` | 输入框增高（`Anchor=Bottom`）、弹层子状态、命令面板结果数 |
+| 箭头旋转 | `Turn.cs` | 替代两个图标互换 |
+| 列表入场 | `ItemsMotion.cs` | 只对加载之后的新增项播放；Clear 后紧跟的重建（搜索、换根目录）不播；每轮最多 24 项 |
+| FLIP | `Morph.cs` | 输入框单行 ↔ 两段时工具栏部件滑到新位置 |
+| 弹层 | `Popover.cs` | `atom:Popup` 子类 + `PopoverIn/OutMotion`，缩放原点随 Placement / 翻转 |
+| 微交互过渡 | `MotionTransitions.cs` | 颜色、数值、圆角、变换过渡，动效关闭时立即切换 |
+| 启动加载页 | `Views/SplashView.axaml(.cs)` | Logo 浮动 + 光晕、渐变字标、轮播歇后语（前半句先出、后半句揭晓，中英各 10 条）；初始化完成且至少展示 1.8s 后放大淡出，主界面入场；最多等 12s |
+
+面板开合在 `MainWindow.UpdateColumns`：一个进度值同时插值编辑区与文件树列宽；动画期间编辑区 / 文件树内容与会话视图固定为终值宽度（降载），结束后各自只重排一次。侧栏动画期间同样冻结会话视图宽度。
+
+补充实现（第二轮）：
+
+| 件 | 位置 | 说明 |
+|---|---|---|
+| 会话内容入场 | `Motion/Entrance.cs`、`Controls/TranscriptAdapter.cs` | Adapter 在会话进行中追加条目时标记，模板根元素加载时播入场（用户消息上移、思考 / 活动组 / 底栏 / 等待指示）；初次挂载、加载更早历史、虚拟化再实现不播。流式正文由 StreamMark 自带渐显，不需要 StreamMark 新 API |
+| 共享滑动指示条 | `Motion/IndicatorPanel.cs` | 命令面板高亮、设置页与厂商页的分段选择、模型选择器 Provider 页签（下划线模式）；子元素用 `IndicatorPanel.IsCurrent` 报告当前项，底板弹簧滑过去 |
+| 文件树折叠退出 | `FileExplorerViewModel.CollapseAnimation` + `MainWindow.AnimateTreeCollapse` | 子节点收起高度并淡出后再移除；动画中途再次展开时恢复，不重复插入 |
+| 空状态输入框 → 底部输入框 | `Morph.Fly` | 发送第一条消息时底部输入框从居中输入框的位置落到底部 |
+
+注意：
+- 透明度绝不能过冲：渲染时按 0–255 换算，1.04 会溢出成接近 0。弹簧缓动只用于缩放 / 位移；AtomUI 弹层动效（`PopoverInMotion`）的透明度过渡单独换成不过冲的缓动。此前“打开下拉闪几下”就是这个原因（真实窗口逐帧取证：透明度 1.04→1.01 的几帧画面几乎全透明）。`PopoverPlacementTests` 断言透明度单调且 ≤ 1。
+- AtomUI 弹层按触发按钮当时的变换后边界定位（打开后不随按钮回弹移动）：按下缩放会让弹层固定偏几个像素。所以弹层触发按钮（`TCode.ChipButton`）不做按下缩放，启动页退场后主界面入场只淡入。
+- 画刷过渡必须预乘 alpha（`MotionBrushTransition.Mix`）：`Transparent` 是透明的白色，直接插值会在悬停时闪一层浅灰。

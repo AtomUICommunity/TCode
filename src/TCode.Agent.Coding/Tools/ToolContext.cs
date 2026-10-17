@@ -32,6 +32,12 @@ public sealed class ToolContext(WorkspaceRoots workspace, string sessionId, Back
     /// <summary>宿主提供的外部能力（网页搜索、子 Agent 协调等）；为 null 的能力对应的工具不会出现。</summary>
     public ToolServices Services { get; init; } = ToolServices.None;
 
+    /// <summary>本会话的动态工具来源（MCP）；会话关闭时释放。</summary>
+    public IDynamicToolSource? DynamicTools { get; set; }
+
+    /// <summary>会话的 role（类似 Cursor 的模式）：过滤工具并加入 role 节，在下一批用户输入前生效。null 等同于 agent。</summary>
+    public Assets.SessionRole? Role { get; set; }
+
     /// <summary>当前模型（模型可在会话中途切换）。</summary>
     public Func<ModelInfo?> CurrentModel { get; set; } = () => null;
 

@@ -1,10 +1,13 @@
+using System.Diagnostics;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using TCode.Desktop.Controls.Composer;
 using TCode.Desktop.Icons;
 using TCode.Desktop.Localization;
 using TCode.Desktop.Services;
+using TCode.Desktop.ViewModels.Completion;
 using TCode.Rpc;
 
 namespace TCode.Desktop.ViewModels;
@@ -200,6 +203,43 @@ public sealed partial class ConversationViewModel : ObservableObject
         _userSettings = userSettings;
         _host.ModelsChanged += OnModelsChanged;
         _host.ApprovalHandler = HandleApprovalAsync;
+        _host.ElicitationHandler = HandleElicitationAsync;
+        Mcp = new McpComposerViewModel(host, () => CurrentCwd, logger);
+        Mcp.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(McpComposerViewModel.HasPrompt))
+            {
+                SendCommand.NotifyCanExecuteChanged();
+            }
+        };
+        Files = new FileCompletionProvider(host, () => CurrentCwd, settings);
+        Assets = new AssetCatalogCache(host, () => CurrentCwd, logger);
+        var builtins = new BuiltinCommandProvider([
+            new("new", TCodeLangResourceKind.BuiltinNewDescription, LucideKind.SquarePen, NewChat),
+            new("model", TCodeLangResourceKind.BuiltinModelDescription, LucideKind.Box, () => ModelPickerRequested?.Invoke()),
+            new("fork", TCodeLangResourceKind.BuiltinForkDescription, LucideKind.GitBranch, () => _ = ForkActiveAsync(), () => ActiveItem is not null),
+            new("role", TCodeLangResourceKind.BuiltinRoleDescription, LucideKind.Layers, () => RolePickerRequested?.Invoke()),
+        ]);
+        RolePicker.RoleChosen += role => _ = ApplyRoleAsync(role);
+        RolePicker.Show(userSettings.Current.DefaultRole);
+        Assets.Changed += () => _ = LoadRolesAsync();
+        Completion = new CompletionViewModel(Composer,
+            [Files, new RoleCompletionProvider(RolePicker), builtins, new CommandCompletionProvider(Assets), new SkillCompletionProvider(Assets),
+                new RuntimeCommandProvider(() => (Active?.RuntimeCommands ?? [], Active?.Runtime is null ? null : Picker.Selected?.Model.ProviderName)),
+                new McpResourceProvider(Mcp), new McpPromptProvider(Mcp)], logger);
+        Composer.Changed += _ =>
+        {
+            OnPropertyChanged(nameof(ComposerText));
+            SendCommand.NotifyCanExecuteChanged();
+        };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(Active) or nameof(Workspace))
+            {
+                _ = Mcp.RefreshAttentionAsync();
+                _ = LoadRolesAsync();
+            }
+        };
         _settings = settings;
         _logger = logger;
         _host.SessionEvent += OnSessionEvent;
@@ -211,6 +251,10 @@ public sealed partial class ConversationViewModel : ObservableObject
                 foreach (var approval in session.PendingApprovals.ToList())
                 {
                     approval.Cancel();
+                }
+                foreach (var elicitation in session.PendingElicitations.ToList())
+                {
+                    elicitation.Cancel();
                 }
             }
             _open.Clear();
@@ -226,6 +270,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         Picker = new ModelPickerViewModel(settings);
         Picker.SelectionChanged += () =>
         {
+            RolePicker.AcpAvailable = Picker.Selected?.Model.SupportsSubagents != false;
             _ = SyncSessionOptionsAsync();
             OnPropertyChanged(nameof(ShowImagesUnsupported));
         };
@@ -260,8 +305,16 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     public bool IsEmpty => Active is null || Active.IsEmpty;
 
-    partial void OnActiveChanged(SessionViewModel? value) =>
+    partial void OnActiveChanged(SessionViewModel? value)
+    {
         Permission.Show(value is null ? RememberedPermission() : value.Options.PermissionMode);
+        RolePicker.AcpAvailable = Picker.Selected?.Model.SupportsSubagents != false;
+        // 空状态沿用当前的 role（新会话以它开始，与 Cursor 的模式一致）
+        if (value is not null)
+        {
+            RolePicker.Show(value.Options.Role);
+        }
+    }
 
     /// <summary>新会话使用的项目；null 表示不在项目中工作（使用用户主目录）。</summary>
     [ObservableProperty]
@@ -272,9 +325,18 @@ public sealed partial class ConversationViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(BranchName))]
     public partial string? Branch { get; private set; }
 
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(SendCommand))]
-    public partial string ComposerText { get; set; } = "";
+    /// <summary>当前会话或工作区的目录：@ 文件路径相对于它。</summary>
+    public string? CurrentCwd => Active?.Cwd ?? Workspace?.Path;
+
+    /// <summary>输入框的内容：文字与 tag（docs/design/composer.md §6.4）。</summary>
+    public ComposerDocument Composer { get; } = new();
+
+    /// <summary>输入框内容的纯文本投影（tag 展开为 @路径、/命令、[图片 #N]）；设置时替换为纯文本。</summary>
+    public string ComposerText
+    {
+        get => Composer.ToPlainText();
+        set => Composer.SetContent(string.IsNullOrEmpty(value) ? [] : [new TextSegment(value)]);
+    }
 
     [ObservableProperty]
     public partial bool IsRunning { get; private set; }
@@ -301,7 +363,15 @@ public sealed partial class ConversationViewModel : ObservableObject
     private void RemoveAttachment(ImageAttachmentViewModel attachment)
     {
         Attachments.Remove(attachment);
-        ComposerText = ImagePrompt.RemovePlaceholder(ComposerText, attachment.Number);
+        // 删除对应的图片 tag
+        var number = attachment.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        for (var i = Composer.Length - 1; i >= 0; i--)
+        {
+            if (Composer.TagAt(i) is { Kind: TagKind.Image } tag && tag.Value == number)
+            {
+                Composer.Delete(i, 1);
+            }
+        }
         if (Attachments.Count == 0)
         {
             _nextImageNumber = 1;
@@ -374,6 +444,8 @@ public sealed partial class ConversationViewModel : ObservableObject
     {
         Push(null);
         Active = null;
+        // 新会话从默认模式开始（settings.json 的 defaultRole）
+        RolePicker.Show(_userSettings.Current.DefaultRole);
         Picker.SetScope(null);
         foreach (var item in Sessions)
         {
@@ -460,7 +532,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             var server = await _host.GetServerAsync();
             await server.PromptAsync(new PromptRequest(session.SessionId, queued.Text,
-                steer ? StreamingBehaviorDto.Steer : StreamingBehaviorDto.FollowUp, ToDtos(queued.Images)));
+                steer ? StreamingBehaviorDto.Steer : StreamingBehaviorDto.FollowUp, ToDtos(queued.Images), Segments: queued.Segments));
         }
         catch (Exception ex)
         {
@@ -472,7 +544,72 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
     }
 
-    private bool CanSend() => !string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0;
+    /// <summary>Composer 的 MCP 服务器提示与选中的提示词。</summary>
+    public McpComposerViewModel Mcp { get; }
+
+    /// <summary>输入框的 @ / 补全。</summary>
+    public CompletionViewModel Completion { get; }
+
+    /// <summary>@ 文件补全（主窗口为它提供编辑区打开的文件）。</summary>
+    public FileCompletionProvider Files { get; }
+
+    /// <summary>当前项目的 command / skill / role。</summary>
+    public AssetCatalogCache Assets { get; }
+
+    /// <summary>/model：请求打开模型选择器（由获得焦点的输入框处理）。</summary>
+    public event Action? ModelPickerRequested;
+
+    /// <summary>/role：请求打开模式选择器（由主窗口处理）。</summary>
+    public event Action? RolePickerRequested;
+
+    /// <summary>会话的 role（Agent / Ask / Plan / 自定义）。</summary>
+    public RolePickerViewModel RolePicker { get; } = new();
+
+    /// <summary>当前项目的自定义 role（项目或其中的 .agents 变化时重新拉取）。</summary>
+    private async Task LoadRolesAsync()
+    {
+        if (await Assets.GetAsync() is { } catalog)
+        {
+            RolePicker.Load(catalog.Roles);
+        }
+    }
+
+    /// <summary>
+    /// 选定 role：指定了模型时先切换模型（与在模型选择器中点选相同），再同步到当前会话；
+    /// 空状态时随 CreateSessionRequest 发送。失败时恢复会话的实际 role。
+    /// </summary>
+    private async Task ApplyRoleAsync(RoleOptionViewModel role)
+    {
+        if (role.Model is { } model && !Picker.SelectByRef(model))
+        {
+            StatusMessage = Strings.Format(TCodeLangResourceKind.RoleModelUnavailableFormat, model);
+        }
+        if (Active is not { } session)
+        {
+            return;
+        }
+        try
+        {
+            var server = await _host.GetServerAsync();
+            session.Options = await server.SetOptionsAsync(session.SessionId, new SessionOptionsDto(Role: role.Name));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Set role failed");
+            StatusMessage = Strings.Format(TCodeLangResourceKind.StatusSendFailedFormat, ex.Message);
+        }
+        if (session == Active)
+        {
+            RolePicker.Show(session.Options.Role);
+        }
+    }
+
+    private SessionItemViewModel? ActiveItem => Active is { } active ? Sessions.FirstOrDefault(s => s.SessionId == active.SessionId) : null;
+
+    /// <summary>/fork：从当前会话分叉。</summary>
+    private Task ForkActiveAsync() => ActiveItem is { } item ? ForkSessionAsync(item) : Task.CompletedTask;
+
+    private bool CanSend() => !string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0 || Mcp.HasPrompt;
 
     private static IReadOnlyList<ImageAttachmentDto>? ToDtos(IReadOnlyList<ImageAttachmentViewModel> images) =>
         images.Count == 0 ? null : images.Select(i => new ImageAttachmentDto(i.Path, i.MimeType)).ToArray();
@@ -481,11 +618,26 @@ public sealed partial class ConversationViewModel : ObservableObject
     private async Task SendAsync()
     {
         var images = Attachments.ToArray();
-        var draft = ComposerText;
-        // 占位符展开为「[Image #N: 路径]」；图片本身由 AgentHost 读取附件文件、以 base64 发送
-        var text = ImagePrompt.Expand(ComposerText.Trim(), images);
-        if (text.Length == 0)
+        var draft = Composer.Segments.ToArray();
+        // 占位符展开为「[Image #N: 路径]」；图片本身由 AgentHost 读取附件文件、以 base64 发送。
+        // command tag 不在文字里：Host 按 segments 读取正文放在前面
+        var text = ImagePrompt.Expand(ComposerSegments.ModelText(draft).Trim(), images);
+        var segments = ComposerSegments.ToDto(draft);
+        var hasCommand = draft.Any(s => s is TagSegment { Kind: TagKind.Command });
+        if (text.Length == 0 && !Mcp.HasPrompt && !hasCommand)
         {
+            return;
+        }
+        var title = ImagePrompt.Title(ComposerDocument.PlainText(draft).Trim());
+        if ((Mcp.HasPrompt || McpComposerViewModel.ResourcesIn(Composer.Segments).Count > 0) && Active is { IsRunning: true })
+        {
+            StatusMessage = Strings.Get(TCodeLangResourceKind.McpWaitForTurn);
+            return;
+        }
+        var (mcpResources, mcpPrompt, mcpError) = Mcp.Take(Composer.Segments);
+        if (mcpError is not null)
+        {
+            StatusMessage = mcpError;
             return;
         }
         ComposerText = "";
@@ -498,8 +650,8 @@ public sealed partial class ConversationViewModel : ObservableObject
             {
                 var cwd = Workspace?.Path ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var model = Picker.Selected?.Model.Ref ?? "fake/fake-sonnet";
-                var session = await server.CreateSessionAsync(new CreateSessionRequest(cwd, model, Picker.Options with { PermissionMode = Permission.Mode }));
-                var live = Track(new SessionViewModel(session) { Title = ImagePrompt.Collapse(text) });
+                var session = await server.CreateSessionAsync(new CreateSessionRequest(cwd, model, Picker.Options with { PermissionMode = Permission.Mode, Role = RolePicker.Role }));
+                var live = Track(new SessionViewModel(session) { Title = title });
                 Picker.ApplyHostOptions(session.Options);
                 var item = new SessionItemViewModel(session.SessionId, session.FilePath, session.Cwd) { Live = live, Owner = this };
                 item.SyncFrom(live);
@@ -514,13 +666,14 @@ public sealed partial class ConversationViewModel : ObservableObject
             else if (Active!.IsRunning)
             {
                 // 运行中再次发送：显示在输入框上方的队列里，本轮正常结束后按顺序发出（可编辑、移除或立即插入）
-                Active.QueuedPrompts.Add(new QueuedPromptViewModel(text, images, Active) { Owner = this });
+                Active.QueuedPrompts.Add(new QueuedPromptViewModel(text, images, Active, segments) { Owner = this });
                 StatusMessage = null;
                 return;
             }
             if (Active is { IsRunning: false } idle)
             {
-                await server.PromptAsync(new PromptRequest(idle.SessionId, text, Images: ToDtos(images)));
+                await server.PromptAsync(new PromptRequest(idle.SessionId, text, Images: ToDtos(images), McpResources: mcpResources, McpPrompt: mcpPrompt,
+                    Segments: segments));
             }
             StatusMessage = null;
         }
@@ -528,8 +681,9 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             _logger.LogError(ex, "Prompt failed");
             StatusMessage = Strings.Format(TCodeLangResourceKind.StatusSendFailedFormat, ex.Message);
-            // 发送失败：恢复输入框（原文与图片）
-            ComposerText = draft;
+            // 发送失败：恢复输入框（原文、图片与 MCP 引用）
+            Composer.SetContent(draft);
+            Mcp.Restore();
             foreach (var image in images)
             {
                 Attachments.Add(image);
@@ -897,6 +1051,7 @@ public sealed partial class ConversationViewModel : ObservableObject
                     break;
                 case nameof(SessionViewModel.Options) when session == Active:
                     Permission.Show(session.Options.PermissionMode);
+                    RolePicker.Show(session.Options.Role);
                     break;
             }
         };
@@ -951,6 +1106,44 @@ public sealed partial class ConversationViewModel : ObservableObject
             item.SyncFrom(session);
         }
         return approval.Result;
+    }
+
+    /// <summary>
+    /// MCP elicitation：显示在发起请求的会话中；找不到该会话（例如子 Agent 或设置页的临时连接）时显示在当前会话，
+    /// 没有打开的会话时 cancel。
+    /// </summary>
+    private Task<McpElicitResponse> HandleElicitationAsync(McpElicitRequest request)
+    {
+        var session = request.SessionId is { } id && _open.TryGetValue(id, out var owner) ? owner : Active;
+        if (session is null)
+        {
+            return Task.FromResult(new McpElicitResponse("cancel"));
+        }
+        var elicitation = new McpElicitationViewModel(request, OpenExternalUrl);
+        session.AddElicitation(elicitation);
+        return elicitation.Result;
+    }
+
+    /// <summary>用系统默认浏览器打开（elicitation 的 URL 模式，用户已确认）。</summary>
+    private bool OpenExternalUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+        {
+            return false;
+        }
+        try
+        {
+            var start = OperatingSystem.IsMacOS() ? new ProcessStartInfo("open") { ArgumentList = { uri.AbsoluteUri } }
+                : OperatingSystem.IsWindows() ? new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }
+                : new ProcessStartInfo("xdg-open") { ArgumentList = { uri.AbsoluteUri } };
+            using var process = Process.Start(start);
+            return process is not null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Opening {Url} failed", uri.Host);
+            return false;
+        }
     }
 
     // ---- 权限档位 ----

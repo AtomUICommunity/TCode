@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+    <PropertyGroup>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);MCP9004</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    </ItemGroup>
+</Project>

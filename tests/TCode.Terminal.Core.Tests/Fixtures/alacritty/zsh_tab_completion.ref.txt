@@ -1,0 +1,29 @@
+jwilm@kurast.local ➜  ~/code/alacritty  cat c
+Cargo.lock  Cargo.toml  colors.pl*  copypasta/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

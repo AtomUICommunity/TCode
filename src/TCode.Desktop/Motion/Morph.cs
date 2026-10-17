@@ -44,6 +44,34 @@ public static class Morph
         container.LayoutUpdated += handler;
     }
 
+    /// <summary>
+    /// 共享元素过渡：target 在下一次布局后从 source 当前所在的位置（按左边缘与底边对齐）滑到自己的新位置。
+    /// 用于空状态的居中输入框 → 会话中的底部输入框（两个实例，看起来是同一个输入框落到了底部）。
+    /// </summary>
+    public static void Fly(Control source, Control target, Control container)
+    {
+        if (!MotionSettings.IsEnabled || !source.IsEffectivelyVisible || source.TranslatePoint(default, container) is not { } from)
+        {
+            return;
+        }
+        var fromBottom = from.Y + source.Bounds.Height;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            container.LayoutUpdated -= handler;
+            if (target.TranslatePoint(default, container) is not { } to)
+            {
+                return;
+            }
+            var delta = new Point(from.X - to.X, fromBottom - (to.Y + target.Bounds.Height));
+            if (Math.Abs(delta.X) >= 0.5 || Math.Abs(delta.Y) >= 0.5)
+            {
+                Animate(target, delta);
+            }
+        };
+        container.LayoutUpdated += handler;
+    }
+
     private static Point? Position(Control part, Visual container, bool includeTransform = true)
     {
         if (!part.IsEffectivelyVisible || part.TranslatePoint(default, container) is not { } point)

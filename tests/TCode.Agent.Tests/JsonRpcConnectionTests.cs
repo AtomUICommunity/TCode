@@ -117,4 +117,17 @@ public sealed class JsonRpcConnectionTests
         Assert.False(a.IsConnected);
         await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
+
+    [Fact]
+    public void CommandsChangedEvent_RoundTripsThroughSourceGeneratedContext()
+    {
+        var notification = new SessionEventNotification("s1", 3,
+            new CommandsChanged([new RuntimeCommandDto("compact", "Summarize", "<instructions>"), new RuntimeCommandDto("init", null, null)]));
+        var json = System.Text.Json.JsonSerializer.Serialize(notification, RpcJsonContext.Default.SessionEventNotification);
+        Assert.Contains("\"kind\":\"commandsChanged\"", json);
+        var back = System.Text.Json.JsonSerializer.Deserialize(json, RpcJsonContext.Default.SessionEventNotification)!;
+        var commands = Assert.IsType<CommandsChanged>(back.Event).Commands;
+        Assert.Equal(["compact", "init"], commands.Select(c => c.Name));
+        Assert.Equal("<instructions>", commands[0].ArgumentHint);
+    }
 }
