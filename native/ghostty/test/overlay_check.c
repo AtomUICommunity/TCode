@@ -1,12 +1,12 @@
-// 验证 overlay O1–O4 的行为（M0 spike；之后由 TCode.Terminal.Core.Tests 覆盖）。
+// 验证 overlay O1–O4 的行为（M0 spike；之后由 TKCode.Terminal.Core.Tests 覆盖）。
 // 构建：clang -I<prefix>/include overlay_check.c -L<prefix>/lib -lghostty-vt -Wl,-rpath,<prefix>/lib
 #include <ghostty/vt.h>
 #include <stdio.h>
 #include <string.h>
 
-bool tcode_ghostty_modify_other_keys_2(GhosttyTerminal t);
-void tcode_ghostty_set_clipboard_read_deferred(GhosttyTerminal t, bool deferred);
-uint8_t tcode_ghostty_clipboard_read_terminator(GhosttyTerminal t);
+bool tkcode_ghostty_modify_other_keys_2(GhosttyTerminal t);
+void tkcode_ghostty_set_clipboard_read_deferred(GhosttyTerminal t, bool deferred);
+uint8_t tkcode_ghostty_clipboard_read_terminator(GhosttyTerminal t);
 
 static char out[4096];
 static size_t out_len;
@@ -55,20 +55,20 @@ int main(void) {
     // O3：延后应答
     write_str(t, "\x1b]52;c;?\x07");
     expect(clipboard_requests == 1 && reply_is("\x1b]52;c;\x07"), "O3 默认：回调未应答时库回空剪贴板");
-    tcode_ghostty_set_clipboard_read_deferred(t, true);
+    tkcode_ghostty_set_clipboard_read_deferred(t, true);
     write_str(t, "\x1b]52;c;?\x1b\\");
     expect(clipboard_requests == 2 && out_len == 0, "O3 deferred：回调未应答时不输出");
-    expect(tcode_ghostty_clipboard_read_terminator(t) == 0, "O3 记录终止符 ST");
+    expect(tkcode_ghostty_clipboard_read_terminator(t) == 0, "O3 记录终止符 ST");
     write_str(t, "\x1b]52;c;?\x07");
-    expect(tcode_ghostty_clipboard_read_terminator(t) == 1, "O3 记录终止符 BEL");
+    expect(tkcode_ghostty_clipboard_read_terminator(t) == 1, "O3 记录终止符 BEL");
     out_len = 0;
 
     // O4：modifyOtherKeys 2
-    expect(!tcode_ghostty_modify_other_keys_2(t), "O4 默认关");
+    expect(!tkcode_ghostty_modify_other_keys_2(t), "O4 默认关");
     write_str(t, "\x1b[>4;2m");
-    expect(tcode_ghostty_modify_other_keys_2(t), "O4 CSI >4;2m 后为开");
+    expect(tkcode_ghostty_modify_other_keys_2(t), "O4 CSI >4;2m 后为开");
     write_str(t, "\x1b[>4;0m");
-    expect(!tcode_ghostty_modify_other_keys_2(t), "O4 CSI >4;0m 后为关");
+    expect(!tkcode_ghostty_modify_other_keys_2(t), "O4 CSI >4;0m 后为关");
 
     ghostty_terminal_free(t);
     printf("%s (%d failures)\n", failures ? "FAILED" : "ALL PASSED", failures);

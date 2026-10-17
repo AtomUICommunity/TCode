@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 从 StreamMark 源码打包 NuGet 包到 packages/streammark/（TCode 的本地包源，见 nuget.config）。
+# 从 StreamMark 源码打包 NuGet 包到 packages/streammark/（TKCode 的本地包源，见 nuget.config）。
 # 默认使用子模块 external/StreamMark，版本取 Directory.Packages.props 的 StreamMarkVersion。
 # 本地同时开发 StreamMark 时可以指定源码目录和新版本：
 #   tools/streammark/pack.sh ../StreamMark 0.1.0-alpha.16   （之后把 StreamMarkVersion 改成同一版本）

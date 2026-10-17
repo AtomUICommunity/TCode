@@ -23,8 +23,8 @@
 由此确定的取舍：
 
 - 不做 keep-tail / 部分压缩（Claude Code 的 `/rewind` “Summarize from here”），也就不需要处理尾部 thinking 剥离。
-- 不做后台预计算摘要、闲置压缩（idle compaction）—— 它们只服务于 Claude Code 的被动模式与 1h 缓存，TCode 用主动阈值。
-- 不做 PreCompact / PostCompact hooks：TCode 目前没有 hook 系统，以后有了再接（§13）。
+- 不做后台预计算摘要、闲置压缩（idle compaction）—— 它们只服务于 Claude Code 的被动模式与 1h 缓存，TKCode 用主动阈值。
+- 不做 PreCompact / PostCompact hooks：TKCode 目前没有 hook 系统，以后有了再接（§13）。
 - 外部运行时（Claude Agent / Codex / ACP）自带压缩，本设计不涉及；显示它们的压缩事件另立条目（§13）。
 
 ## 3. Token 计量
@@ -42,7 +42,7 @@ estimate(m)    = ceil(文本与工具参数/结果的 UTF-8 字符数 / 4) + 图
 
 - 没有任何 usage 时（新会话、刚压缩完）整段用估算。
 - 估算只用于“最后一次请求之后”的那一小段，误差可接受；不调用 `count_tokens`（每次请求多一次往返，且只有 Anthropic 有）。
-- 实现放在 `TCode.Agent`（协议无关），`SessionViewModel.LastUsageTokens` 改为读同一个值，保证 UI 与阈值同口径。
+- 实现放在 `TKCode.Agent`（协议无关），`SessionViewModel.LastUsageTokens` 改为读同一个值，保证 UI 与阈值同口径。
 
 ## 4. 阈值
 
@@ -56,9 +56,9 @@ blockAt       = (model.ContextWindow − reserve) − 3_000   // 按模型真实
 ```
 
 - `effective − 13_000` 和警告带 20k、阻断 3k 都取自 Claude Code（1M 模型约 967K 触发，可交叉验证）。
-- `effective × 0.6` 是 TCode 的补充：Claude Code 不面对 32K 这类小窗口模型，纯减法会得到过低甚至为负的阈值。
+- `effective × 0.6` 是 TKCode 的补充：Claude Code 不面对 32K 这类小窗口模型，纯减法会得到过低甚至为负的阈值。
 - 级别：`ok` / `warn` / `compact` / `blocked`。`blocked` 表示即使关闭了自动压缩也不再发请求，提示用户 `/compact` 或新建会话。
-- 设置：`~/.tcode/settings.json` 的 `"autoCompact": true`（默认开）。关闭后仍有警告和手动压缩；超窗兜底同样不做，直接报错。
+- 设置：`~/.tkcode/settings.json` 的 `"autoCompact": true`（默认开）。关闭后仍有警告和手动压缩；超窗兜底同样不做，直接报错。
 - 预算档位（2026-10-17 用户决定）：模型窗口大于默认预算时，选择器提供“默认预算 / 模型最大窗口”两档，新会话用前者。默认预算 272K；个别模型单独指定（`BuiltInCatalog.DefaultContextWindows`，目前 gpt-6.1-sol 为 500K，按去掉路由前缀与 `@`/`:` 后缀的模型 id 匹配所有厂商），settings.json 的 `providers.<id>.models.<id>.defaultContextWindow` 可覆盖。
 
 ## 5. 触发时机
@@ -222,13 +222,13 @@ Continue the conversation from where it left off without asking the user any fur
 
 ### 7.3 重新附加的内容（第二条用户消息，`<system-reminder>` 格式，与 `ToolContext` 现有提醒一致）
 
-按 Claude Code `xRe` 映射到 TCode：
+按 Claude Code `xRe` 映射到 TKCode：
 
 | 内容 | 规则 |
 |---|---|
 | 最近读过的文件 | 来自 `FileStateTracker`，按最近访问排序取前 5 个；每个按 5,000 token 读（超过时只给路径，写成 “Referenced file”），合计 ≤ 50,000；AGENTS.md 等已在系统提示中的文件排除；文件已删除则跳过 |
 | 加载过的 skill | 本段历史中 skill 工具返回的正文，每个 ≤ 5,000 token，合计 ≤ 25,000，超出时丢最早的 |
-| 任务列表 | `TaskList` 当前状态（未完成项）；Claude Code 靠任务工具保持，TCode 的任务也在会话中恢复，这里显式附上以免模型不知道 |
+| 任务列表 | `TaskList` 当前状态（未完成项）；Claude Code 靠任务工具保持，TKCode 的任务也在会话中恢复，这里显式附上以免模型不知道 |
 | 后台任务 | `BackgroundTasks` 中仍在运行的 bash 和子 Agent：描述截断到 200 字符，命令截断到 500 字符 |
 
 - 系统提示**重新生成**而不是附加：压缩后缓存反正要重建，借机把之前累积的系统提示补丁（AGENTS.md 变更、MCP/skill 节、role 节）合并进一份新的冻结提示，写一条新的 `systemPrompt` 记录。对应 Claude Code 压缩后从磁盘重载系统提示与 CLAUDE.md。
@@ -260,7 +260,7 @@ Continue the conversation from where it left off without asking the user any fur
 之后照常追加：`systemPrompt`（新冻结提示）、两条 `message`（§8.1 的两条用户消息，带 `"compactSummary": true` / `"compactAttachment": true` 标记，供 UI 区分）。
 
 - `SessionStore.Read` 从叶子往根走时，遇到第一个 `compaction` 就**停止收集模型消息**（之前的消息不再发给模型），但继续收集显示用的消息；`SessionSnapshot` 拆成 `ModelMessages` 与 `DisplayMessages`。
-- 与 Claude Code 的差异：Claude Code 把边界的 `parentUuid` 置空、另存 `logicalParentUuid`；TCode 的树本来就靠“走到哪停”决定上下文，不需要断链。
+- 与 Claude Code 的差异：Claude Code 把边界的 `parentUuid` 置空、另存 `logicalParentUuid`；TKCode 的树本来就靠“走到哪停”决定上下文，不需要断链。
 - 系统提示、任务等“最后一条生效”的记录照旧在整条路径上取最新值。
 - 历史只追加的约定：压缩是唯一允许替换 `Agent._messages` 的操作，通过新的 `Agent.ReplaceHistory`（只在两次请求之间调用）完成，并更新 architecture.md 的说明。
 
@@ -315,18 +315,18 @@ Continue the conversation from where it left off without asking the user any fur
 - 服务端压缩 / 上下文编辑（用户决定只做客户端）。
 - keep-tail、部分压缩、分支摘要（pi 的 `/tree`）。
 - 后台预计算、闲置压缩。
-- PreCompact / PostCompact / SessionStart(compact) hooks —— 等 TCode 有 hook 系统。
+- PreCompact / PostCompact / SessionStart(compact) hooks —— 等 TKCode 有 hook 系统。
 - 外部运行时的压缩事件显示（Claude `compact_boundary`、Codex `contextCompaction`、ACP `compaction_update`）。
 
 ## 14. 实现位置
 
 | 模块 | 内容 |
 |---|---|
-| `TCode.Ai` | `ErrorKind.ContextOverflow` 与三个适配器的识别；Anthropic 摘要请求时去掉末尾缓存断点的选项 |
-| `TCode.Agent` | `ContextAccounting`（§3、§4）；`Agent` 请求前检查与超窗重试、`ReplaceHistory`、`ICompactor` 钩子与事件；microcompact 的内容替换 |
-| `TCode.Agent.Coding` | `Compactor`：分叉请求 / 回退 / 重试、提示词组装与后处理、重新附加、系统提示重建、`FileStateTracker` 重置；`CompactionEntry` / `MicrocompactEntry` 与 `SessionStore.Read` 改造 |
-| `TCode.AgentHost` / `Rpc.Contracts` | `session/compact`、事件、DTO、`autoCompact` 设置 |
-| `TCode.Desktop` | `/compact`、分隔卡片、状态、ContextRing 级别、设置开关、文案 |
+| `TKCode.Ai` | `ErrorKind.ContextOverflow` 与三个适配器的识别；Anthropic 摘要请求时去掉末尾缓存断点的选项 |
+| `TKCode.Agent` | `ContextAccounting`（§3、§4）；`Agent` 请求前检查与超窗重试、`ReplaceHistory`、`ICompactor` 钩子与事件；microcompact 的内容替换 |
+| `TKCode.Agent.Coding` | `Compactor`：分叉请求 / 回退 / 重试、提示词组装与后处理、重新附加、系统提示重建、`FileStateTracker` 重置；`CompactionEntry` / `MicrocompactEntry` 与 `SessionStore.Read` 改造 |
+| `TKCode.AgentHost` / `Rpc.Contracts` | `session/compact`、事件、DTO、`autoCompact` 设置 |
+| `TKCode.Desktop` | `/compact`、分隔卡片、状态、ContextRing 级别、设置开关、文案 |
 
 ## 15. 里程碑
 
@@ -367,14 +367,14 @@ Continue the conversation from where it left off without asking the user any fur
 
 | 模块 | 文件 |
 |---|---|
-| 超窗识别 | `TCode.Ai/Messages/ContextOverflow.cs`；`AssistantMessage.ContextOverflow`；`AssistantMessageBuilder.Fail` 按文案识别；Anthropic `model_context_window_exceeded` 打标记 |
+| 超窗识别 | `TKCode.Ai/Messages/ContextOverflow.cs`；`AssistantMessage.ContextOverflow`；`AssistantMessageBuilder.Fail` 按文案识别；Anthropic `model_context_window_exceeded` 打标记 |
 | 不写缓存 | `StreamOptions.SkipCacheWrite`（Anthropic 去掉顶层 `cache_control`） |
-| 计量与阈值 | `TCode.Agent/Compaction/ContextAccounting.cs` |
-| 契约 | `TCode.Agent/Compaction/Compaction.cs`（`ICompactor`、`CompactionRequest/Result`） |
+| 计量与阈值 | `TKCode.Agent/Compaction/ContextAccounting.cs` |
+| 契约 | `TKCode.Agent/Compaction/Compaction.cs`（`ICompactor`、`CompactionRequest/Result`） |
 | 触发、重试与熔断 | `Agent.CompactBeforeRequestAsync` / `TryCompactAsync` / `CompactAsync` |
 | 事件 | `CompactionStartEvent`、`CompactionEndEvent`、`CompactionSuspendedEvent` |
-| 压缩器 | `TCode.Agent.Coding/Compaction/Compactor.cs` |
-| 提示词 | `TCode.Agent.Coding/Compaction/CompactionPrompts.cs`（§7 原文） |
+| 压缩器 | `TKCode.Agent.Coding/Compaction/Compactor.cs` |
+| 提示词 | `TKCode.Agent.Coding/Compaction/CompactionPrompts.cs`（§7 原文） |
 | 会话文件 | `CompactionEntry`、`SessionSnapshot.EarlierMessages` / `Compaction` / `AllMessages` |
 | 重建系统提示 | `SystemPromptTracker.Current` / `RebaseAsync` |
 | 显示历史 | `AgentSession.History` = 压缩前的消息 + 当前历史；Host 的历史分页与打开会话都用它 |
@@ -401,8 +401,8 @@ Continue the conversation from where it left off without asking the user any fur
 
 **验证**
 
-- 单元与端到端测试：`tests/TCode.Agent.Tests/CompactionTests.cs`。覆盖阈值、计量、超窗识别、后处理、轮组与丢弃、自动 / 手动 / 被动、重试、回退、熔断、重新附加和会话文件。
+- 单元与端到端测试：`tests/TKCode.Agent.Tests/CompactionTests.cs`。覆盖阈值、计量、超窗识别、后处理、轮组与丢弃、自动 / 手动 / 被动、重试、回退、熔断、重新附加和会话文件。
 - RPC（JIT 与 NativeAOT Host）：`RpcEndToEndTests`。
 - 界面：`CompactionSnapshotTests`（真实 Host + 快照）。
-- AOT：Desktop 与 AgentHost 发布均为 0 个 IL 警告；`TCode --smoke` 中 `compaction.card` / `compaction.rendered` 通过。
+- AOT：Desktop 与 AgentHost 发布均为 0 个 IL 警告；`TKCode --smoke` 中 `compaction.card` / `compaction.rendered` 通过。
 - 未做真实模型的冒烟测试（会消耗 token，需要用户同意）。

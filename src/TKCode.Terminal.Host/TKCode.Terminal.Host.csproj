@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>TKCode.Terminal.Host</RootNamespace>
+        <AssemblyName>tkcode-ptyhost</AssemblyName>
+        <PublishAot>true</PublishAot>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <IsAotCompatible>true</IsAotCompatible>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TKCode.Terminal.Host.Tests" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TKCode.Terminal.Pty\TKCode.Terminal.Pty.csproj" />
+        <ProjectReference Include="..\TKCode.Terminal.Protocol\TKCode.Terminal.Protocol.csproj" />
+    </ItemGroup>
+    <!-- 随包 ConPTY：只能由可执行项目引用（库项目经 ProjectReference 构建时拿不到 RuntimeIdentifier） -->
+    <Import Project="..\..\native\ConPty.targets" />
+</Project>

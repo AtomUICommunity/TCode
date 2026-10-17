@@ -1,6 +1,6 @@
-# TCode 终端：pty host 进程与 IPC 协议
+# TKCode 终端：pty host 进程与 IPC 协议
 
-> 状态：设计稿 v1（2026-10-16）；M2 已按本文实现（2026-10-17），实现中的调整与未做项见 [13](13-roadmap.md) "M2 实施状态"。范围：`TCode.Terminal.Protocol`（帧格式、控制消息、流控、`PtyHostClient`、启动与发现）和 `TCode.Terminal.Host`（`tcode-ptyhost` 可执行文件：会话管理、镜像核心、输出日志、持久化）。
+> 状态：设计稿 v1（2026-10-16）；M2 已按本文实现（2026-10-17），实现中的调整与未做项见 [13](13-roadmap.md) "M2 实施状态"。范围：`TKCode.Terminal.Protocol`（帧格式、控制消息、流控、`PtyHostClient`、启动与发现）和 `TKCode.Terminal.Host`（`tkcode-ptyhost` 可执行文件：会话管理、镜像核心、输出日志、持久化）。
 > 上位文档：[01-architecture.md](01-architecture.md) §3（进程划分、一致性规则、生命周期）、§5（线程模型）、§6.4（IPC 要点）、§8（安全）、决策 D3。本文细化这些约定；与 01 不一致的地方列在 §19。
 > 相关：[02-core-ghostty.md](02-core-ghostty.md)（快照、formatter、回滚压缩）、[07-shell-profiles-config.md](07-shell-profiles-config.md)（profile、环境变量、`terminal` 配置节）、[09-agent-integration.md](09-agent-integration.md)（`command/*` 细节、审批）、[10-protocol-compat.md](10-protocol-compat.md)（OSC 52、查询应答）、[11-testing-benchmarks.md](11-testing-benchmarks.md)。
 
@@ -12,15 +12,15 @@
 
 | 主题 | 结论 |
 |---|---|
-| 进程 | `ptyhost/tcode-ptyhost[.exe]`，与 `agenthost/` 并列发布。Desktop 按需启动。Unix 下经 `tcode-pty-spawn --detach` 执行 `setsid` 并关闭多余 fd；Windows 用 `CreateProcessW` + `CREATE_BREAKAWAY_FROM_JOB \| DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP` |
-| 单例与发现 | `$TCODE_HOME/run/`（0700）下，每个**构建**一个 host：`ptyhost-<build>.json`（0600）+ `ptyhost-<build>.lock`。host 在整个生命周期内持有 `.lock`，所以"锁拿得到"就说明 host 已死，不依赖 pid 判断 |
+| 进程 | `ptyhost/tkcode-ptyhost[.exe]`，与 `agenthost/` 并列发布。Desktop 按需启动。Unix 下经 `tkcode-pty-spawn --detach` 执行 `setsid` 并关闭多余 fd；Windows 用 `CreateProcessW` + `CREATE_BREAKAWAY_FROM_JOB \| DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP` |
+| 单例与发现 | `$TKCODE_HOME/run/`（0700）下，每个**构建**一个 host：`ptyhost-<build>.json`（0600）+ `ptyhost-<build>.lock`。host 在整个生命周期内持有 `.lock`，所以"锁拿得到"就说明 host 已死，不依赖 pid 判断 |
 | 升级 | 新旧构建的 host 可以并存。新会话只建在当前构建的 host 里；旧 host 只"排空"：协议主版本相同时用 VT 兼容模式 attach，主版本不同时只能用冻结的引导子集（列出 / 保存 / 退出） |
 | 认证 | 文件权限 + 对端凭据（`SO_PEERCRED` / `getpeereid` / 管道 SID）+ 基于 32 字节令牌的 **HMAC 双向挑战应答**（令牌本身不上线）。AgentHost 使用 Desktop 签发的**受限令牌** |
 | 帧 | 12 字节头 `[u32 len][u8 type][u8 flags][u16 rsv][u32 session][payload]`，小端。控制帧载荷为源生成 JSON（≤ 1 MiB），数据帧（Output / Record / Snapshot / Input）载荷 ≤ 64 KiB |
 | 日志 | 每个会话一条带**位置序号**的日志：Output 记录按字节数推进位置，Resize / SetColors / Reset / Clear 记录各占 1。默认环形保留 1 MiB |
 | 流控 | 按订阅者独立计算：`backlog = head − acked`。backlog > 256 KiB 时暂停读 PTY；客户端每处理 32 KiB 回一次 Ack；所有 UI 订阅者都 < 64 KiB 时恢复。订阅者连续 10 s 不消化就降级，之后重新 attach（resync），不会无限期卡住 shell |
 | 重连 | `session/attach` 在会话 actor 上原子地完成三件事：取 `S = head`、编码快照、登记游标 = S。快照字节流（READY 段在前）和 `Output(seq ≥ S)` 在同一个数据队列里按顺序发送，所以不重不漏 |
-| 持久化 | `$TCODE_HOME/terminal/revive/<persistentId>/`：`snapshot.bin`（libghostty 快照，裁剪到 N 行）+ `tail.vt`（formatter 产出的 VT 文本，供跨版本恢复）+ `meta.json`；每 30 s 保存有变化的会话；目录 0700，文件 0600 |
+| 持久化 | `$TKCODE_HOME/terminal/revive/<persistentId>/`：`snapshot.bin`（libghostty 快照，裁剪到 N 行）+ `tail.vt`（formatter 产出的 VT 文本，供跨版本恢复）+ `meta.json`；每 30 s 保存有变化的会话；目录 0700，文件 0600 |
 | 心跳 | 双向 Ping，空闲 5 s 发一次。客户端 6 s + 5 s 收不到任何帧时判定 host 无响应（与 VS Code 相同）；host 30 s 收不到客户端的帧就断开该连接 |
 | 宽限期 | 没有 UI 连接后开始计时，默认 30 min（只计清醒时间），到期按 `revive` 方式退出。用户主动选择 `keepAlive` 退出时不计时 |
 
@@ -32,25 +32,25 @@
 
 | 项 | 值 |
 |---|---|
-| 项目 | `src/TCode.Terminal.Host/TCode.Terminal.Host.csproj`：`OutputType=Exe`、`AssemblyName=tcode-ptyhost`、`PublishAot=true`、`InvariantGlobalization=true`（host 不做本地化，所有面向用户的文字都由 Desktop 传入） |
-| 发布位置 | 与 AgentHost 并列：`<Desktop 发布目录>/ptyhost/`。macOS 包内为 `TCode.app/Contents/MacOS/ptyhost/` |
-| 目录内容 | `tcode-ptyhost[.exe]`、`tcode-pty-spawn`（Unix）、`libghostty-vt.{dylib,so,dll}`、`libtcodepty.{dylib,so}`（Unix）、`conpty.dll` + `OpenConsole.exe`（Windows，D9）、`ghostty-build.txt`（构建 ID，见 §2.4） |
-| MSBuild | 仿照 `CopyAgentHost` / `PublishAgentHost`（[TCode.Desktop.csproj:36-54](../../src/TCode.Desktop/TCode.Desktop.csproj) [实]），新增 `CopyPtyHost` / `PublishPtyHost`，用相同的 RID 和 `PublishAot` 发布到 `ptyhost/` |
-| 测试覆盖 | 环境变量 `TCODE_PTYHOST_DIR` 指向 host 的构建输出（与 `TCODE_AGENTHOST_DIR` 相同的做法，见 [AgentHostConnection.cs:54-58](../../src/TCode.Desktop/Services/AgentHostConnection.cs) [实]） |
-| 自检 | `tcode-ptyhost --self-test`：启动 `/bin/sh`（或 `cmd.exe`），完成一次往返、resize、快照编码与解码后退出，返回码 0。CI 中的 AOT 冒烟测试运行它 |
+| 项目 | `src/TKCode.Terminal.Host/TKCode.Terminal.Host.csproj`：`OutputType=Exe`、`AssemblyName=tkcode-ptyhost`、`PublishAot=true`、`InvariantGlobalization=true`（host 不做本地化，所有面向用户的文字都由 Desktop 传入） |
+| 发布位置 | 与 AgentHost 并列：`<Desktop 发布目录>/ptyhost/`。macOS 包内为 `TKCode.app/Contents/MacOS/ptyhost/` |
+| 目录内容 | `tkcode-ptyhost[.exe]`、`tkcode-pty-spawn`（Unix）、`libghostty-vt.{dylib,so,dll}`、`libtkcodepty.{dylib,so}`（Unix）、`conpty.dll` + `OpenConsole.exe`（Windows，D9）、`ghostty-build.txt`（构建 ID，见 §2.4） |
+| MSBuild | 仿照 `CopyAgentHost` / `PublishAgentHost`（[TKCode.Desktop.csproj:36-54](../../src/TKCode.Desktop/TKCode.Desktop.csproj) [实]），新增 `CopyPtyHost` / `PublishPtyHost`，用相同的 RID 和 `PublishAot` 发布到 `ptyhost/` |
+| 测试覆盖 | 环境变量 `TKCODE_PTYHOST_DIR` 指向 host 的构建输出（与 `TKCODE_AGENTHOST_DIR` 相同的做法，见 [AgentHostConnection.cs:54-58](../../src/TKCode.Desktop/Services/AgentHostConnection.cs) [实]） |
+| 自检 | `tkcode-ptyhost --self-test`：启动 `/bin/sh`（或 `cmd.exe`），完成一次往返、resize、快照编码与解码后退出，返回码 0。CI 中的 AOT 冒烟测试运行它 |
 
 libghostty-vt 在 Desktop 根目录和 `ptyhost/` 中各有一份，**字节完全相同**（来自同一次构建）。握手时比较构建 ID（§2.4），满足 01 §3.2 规则 3。
 
 ### 1.2 命令行
 
 ```
-tcode-ptyhost --home <TCODE_HOME> --build <buildId> --ready-fd 1 [--log-level info] [--parent-pid <pid>]
-tcode-ptyhost --self-test
+tkcode-ptyhost --home <TKCODE_HOME> --build <buildId> --ready-fd 1 [--log-level info] [--parent-pid <pid>]
+tkcode-ptyhost --self-test
 ```
 
 | 参数 | 说明 |
 |---|---|
-| `--home` | 显式传入，不依赖继承的环境变量（Desktop 可能用 `TCODE_HOME` 覆盖过数据目录） |
+| `--home` | 显式传入，不依赖继承的环境变量（Desktop 可能用 `TKCODE_HOME` 覆盖过数据目录） |
 | `--build` | Desktop 计算出的构建 ID。host 启动后自己再算一遍，不一致就以退出码 3 退出（防止 Desktop 和 host 的文件来自不同的安装） |
 | `--ready-fd` | 就绪通知写到哪个 fd（Unix）。Windows 上固定使用继承进来的 stdout 句柄 |
 | `--parent-pid` | 仅用于日志 |
@@ -61,17 +61,17 @@ tcode-ptyhost --self-test
 
 | 平台 | 做法 | 理由 |
 |---|---|---|
-| macOS / Linux | Desktop 用 `Process.Start` 执行 `ptyhost/tcode-pty-spawn --detach --stdout-fd 1 -- ptyhost/tcode-ptyhost …`，stdin 为 `/dev/null`，stdout 为管道（用于读就绪行），stderr 为管道。helper 在 `--detach` 模式下：① `setsid()`；② 把信号处理恢复为默认、清空信号掩码；③ `close_range(3, ~0U, 0)`（Linux ≥ 5.9），旧内核逐个关闭 `/proc/self/fd` 中的 fd，macOS 遍历 `/dev/fd`；④ `execv(host)` | `setsid` 让 host 成为新会话的首进程，没有控制终端：Desktop 所在终端关闭时的 SIGHUP、Ctrl+C 产生的 SIGINT 都到不了 host [实，POSIX 语义]。.NET 只对自己打开的 fd 设置 `O_CLOEXEC`，Avalonia 等原生库打开的 fd 可能被继承下来。如果 host 持有 Desktop 某个 socket 的副本，对端就永远收不到 EOF，所以必须在 exec 前关掉 [推] |
+| macOS / Linux | Desktop 用 `Process.Start` 执行 `ptyhost/tkcode-pty-spawn --detach --stdout-fd 1 -- ptyhost/tkcode-ptyhost …`，stdin 为 `/dev/null`，stdout 为管道（用于读就绪行），stderr 为管道。helper 在 `--detach` 模式下：① `setsid()`；② 把信号处理恢复为默认、清空信号掩码；③ `close_range(3, ~0U, 0)`（Linux ≥ 5.9），旧内核逐个关闭 `/proc/self/fd` 中的 fd，macOS 遍历 `/dev/fd`；④ `execv(host)` | `setsid` 让 host 成为新会话的首进程，没有控制终端：Desktop 所在终端关闭时的 SIGHUP、Ctrl+C 产生的 SIGINT 都到不了 host [实，POSIX 语义]。.NET 只对自己打开的 fd 设置 `O_CLOEXEC`，Avalonia 等原生库打开的 fd 可能被继承下来。如果 host 持有 Desktop 某个 socket 的副本，对端就永远收不到 EOF，所以必须在 exec 前关掉 [推] |
 | Windows | Desktop 用 `LibraryImport` 调 `CreateProcessW`。标志：`CREATE_BREAKAWAY_FROM_JOB \| CREATE_NEW_PROCESS_GROUP \| DETACHED_PROCESS \| CREATE_UNICODE_ENVIRONMENT \| EXTENDED_STARTUPINFO_PRESENT`；用 `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` 只让子进程继承就绪管道的写端 | Desktop 可能运行在某个 Job 中（调试器、某些启动器、CI），子进程默认会继承这个 Job，Job 关闭时一起被杀。`CREATE_BREAKAWAY_FROM_JOB` 只有在 Job 设置了 `JOB_OBJECT_LIMIT_BREAKAWAY_OK` 时才有效，否则 `CreateProcess` 返回 `ERROR_ACCESS_DENIED` [推，依据 Win32 文档语义]。`.NET Process.Start` 无法传这些标志 |
-| Windows 回退 | 收到 `ERROR_ACCESS_DENIED` 时去掉 BREAKAWAY 再启动，并在 `hello` 应答中带 `jobBound: true`。Desktop 据此把 `keepAlive` 选项置灰，并说明"当前环境下终端会随 TCode 一起退出" | 备选方案是用 WMI `Win32_Process.Create` 在 Job 之外创建进程。它依赖 COM，AOT 下成本高，v1 不做 |
+| Windows 回退 | 收到 `ERROR_ACCESS_DENIED` 时去掉 BREAKAWAY 再启动，并在 `hello` 应答中带 `jobBound: true`。Desktop 据此把 `keepAlive` 选项置灰，并说明"当前环境下终端会随 TKCode 一起退出" | 备选方案是用 WMI `Win32_Process.Create` 在 Job 之外创建进程。它依赖 COM，AOT 下成本高，v1 不做 |
 
 **就绪握手（启动时序）**：
 
 ```mermaid
 sequenceDiagram
     participant D as Desktop
-    participant S as tcode-pty-spawn
-    participant H as tcode-ptyhost
+    participant S as tkcode-pty-spawn
+    participant H as tkcode-ptyhost
     D->>D: 获取 run/ptyhost-<build>.start.lock（短时锁，串行化多个启动者）
     D->>D: 再试一次连接（可能已被别的窗口启动）
     D->>S: Process.Start(--detach … host)
@@ -94,7 +94,7 @@ sequenceDiagram
 **目录布局** [定]：
 
 ```
-$TCODE_HOME/run/                         0700（Windows：继承用户配置目录的 ACL）
+$TKCODE_HOME/run/                         0700（Windows：继承用户配置目录的 ACL）
   ptyhost-<build>.json                   0600，每个运行中的 host 一份
   ptyhost-<build>.lock                   host 生命周期锁（独占）
   ptyhost-<build>.start.lock             启动者之间的短时锁
@@ -111,7 +111,7 @@ $TCODE_HOME/run/                         0700（Windows：继承用户配置目�
   "pid": 41237,
   "processStartTime": "2026-10-16T14:03:11.512Z", // Linux /proc/<pid>/stat 第 22 列；macOS proc_pidinfo；Windows GetProcessTimes
   "instanceId": "01JAB3…",                         // 每次启动随机生成（ULID）
-  "endpoint": "/Users/u/.tcode/run/ptyhost-3f9a1c0d2b7e.sock", // Windows：\\.\pipe\tcode-ptyhost-<hash>
+  "endpoint": "/Users/u/.tkcode/run/ptyhost-3f9a1c0d2b7e.sock", // Windows：\\.\pipe\tkcode-ptyhost-<hash>
   "token": "base64url(32 字节)",                   // 完整权限令牌
   "protocol": { "major": 1, "minor": 0 },
   "hostVersion": "0.9.0",
@@ -144,7 +144,7 @@ $TCODE_HOME/run/                         0700（Windows：继承用户配置目�
 
 补充规则：
 
-- 遗留 host 不接受 `session/create`（返回 `HostDraining`），避免它从已被替换的安装目录启动 `tcode-pty-spawn`。macOS 升级会替换 `.app`，旧 helper 文件已经不存在了 [推]。
+- 遗留 host 不接受 `session/create`（返回 `HostDraining`），避免它从已被替换的安装目录启动 `tkcode-pty-spawn`。macOS 升级会替换 `.app`，旧 helper 文件已经不存在了 [推]。
 - 协议版本只增不减：`minor` 的变化必须向后兼容，只能新增可选字段、新方法、带 `IGNORABLE` 标志的新帧类型；`major` 的变化允许不兼容，但**引导子集的帧头、方法名和字段永远不变**。
 - 构建 ID 不同意味着两个核心不是同一个构建。VT 兼容模式下 UI 侧核心可能在极少数边界情况与镜像核心不一致。查询应答始终来自镜像核心，所以程序看到的行为不受影响，影响只限于显示（[推]，列入 §18）。
 
@@ -182,12 +182,12 @@ $TCODE_HOME/run/                         0700（Windows：继承用户配置目�
 
 | 项 | 值 |
 |---|---|
-| 位置 | `$TCODE_HOME/logs/ptyhost/ptyhost-<yyyyMMdd-HHmmss>-<pid>.log` |
+| 位置 | `$TKCODE_HOME/logs/ptyhost/ptyhost-<yyyyMMdd-HHmmss>-<pid>.log` |
 | 实现 | 自写的极简 `ILoggerProvider`：后台线程批量写入文件，AOT 安全，不引入第三方库。host 没有 stdout / stderr（§1.3 已重定向到 `/dev/null`） |
 | 轮转 | 单个文件 ≤ 5 MiB，最多保留 10 个文件 |
-| 级别 | `--log-level` 或环境变量 `TCODE_PTYHOST_LOG`（`trace\|debug\|info\|warn`），默认 `info` |
-| 隐私 | **从不记录终端内容、输入字节、剪贴板内容和环境变量的值。** 只有同时设置 `TCODE_PTYHOST_LOG=trace` 和 `TCODE_PTYHOST_LOG_DATA=1` 时，才记录数据的前 64 字节（以十六进制） |
-| 崩溃 | 托管异常：`AppDomain.UnhandledException` 写入日志后退出。原生崩溃（libghostty、libtcodepty）由系统崩溃报告记录：macOS `~/Library/Logs/DiagnosticReports`，Windows WER（可以配置 LocalDumps），Linux 为 core / systemd-coredump。NativeAOT 没有 `createdump` [推] |
+| 级别 | `--log-level` 或环境变量 `TKCODE_PTYHOST_LOG`（`trace\|debug\|info\|warn`），默认 `info` |
+| 隐私 | **从不记录终端内容、输入字节、剪贴板内容和环境变量的值。** 只有同时设置 `TKCODE_PTYHOST_LOG=trace` 和 `TKCODE_PTYHOST_LOG_DATA=1` 时，才记录数据的前 64 字节（以十六进制） |
+| 崩溃 | 托管异常：`AppDomain.UnhandledException` 写入日志后退出。原生崩溃（libghostty、libtkcodepty）由系统崩溃报告记录：macOS `~/Library/Logs/DiagnosticReports`，Windows WER（可以配置 LocalDumps），Linux 为 core / systemd-coredump。NativeAOT 没有 `createdump` [推] |
 | Desktop 侧 | `PtyHostClient` 的日志写入 Desktop 自己的日志；断开原因和 host 退出码都要记录 |
 
 ---
@@ -215,13 +215,13 @@ $TCODE_HOME/run/                         0700（Windows：继承用户配置目�
 | 项 | 规则 |
 |---|---|
 | `sun_path` 上限 | macOS 104 字节，Linux 108 字节，都包含结尾的 NUL。.NET 的 `UnixDomainSocketEndPoint` 遇到超长路径会抛异常 [推] |
-| 首选路径 | `$TCODE_HOME/run/ptyhost-<build>.sock`。UTF-8 字节数 **< 100** 时使用（与现有 `PeerDirectory.SocketPathFor` 的阈值相同 [实 `src/TCode.AgentHost/Peers/PeerDirectory.cs:101-109`]） |
-| 回退（Linux） | `$XDG_RUNTIME_DIR/tcode-<h>/ptyhost-<build>.sock`，其中 `<h> = hex(SHA-256(TCODE_HOME))[0..12]`。`XDG_RUNTIME_DIR` 是用户私有目录（0700，tmpfs） |
-| 回退（macOS） | `$TMPDIR/tcode-<h>/ptyhost-<build>.sock`。`$TMPDIR` 是每个用户独立的 `/var/folders/…/T/`，长度约 50 字节 [推] |
-| 最后回退 | `/tmp/tcode-<uid>-<h>/ptyhost-<build>.sock` |
+| 首选路径 | `$TKCODE_HOME/run/ptyhost-<build>.sock`。UTF-8 字节数 **< 100** 时使用（与现有 `PeerDirectory.SocketPathFor` 的阈值相同 [实 `src/TKCode.AgentHost/Peers/PeerDirectory.cs:101-109`]） |
+| 回退（Linux） | `$XDG_RUNTIME_DIR/tkcode-<h>/ptyhost-<build>.sock`，其中 `<h> = hex(SHA-256(TKCODE_HOME))[0..12]`。`XDG_RUNTIME_DIR` 是用户私有目录（0700，tmpfs） |
+| 回退（macOS） | `$TMPDIR/tkcode-<h>/ptyhost-<build>.sock`。`$TMPDIR` 是每个用户独立的 `/var/folders/…/T/`，长度约 50 字节 [推] |
+| 最后回退 | `/tmp/tkcode-<uid>-<h>/ptyhost-<build>.sock` |
 | 回退目录检查 | 创建时 mode 0700。已存在时用 `lstat` 检查（**不跟随符号链接**）：必须是目录、owner 等于自己的 euid、mode 恰好为 0700。任何一项不满足就换一个后缀重试，3 次都失败则以退出码 4 退出。这样可以防止其他用户在 `/tmp` 预先创建同名目录或符号链接 |
 | 记录 | 实际使用的 endpoint 写入 json，客户端**不自己推算路径** |
-| Windows 管道名 | `\\.\pipe\tcode-ptyhost-<hex(SHA-256(userSid ‖ TCODE_HOME))[0..16]>-<build>`，不会超过 256 字符的限制 |
+| Windows 管道名 | `\\.\pipe\tkcode-ptyhost-<hex(SHA-256(userSid ‖ TKCODE_HOME))[0..16]>-<build>`，不会超过 256 字符的限制 |
 | 不使用 | Linux 抽象命名空间 socket：它没有文件系统权限，同一网络命名空间内的任何用户都能连接 |
 
 ### 2.3 认证与对端校验
@@ -245,10 +245,10 @@ sequenceDiagram
     participant C as 客户端（Desktop / AgentHost）
     participant H as host
     C->>H: Request hello{protocol, clientKind, clientVersion, ghosttyBuildId, clientNonce, pid}
-    H->>H: 生成 serverNonce（32 B）<br/>serverProof = HMAC-SHA256(K, "tcode-ptyhost/1/server" ‖ clientNonce ‖ serverNonce)
+    H->>H: 生成 serverNonce（32 B）<br/>serverProof = HMAC-SHA256(K, "tkcode-ptyhost/1/server" ‖ clientNonce ‖ serverNonce)
     H-->>C: Response {protocol, hostVersion, build, ghosttyBuildId, instanceId, pid, serverNonce, serverProof, jobBound, capabilities}
     C->>C: 校验 serverProof（FixedTimeEquals）、instanceId、协议主版本
-    C->>H: Request auth{clientProof = HMAC-SHA256(K, "tcode-ptyhost/1/client" ‖ serverNonce ‖ clientNonce)}
+    C->>H: Request auth{clientProof = HMAC-SHA256(K, "tkcode-ptyhost/1/client" ‖ serverNonce ‖ clientNonce)}
     H->>H: 依次用各个已知令牌（完整令牌 + 已签发的受限令牌）验证 → 确定该连接的 scope
     H-->>C: Response {scope: "full" | "agent", sessionLimit, connectionId}
 ```
@@ -299,8 +299,8 @@ offset  size  字段          说明
 
 ### 3.3 JSON 部分
 
-- 信封沿用现有 JSON-RPC 的形状（`id`、`method`、`params`、`result`、`error{code,message,data}`），去掉 `"jsonrpc":"2.0"` 字段。错误码复用 `JsonRpcConnection` 中的标准值（[实 `src/TCode.Rpc.Contracts/JsonRpcConnection.cs:69-75`]），再加上 §4.10 的专用码。
-- **源生成**：`TCode.Terminal.Protocol` 定义 `PtyHostJsonContext`，选项与 `RpcJsonContext` 一致（[实 `src/TCode.Rpc.Contracts/RpcJsonContext.cs:7-11`]）：
+- 信封沿用现有 JSON-RPC 的形状（`id`、`method`、`params`、`result`、`error{code,message,data}`），去掉 `"jsonrpc":"2.0"` 字段。错误码复用 `JsonRpcConnection` 中的标准值（[实 `src/TKCode.Rpc.Contracts/JsonRpcConnection.cs:69-75`]），再加上 §4.10 的专用码。
+- **源生成**：`TKCode.Terminal.Protocol` 定义 `PtyHostJsonContext`，选项与 `RpcJsonContext` 一致（[实 `src/TKCode.Rpc.Contracts/RpcJsonContext.cs:7-11`]）：
 
 ```csharp
 [JsonSourceGenerationOptions(
@@ -362,7 +362,7 @@ public sealed partial class PtyHostJsonContext : JsonSerializerContext;
 
 | 方法 | 方向 | 权限 | 参数 | 返回 | 说明 |
 |---|---|---|---|---|---|
-| `profiles/list` | C→H | agent | `{refresh?: bool}` | `ProfileDto[]`：`id, name, command, args, loginShell, kind, icon, source: detected\|settings, isDefault, available, unavailableReason?` | 探测由 host 中的 `TCode.Terminal.Shell` 完成：真正启动进程的是 host，而 Desktop 不引用 Shell 项目（01 §4）。探测结果缓存 60 s，`refresh` 强制重新探测 |
+| `profiles/list` | C→H | agent | `{refresh?: bool}` | `ProfileDto[]`：`id, name, command, args, loginShell, kind, icon, source: detected\|settings, isDefault, available, unavailableReason?` | 探测由 host 中的 `TKCode.Terminal.Shell` 完成：真正启动进程的是 host，而 Desktop 不引用 Shell 项目（01 §4）。探测结果缓存 60 s，`refresh` 强制重新探测 |
 
 ### 4.3 会话生命周期
 
@@ -373,7 +373,7 @@ public sealed partial class PtyHostJsonContext : JsonSerializerContext;
 | `profileId` | string? | 为空时使用默认 profile |
 | `launch` | `{command, args[]}`? | 覆盖 profile 的启动命令（Agent 进程模式、ssh profile 的变体）；与 `profileId` 至少填一个 |
 | `cwd` | string? | 必须是存在的目录，否则返回 `CwdNotFound`（附带回退建议：项目根目录、home） |
-| `env` | `Dictionary<string,string?>`? | 覆盖项；值为 null 表示删除。合并规则见 07：host 自身的启动环境（去掉 `TCODE_PTYHOST_*` 等内部变量）→ profile → 这里的覆盖项 → TERM 等固定项 |
+| `env` | `Dictionary<string,string?>`? | 覆盖项；值为 null 表示删除。合并规则见 07：host 自身的启动环境（去掉 `TKCODE_PTYHOST_*` 等内部变量）→ profile → 这里的覆盖项 → TERM 等固定项 |
 | `size` | `{cols, rows, cellWidth, cellHeight}` | 初始尺寸，cell 像素可以为 0 |
 | `widthMode` | `compat\|grapheme` | D9：默认 `compat`，程序开启 2027 时在流内切换 |
 | `palette` | `PaletteDto` | 初始默认颜色（fg、bg、cursor、256 色），镜像核心按它应答 OSC 4/10/11 |
@@ -512,7 +512,7 @@ PtyHostServer
  ├ Auth（令牌表、对端校验）
  ├ SessionManager（u32 → Session；persistentId → Session）
  │   └ Session
- │       ├ ITerminalConnection（TCode.Terminal.Pty）
+ │       ├ ITerminalConnection（TKCode.Terminal.Pty）
  │       ├ SessionActor（专用 Thread）：镜像核心 TerminalCore、OutputLog、CommandTracker、FlowGate
  │       ├ WriterChannel（Input + 查询应答 → 写线程）
  │       └ Subscribers：List<Subscription>（连接、模式、游标、acked、状态）
@@ -594,7 +594,7 @@ sealed class Subscription
 
 ### 7.1 取值
 
-| 参数 | TCode | VS Code | 依据 |
+| 参数 | TKCode | VS Code | 依据 |
 |---|---|---|---|
 | 高水位（暂停） | **256 KiB**（`head − acked`） | `HighWatermarkChars = 100000` | [实 VS Code `common/terminal.ts:886`]。VS Code 计数的是 UTF-16 字符；我们计数的是字节（CJK 字符 1 个对应 3 字节），而且一帧最多 64 KiB，至少要能容纳 4 帧在途才不会断流。libghostty 的解析速度约 500 MB/s（01 §1），UI 侧核心即使只有 100 MB/s，256 KiB 也只需约 2.5 ms 就能处理完 [推] |
 | 低水位（恢复） | **64 KiB** | `LowWatermarkChars = 5000` | [实 `:896`]。必须 ≥ Ack 粒度，否则可能永远无法恢复（VS Code 注释："This must be less than or equal to LowWatermarkChars or the terminal max never unpause" [实 `:899`]） |
@@ -761,7 +761,7 @@ sequenceDiagram
 ### 10.1 位置与权限
 
 ```
-$TCODE_HOME/terminal/revive/                     0700
+$TKCODE_HOME/terminal/revive/                     0700
   <persistentId>/                                0700
     meta.json                                    0600
     snapshot.bin                                 0600（libghostty 快照，已裁剪）
@@ -891,7 +891,7 @@ host 没有 UI。这些效果由镜像核心产生（01 §6.1 的 `ITerminalEffe
 
 ---
 
-## 12. 关闭与退出 TCode
+## 12. 关闭与退出 TKCode
 
 ### 12.1 关闭标签
 
@@ -899,7 +899,7 @@ host 没有 UI。这些效果由镜像核心产生（01 §6.1 的 `ITerminalEffe
 2. 返回 `closed:false` 时，Desktop 按 `terminal.confirmClose`（默认 `whenRunning`）弹窗，内容为前台程序名和命令行。
 3. 用户确认后，`session/close{force:true}`。host 执行关闭序列：Unix 为 02 §2.4 的 `killpg(SIGHUP)` → 关闭 master → 等 2 s → `killpg(SIGKILL)`；Windows 为 02 §3.5 的做法，在**单独线程**上调用 `ClosePseudoConsole`，同时继续读输出管道，避免在旧系统上死锁。
 
-### 12.2 退出 TCode
+### 12.2 退出 TKCode
 
 ```mermaid
 sequenceDiagram
@@ -934,10 +934,10 @@ sequenceDiagram
 
 ## 13. 客户端 API
 
-### 13.1 Desktop：`PtyHostClient`（`TCode.Terminal.Protocol`，只依赖 BCL）
+### 13.1 Desktop：`PtyHostClient`（`TKCode.Terminal.Protocol`，只依赖 BCL）
 
 ```csharp
-namespace TCode.Terminal.Protocol;
+namespace TKCode.Terminal.Protocol;
 
 /// 发现或启动 host（只有 Desktop 使用）。
 public static class PtyHostLocator
@@ -1027,10 +1027,10 @@ public interface IPtySessionSink
 | 步骤 | 说明 |
 |---|---|
 | 1 签发 | Desktop 启动 AgentHost 之前，如果 host 已经在运行，调用 `auth/mintToken{scope:"agent"}` 拿到受限令牌 |
-| 2 环境变量 | Desktop 在 `AgentHostConnection.StartProcess` 的 `ProcessStartInfo.Environment` 中设置：`TCODE_PTYHOST_ENDPOINT`（socket 路径或管道名）、`TCODE_PTYHOST_TOKEN`（base64url）、`TCODE_PTYHOST_INSTANCE`（instanceId，用于核对）、`TCODE_PTYHOST_PROTOCOL`（`1.0`） |
+| 2 环境变量 | Desktop 在 `AgentHostConnection.StartProcess` 的 `ProcessStartInfo.Environment` 中设置：`TKCODE_PTYHOST_ENDPOINT`（socket 路径或管道名）、`TKCODE_PTYHOST_TOKEN`（base64url）、`TKCODE_PTYHOST_INSTANCE`（instanceId，用于核对）、`TKCODE_PTYHOST_PROTOCOL`（`1.0`） |
 | 3 延迟获取 | AgentHost 启动时 host 还没运行（通常如此，因为 host 是按需启动的），或者连接认证失败（host 已经重启，令牌失效）时，AgentHost 通过现有的 JSON-RPC 向 UI 发请求 `terminal/ptyHostEndpoint`（新增 Host→UI 方法，在 `RpcMethods` 中登记）。Desktop 收到后按需启动 host，签发新令牌，返回相同的四个字段 |
 | 4 连接 | AgentHost 的 `TerminalBroker` 调用 `PtyHostClient.ConnectAsync(endpoint)`，`clientKind = agent` |
-| 5 环境清理 | **AgentHost 必须从它启动的所有子进程**（BashTool、外部 Agent CLI、MCP server）**的环境中删除 `TCODE_PTYHOST_*`**；host 构造 shell 环境时也删除这些变量（07）。否则终端里运行的任何程序都能拿到令牌 |
+| 5 环境清理 | **AgentHost 必须从它启动的所有子进程**（BashTool、外部 Agent CLI、MCP server）**的环境中删除 `TKCODE_PTYHOST_*`**；host 构造 shell 环境时也删除这些变量（07）。否则终端里运行的任何程序都能拿到令牌 |
 | 6 吊销 | AgentHost 退出或重启时，Desktop 调用 `auth/revoke` 吊销旧令牌 |
 
 ---
@@ -1044,7 +1044,7 @@ public interface IPtySessionSink
 | **同机的其他用户** | 连接 socket 或管道，读写别人的终端 | ① socket 所在目录 0700，socket 文件 0600；管道 DACL 只允许当前用户和 SYSTEM，并设置 `PIPE_REJECT_REMOTE_CLIENTS`（§2.1）② 对端 uid / SID 校验（§2.3）③ HMAC 令牌 ④ `/tmp` 回退目录做 `lstat` 和 owner 检查 | 管理员 / root 不在防护范围内 |
 | 其他用户抢注 | 抢先创建同名管道或目录，冒充 host 骗取输入 | `FILE_FLAG_FIRST_PIPE_INSTANCE`（host 创建失败时报错）；客户端校验服务端 SID 和 `serverProof`；令牌不上线 | — |
 | **同一用户的其他进程** | 读取 `ptyhost-*.json` 中的令牌，控制所有终端 | 这**不是**安全边界（tmux、VS Code、iTerm2 都是如此）。做的事情：令牌不进入终端和子进程的环境变量（§13.2 第 5 条）；Linux 上可选 `prctl(PR_SET_DUMPABLE, 0)`，阻止同用户进程读取 `/proc/<pid>/environ` 和内存（代价是没有 core dump，默认关闭） | 恶意程序以同一用户身份运行时，可以完全控制终端 |
-| **Agent 越权** | Agent 操作用户的终端，读取敏感输出，或者调用 `host/quit` | ① 受限令牌：只能访问 owner 为自己的会话，以及经 `session/share` 明确共享的会话；不能调用 `host/*`、`persistence/*`、`session/setColors` 等方法（§4 的权限列）② 在终端中执行命令之前，必须先经过 AgentHost 的审批（09）③ 建议 AgentHost 的文件工具把 `$TCODE_HOME/run/` 和 `$TCODE_HOME/terminal/revive/` 加入拒绝列表，并且读取它们**总是**需要审批（否则 Agent 可以通过 bash 读出完整令牌） | Agent 的 bash 工具以用户身份运行，理论上仍然可以读取令牌文件。所以受限令牌主要用来防止 Agent 侧逻辑出错，不能防住恶意的 Agent |
+| **Agent 越权** | Agent 操作用户的终端，读取敏感输出，或者调用 `host/quit` | ① 受限令牌：只能访问 owner 为自己的会话，以及经 `session/share` 明确共享的会话；不能调用 `host/*`、`persistence/*`、`session/setColors` 等方法（§4 的权限列）② 在终端中执行命令之前，必须先经过 AgentHost 的审批（09）③ 建议 AgentHost 的文件工具把 `$TKCODE_HOME/run/` 和 `$TKCODE_HOME/terminal/revive/` 加入拒绝列表，并且读取它们**总是**需要审批（否则 Agent 可以通过 bash 读出完整令牌） | Agent 的 bash 工具以用户身份运行，理论上仍然可以读取令牌文件。所以受限令牌主要用来防止 Agent 侧逻辑出错，不能防住恶意的 Agent |
 | 恶意程序输出 | OSC 52 读取剪贴板、通知轰炸、伪造 cwd | §11 的策略；通知限速、长度上限；OSC 7 只作为提示使用（`verified`）；标题回报关闭 | — |
 | 有缺陷或恶意的客户端 | 超长帧、深层嵌套的 JSON、海量请求 | 帧长度上限（§3.1）、`MaxDepth = 16`、未完成请求上限、会话和连接数上限、认证超时 5 s | — |
 | 持久化泄露 | revive 文件中有敏感输出 | 0700 / 0600；可以关闭；行数上限；用户关闭会话时删除；`close` 模式全部删除；`persistence/clear` | 磁盘未加密时，有物理接触的人可以读取 |
@@ -1054,7 +1054,7 @@ public interface IPtySessionSink
 
 ## 15. AOT 注意事项
 
-- **Unix 上 host 进程内不使用 `System.Diagnostics.Process` 和 `System.Console`**：使用它们会让 .NET 安装 SIGCHLD 处理器并改动终端设置，与我们自己的子进程回收冲突（[03](03-pty.md)）。需要执行外部命令时（例如 `ssh -G`、`vswhere` 之外的探测）用 libtcodepty 的管道模式启动接口 `tcpty_spawn_pipe`（[03](03-pty.md) §2.3）。**Windows 上没有 SIGCHLD 问题**，探测类外部命令（`wsl.exe -l -q`、vswhere）可以直接用 `Process`，但 `Console` 仍然不用。
+- **Unix 上 host 进程内不使用 `System.Diagnostics.Process` 和 `System.Console`**：使用它们会让 .NET 安装 SIGCHLD 处理器并改动终端设置，与我们自己的子进程回收冲突（[03](03-pty.md)）。需要执行外部命令时（例如 `ssh -G`、`vswhere` 之外的探测）用 libtkcodepty 的管道模式启动接口 `tcpty_spawn_pipe`（[03](03-pty.md) §2.3）。**Windows 上没有 SIGCHLD 问题**，探测类外部命令（`wsl.exe -l -q`、vswhere）可以直接用 `Process`，但 `Console` 仍然不用。
 - **启动时补齐 fd 0–2**：`--detach` 之后，如果 0/1/2 中有未打开的，用 `/dev/null` 补上，防止后来打开的 PTY master 恰好占用 0–2 号 fd。
 
 | 项 | 做法 |
@@ -1067,13 +1067,13 @@ public interface IPtySessionSink
 | 加密 | `HMACSHA256.HashData`、`RandomNumberGenerator.Fill`、`CryptographicOperations.FixedTimeEquals`、`SHA256.HashData` |
 | 锁文件 | `FileStream(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)` |
 | 时钟 | `Stopwatch.GetTimestamp`；Windows 的宽限期计时调用 `QueryUnbiasedInterruptTime`（`LibraryImport`） |
-| 验收 | `TCode.Terminal.Protocol` 和 `TCode.Terminal.Host` 都设置 `IsAotCompatible=true`；host AOT 发布 0 个 IL2xxx / IL3xxx 警告；CI 中运行 AOT 二进制的 `--self-test`，并用 AOT host 跑 `TCode.Terminal.Host.Tests` 中的端到端测试（与 `TCODE_TEST_HOST_EXE` 的做法相同） |
+| 验收 | `TKCode.Terminal.Protocol` 和 `TKCode.Terminal.Host` 都设置 `IsAotCompatible=true`；host AOT 发布 0 个 IL2xxx / IL3xxx 警告；CI 中运行 AOT 二进制的 `--self-test`，并用 AOT host 跑 `TKCode.Terminal.Host.Tests` 中的端到端测试（与 `TKCODE_TEST_HOST_EXE` 的做法相同） |
 
 ---
 
 ## 16. 测试计划
 
-测试项目为 `tests/TCode.Terminal.Host.Tests`。除平台专属的用例外，每个用例都在三个平台上运行。端到端用例同时用 JIT 和 AOT 的 host 各跑一次。
+测试项目为 `tests/TKCode.Terminal.Host.Tests`。除平台专属的用例外，每个用例都在三个平台上运行。端到端用例同时用 JIT 和 AOT 的 host 各跑一次。
 
 | 类别 | 用例 |
 |---|---|
@@ -1092,17 +1092,17 @@ public interface IPtySessionSink
 | 持久化 | 30 s 定时保存（注入时钟）只写有变化的会话；文件权限为 0600 / 0700；行数裁剪（5000 行裁到 1000 行）；`snapshot.bin` 损坏时回退到 `tail.vt`；`close` 模式删除所有条目；SIGTERM 时 1.5 s 内保存完成 |
 | 退出 | `quitCheck` 的判定（shell 空闲、`sleep 100`、vim、tmux、忽略列表中的进程、OSC 133 在提示符处）；三种 `onQuit` 模式；Windows 关闭时不死锁（02 §3.5） |
 | 心跳 | 客户端暂停（SIGSTOP）35 s → host 断开该连接；host 暂停 → 客户端在 11 s 后报告无响应，恢复后自动恢复正常 |
-| 安全回归 | shell 环境中没有 `TCODE_PTYHOST_*`；日志中不出现输入的字节（grep 一个哨兵字符串） |
+| 安全回归 | shell 环境中没有 `TKCODE_PTYHOST_*`；日志中不出现输入的字节（grep 一个哨兵字符串） |
 | 性能（11 号文档） | IPC 吞吐（目标是 UDS 上 ≥ 1 GB/s，参照 06 §7.3 匿名管道上原始帧 64 KiB 时 2.87 GB/s 的实测）；回显延迟 p99（UDS 往返 < 100 µs [推]）；10k 行回滚的快照编码耗时；256 个空闲会话的内存占用 |
 
 ---
 
 ## 17. 实施顺序（M2 的拆分）
 
-1. `TCode.Terminal.Protocol`：帧编解码、DTO 和 `PtyHostJsonContext`、`PtyHostClient`（握手和控制请求）、单元测试。
-2. `TCode.Terminal.Host`：监听、认证、`SessionManager`、actor、输出日志、流控；先用回放连接测试，再接真实 PTY。
+1. `TKCode.Terminal.Protocol`：帧编解码、DTO 和 `PtyHostJsonContext`、`PtyHostClient`（握手和控制请求）、单元测试。
+2. `TKCode.Terminal.Host`：监听、认证、`SessionManager`、actor、输出日志、流控；先用回放连接测试，再接真实 PTY。
 3. attach 快照、`resumeFrom`、多客户端。
-4. 发现与启动（`tcode-pty-spawn --detach`、Windows `CreateProcessW`）、心跳、宽限期、日志。
+4. 发现与启动（`tkcode-pty-spawn --detach`、Windows `CreateProcessW`）、心跳、宽限期、日志。
 5. 持久化与 revive、`onQuit`、关机处理。
 6. 受限令牌、AgentHost 环境变量、`command/*` 接口（实现由 09 负责）。
 7. 升级并存（引导子集、VT 兼容格式）。
@@ -1121,11 +1121,11 @@ public interface IPtySessionSink
 | 4 | libghostty 快照格式 v1 **没有二进制兼容保证** → 跨版本 revive 依赖 `tail.vt` 回退 | 已知 | [实 `snapshot.h`] |
 | 5 | Windows：Desktop 处于禁止 breakaway 的 Job 中的比例；隐藏窗口能否收到 `WM_ENDSESSION`；`QueryUnbiasedInterruptTime` 在 Modern Standby 下的行为 | 平台 | 实机测试 |
 | 6 | Linux：桌面环境把应用放在 `app-*.scope` 中，Desktop 退出时 host 是否会被 systemd 一起停止；`KillUserProcesses=yes` 时注销会杀死 keepAlive 会话；Flatpak / Snap 不在 v1 范围内 | 平台 | GNOME、KDE 实测 [推] |
-| 7 | macOS：脱离 Desktop 的 host 启动的 shell，在 TCC（访问"文稿"等目录时的授权提示）中归属哪个应用；Desktop 退出后是否还归属 TCode.app | 平台 | 实测 |
+| 7 | macOS：脱离 Desktop 的 host 启动的 shell，在 TCC（访问"文稿"等目录时的授权提示）中归属哪个应用；Desktop 退出后是否还归属 TKCode.app | 平台 | 实测 |
 | 8 | VT 兼容 attach 时两个核心的偏差 | 一致性 | 差分测试：同一字节流分别用两个 libghostty 版本处理 |
 | 9 | host 中一个镜像核心崩溃（原生代码）会带走所有会话 | 架构 | fuzz（03 §9）；以后可以考虑每个会话一个进程，代价很高，v1 不做 |
 | 10 | 流控参数（256 / 64 / 32 KiB）在 UI 侧核心真实解析速度下是否合适：Ctrl+C 延迟、洪流时的帧率 | 性能 | 11 号文档的基准 |
-| 11 | .NET 在 Unix 上的 `FileShare.None` 是否确实使用 `flock`，以及 NFS 上的家目录（`TCODE_HOME` 在 NFS 上时锁的语义不可靠） | 平台 | 读 dotnet/runtime 源码并实测；NFS 上把锁和 socket 放到 `XDG_RUNTIME_DIR` |
+| 11 | .NET 在 Unix 上的 `FileShare.None` 是否确实使用 `flock`，以及 NFS 上的家目录（`TKCODE_HOME` 在 NFS 上时锁的语义不可靠） | 平台 | 读 dotnet/runtime 源码并实测；NFS 上把锁和 socket 放到 `XDG_RUNTIME_DIR` |
 | 12 | ~~宽限期到期会杀掉正在运行的程序~~ | 产品 | 已决定（2026-10-17）：有前台程序在运行的会话保留，直到程序结束或达到 `keepAliveMaxHours` |
 
 ---
@@ -1153,12 +1153,12 @@ public interface IPtySessionSink
 
 | # | 01 的原文 | 本文的处理 | 是否需要修改 01 |
 |---|---|---|---|
-| 1 | §6.4："`$TCODE_HOME/run/ptyhost-<uid>.sock`"；§3.3："每个用户、每个 `TCODE_HOME` 只有一个 host" | 按**构建**区分：`ptyhost-<build>.{json,lock,sock}`，用于升级时并存（§1.5）；路径超长时回退到其他目录 | 是 |
+| 1 | §6.4："`$TKCODE_HOME/run/ptyhost-<uid>.sock`"；§3.3："每个用户、每个 `TKCODE_HOME` 只有一个 host" | 按**构建**区分：`ptyhost-<build>.{json,lock,sock}`，用于升级时并存（§1.5）；路径超长时回退到其他目录 | 是 |
 | 2 | §6.4："连接后先发 32 字节随机令牌" | 改为 HMAC 双向挑战应答，令牌不上线（§2.4） | 是 |
 | 3 | §6.4："慢订阅者会拖住整个会话（保证不丢数据）" | 拖住的时间上限为 10 s，之后降级并 resync；数据由镜像核心保证不丢 | 是 |
 | 4 | §3.2 规则 1：改变状态的操作只有 PTY 输出、resize、reset 三种（规则 5 又加了 SetColors） | 增加 `Clear` 记录（D6 的 ⌘K），以及 host 自己追加的 Output（revive 的恢复内容和分隔文字） | 是 |
 | 5 | §3.2 规则 3：两侧必须是同一个 libghostty 构建 | 升级后 keepAlive 的会话不满足这一条 → 遗留 host 改用 VT 兼容格式 attach，接受可能的显示偏差 | 是，需要补充说明 |
-| 6 | §3.3："无客户端连接的宽限期默认 30 分钟，超时后按'退出 TCode'处理" | keepAlive 退出后不计时；异常断开时，宽限期到期后**没有**前台程序的会话按退出处理，**有**前台程序在运行的会话继续保留，直到程序结束或达到 `keepAliveMaxHours`（2026-10-17 用户决定） | 01 已更新 |
+| 6 | §3.3："无客户端连接的宽限期默认 30 分钟，超时后按'退出 TKCode'处理" | keepAlive 退出后不计时；异常断开时，宽限期到期后**没有**前台程序的会话按退出处理，**有**前台程序在运行的会话继续保留，直到程序结束或达到 `keepAliveMaxHours`（2026-10-17 用户决定） | 01 已更新 |
 | 7 | §3.3：revive 快照（尾部 N 行） | libghostty 没有尾部编码选项，快照格式 v1 也不保证兼容 → 需要裁剪流程（§10.3）和 `tail.vt` 回退 | 是，需要补充说明 |
 | 8 | §6.4："握手时校验 ghostty build_info 的哈希" | `build_info` 中没有哈希 → `ghosttyBuildId` = 版本字符串 + 库文件的 SHA-256 | 是 |
 | 9 | 配置键：01 使用 `terminal.persistence.onQuit`；research/05 §10 使用 `restore.sessions` / `restore.scrollbackLines` | 本文使用 `terminal.persistence.{onQuit, scrollbackLines, orphanGraceMinutes, keepAliveMaxHours, saveIntervalSec}`，以 07 为准 | 由 07 统一 |

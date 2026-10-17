@@ -5,7 +5,7 @@
       这里排除包的全部资产，只按 RID 显式复制：
         win-x64   → conpty.dll(x64) + x64\OpenConsole.exe + arm64\OpenConsole.exe（x64 进程可能在 arm64 Windows 上模拟运行）
         win-arm64 → conpty.dll(arm64) + arm64\OpenConsole.exe
-      只由可执行项目导入（tcode-ptyhost、Pty 测试）：库项目经 ProjectReference 构建时不带 RuntimeIdentifier，会按本机 RID 选错架构。
+      只由可执行项目导入（tkcode-ptyhost、Pty 测试）：库项目经 ProjectReference 构建时不带 RuntimeIdentifier，会按本机 RID 选错架构。
     -->
     <ItemGroup>
         <PackageReference Include="Microsoft.Windows.Console.ConPTY" ExcludeAssets="all" PrivateAssets="all" GeneratePathProperty="true" />

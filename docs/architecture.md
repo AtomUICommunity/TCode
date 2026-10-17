@@ -1,6 +1,6 @@
-# TCode 架构设计
+# TKCode 架构设计
 
-TCode 是基于 Avalonia + AtomUI 的桌面 AI Agent 客户端。视觉最初参考 Cursor 的 Agents 窗口；2026-10-16 起改为以项目 / 会话为中心的暗色风格（居中 Composer、径向光晕背景、单一紫色强调色、可搜索弹层、⌘K 命令面板），界面中英双语。
+TKCode 是基于 Avalonia + AtomUI 的桌面 AI Agent 客户端。视觉最初参考 Cursor 的 Agents 窗口；2026-10-16 起改为以项目 / 会话为中心的暗色风格（居中 Composer、径向光晕背景、单一紫色强调色、可搜索弹层、⌘K 命令面板），界面中英双语。
 
 ## 1. 已确定的技术决策
 
@@ -9,39 +9,39 @@ TCode 是基于 Avalonia + AtomUI 的桌面 AI Agent 客户端。视觉最初参
 | UI 组件库 | AtomUI.Desktop.Controls 6.2.5（NuGet） | 不引用 `../AtomUI` 源码；Avalonia 版本跟随 AtomUI（12.1.3），.NET 10 |
 | 协议层 | 自研统一协议层，适配器直接基于 `HttpClient` + `SseParser` | 每种线协议一个适配器：Chat Completions / Responses / Messages；厂商差异用兼容配置描述 |
 | Agent 运行时 | pi 式分层 + **独立 Agent Host 进程** | UI 与 Host 通过 stdio 上的 JSON-RPC 2.0 通信（自研 `JsonRpcConnection`，NativeAOT 安全） |
-| UI 定制 | 主题 Token + 定向覆盖 | 自定义主题 XML → 少量 ControlTheme → TCode 复合控件 |
+| UI 定制 | 主题 Token + 定向覆盖 | 自定义主题 XML → 少量 ControlTheme → TKCode 复合控件 |
 | MVVM / DI | CommunityToolkit.Mvvm + Microsoft.Extensions.Hosting | ReactiveUI 只是 AtomUI 的传递依赖，未启用 |
 | 窗口 | Cursor 式融合标题栏 | macOS 红绿灯嵌入侧栏顶部；Windows/Linux 自绘窗口按钮 |
-| 主题 | 暗色 + 亮色，支持跟随系统 | `TCodeDark` / `TCodeLight` 两套主题定义 |
+| 主题 | 暗色 + 亮色，支持跟随系统 | `TKCodeDark` / `TKCodeLight` 两套主题定义 |
 | 会话存储 | append-only JSONL 树 | 与 pi 的会话格式思路一致 |
 
 ## 2. 工程结构与依赖方向
 
 ```
-TCode.Desktop ──(JSON-RPC over stdio)──▶ TCode.AgentHost
+TKCode.Desktop ──(JSON-RPC over stdio)──▶ TKCode.AgentHost
      │                                         │
-     └──▶ TCode.Rpc.Contracts ◀────────────────┤
+     └──▶ TKCode.Rpc.Contracts ◀────────────────┤
                                                ▼
-                                     TCode.Agent.Coding   会话、工具、系统提示、AGENTS.md
+                                     TKCode.Agent.Coding   会话、工具、系统提示、AGENTS.md
                                                ▼
-                                         TCode.Agent      Agent 循环、工具契约、事件
+                                         TKCode.Agent      Agent 循环、工具契约、事件
                                                ▼
-                                          TCode.Ai        统一消息模型、流式事件、协议适配器
+                                          TKCode.Ai        统一消息模型、流式事件、协议适配器
 ```
 
-依赖严格单向；`TCode.Ai` / `TCode.Agent` / `TCode.Agent.Coding` 不依赖任何 UI，并标记 `IsAotCompatible`。
+依赖严格单向；`TKCode.Ai` / `TKCode.Agent` / `TKCode.Agent.Coding` 不依赖任何 UI，并标记 `IsAotCompatible`。
 
 | 项目 | 对应 pi | 职责 |
 |---|---|---|
-| `TCode.Ai` | pi-ai | `Message`/`ContentBlock` 统一模型；`LlmEvent` 流式事件；`IWireApi` 适配器契约与 `WireApiRegistry`；`FakeWireApi` |
-| `TCode.Agent` | pi-agent-core | `Agent` 循环；`IAgentTool`；`AgentEvent`；steer / followUp 队列；`BeforeToolCall` 审批钩子 |
-| `TCode.Agent.Coding` | pi-coding-agent | `AgentSession`；`SessionStore`（JSONL）；按节的系统提示；工作区与审批策略；内置工具（文件、搜索、bash/后台任务、任务清单、网页、子 Agent 与消息，见 [builtin-agent-tools.md](design/builtin-agent-tools.md)） |
-| `TCode.Rpc.Contracts` | pi RPC 模式 | `IAgentHostServer`（UI→Host）、`IAgentHostClient`（Host→UI）、只含增量的 `SessionEvent` |
-| `TCode.AgentHost` | — | 独立进程，托管多个会话，把 Agent 事件翻译为 RPC 通知 |
-| `TCode.Mcp` | — | MCP 客户端（官方 C# SDK）：Host 内的共享连接池、把 MCP 工具适配为 `IAgentTool`、OAuth、资源与提示词；设计见 [design/mcp.md](design/mcp.md) |
-| `TCode.Desktop` | — | Avalonia 应用：主题、窗口、视图与 ViewModel、Host 连接 |
+| `TKCode.Ai` | pi-ai | `Message`/`ContentBlock` 统一模型；`LlmEvent` 流式事件；`IWireApi` 适配器契约与 `WireApiRegistry`；`FakeWireApi` |
+| `TKCode.Agent` | pi-agent-core | `Agent` 循环；`IAgentTool`；`AgentEvent`；steer / followUp 队列；`BeforeToolCall` 审批钩子 |
+| `TKCode.Agent.Coding` | pi-coding-agent | `AgentSession`；`SessionStore`（JSONL）；按节的系统提示；工作区与审批策略；内置工具（文件、搜索、bash/后台任务、任务清单、网页、子 Agent 与消息，见 [builtin-agent-tools.md](design/builtin-agent-tools.md)） |
+| `TKCode.Rpc.Contracts` | pi RPC 模式 | `IAgentHostServer`（UI→Host）、`IAgentHostClient`（Host→UI）、只含增量的 `SessionEvent` |
+| `TKCode.AgentHost` | — | 独立进程，托管多个会话，把 Agent 事件翻译为 RPC 通知 |
+| `TKCode.Mcp` | — | MCP 客户端（官方 C# SDK）：Host 内的共享连接池、把 MCP 工具适配为 `IAgentTool`、OAuth、资源与提示词；设计见 [design/mcp.md](design/mcp.md) |
+| `TKCode.Desktop` | — | Avalonia 应用：主题、窗口、视图与 ViewModel、Host 连接 |
 
-## 3. 协议层（TCode.Ai）
+## 3. 协议层（TKCode.Ai）
 
 ### 3.1 统一消息模型
 
@@ -102,16 +102,16 @@ Start → (Text|Thinking|ToolCall)Start → *Delta → *End … → Done | Error
 
 完整规格见 [settings.md](settings.md)。要点：
 
-- **配置文件**：`~/.tcode/settings.json`（JSONC，带 JSON Schema），可以手工编辑，也可以通过设置页修改。程序自己记录的状态放在 `state.json`。
-- **内置目录**：裁剪后的 models.dev 快照（`tools/gen_catalog.py` → `TCode.AgentHost/Catalog/catalog.json`），再叠加 TCode 补充（`BuiltInCatalog`）。
+- **配置文件**：`~/.tkcode/settings.json`（JSONC，带 JSON Schema），可以手工编辑，也可以通过设置页修改。程序自己记录的状态放在 `state.json`。
+- **内置目录**：裁剪后的 models.dev 快照（`tools/gen_catalog.py` → `TKCode.AgentHost/Catalog/catalog.json`），再叠加 TKCode 补充（`BuiltInCatalog`）。
   - 内置厂商只需要一个 Key，也可以不写，直接读取目录登记的环境变量；
   - 自定义厂商的模型只需要写 id。
 - **Key 的写法**：明文、`{env:VAR}` 或 `$VAR`。界面保存后，文件权限设为 0600。
 - **热重载**：Host 的 `SettingsWatcher` 以 500ms 防抖重新加载，并推送 `models/changed`；文件有错误时保留旧配置，并在设置页显示错误。
 - **模型引用**：RPC 中一律使用 `厂商/模型` 形式的 Ref，避免不同厂商的同名模型冲突。
-- **共享代码**：`TCode.Config` 提供配置类型、宽松解析、按节点写回和 Key 解析，Host 和桌面端共用。
+- **共享代码**：`TKCode.Config` 提供配置类型、宽松解析、按节点写回和 Key 解析，Host 和桌面端共用。
 
-## 4. Agent 运行时（TCode.Agent）
+## 4. Agent 运行时（TKCode.Agent）
 
 ```
 PromptAsync → AgentStart
@@ -130,8 +130,8 @@ PromptAsync → AgentStart
 
 ## 5. 进程模型与 RPC
 
-- UI 按需启动 `agenthost/TCode.AgentHost` 子进程：构建时由 `CopyAgentHost` 目标复制到桌面端输出目录；发布时由 `PublishAgentHost` 目标以相同运行时标识 AOT 发布到 `agenthost/`。
-- **RPC 实现**（`TCode.Rpc.Contracts`）：自研的精简 JSON-RPC 2.0，替换了 StreamJsonRpc，因为 StreamJsonRpc 的 `Attach<T>` 在 NativeAOT 下启动即抛出 `CreateProxy is not supported`。
+- UI 按需启动 `agenthost/TKCode.AgentHost` 子进程：构建时由 `CopyAgentHost` 目标复制到桌面端输出目录；发布时由 `PublishAgentHost` 目标以相同运行时标识 AOT 发布到 `agenthost/`。
+- **RPC 实现**（`TKCode.Rpc.Contracts`）：自研的精简 JSON-RPC 2.0，替换了 StreamJsonRpc，因为 StreamJsonRpc 的 `Attach<T>` 在 NativeAOT 下启动即抛出 `CreateProxy is not supported`。
   - `JsonRpcConnection`：Content-Length 分帧；发送走单写者队列，保证顺序；接收时，通知在读循环里按顺序分发，请求并发执行。
   - 取消：本端取消调用时发送 `$/cancelRequest`，远端取消对应的处理器并回复 -32800。
   - 错误：沿用标准错误码，远端异常以 `RpcRemoteException` 抛出；连接断开时，挂起的调用以 `RpcConnectionLostException` 失败。
@@ -161,8 +161,8 @@ PromptAsync → AgentStart
 
 ## 5.1 NativeAOT 约束（整个客户端必须支持 AOT）
 
-- `TCode.Desktop` 和 `TCode.AgentHost` 都设置了 `PublishAot=true`，构建时 AOT 和裁剪分析器始终开启；库项目标记 `IsAotCompatible`。
-- 验证基线（2026-10-16，osx-arm64）：两个可执行项目 AOT 发布均为 **0 个 IL/AOT 警告**（桌面端约 33 MB，Host 约 11 MB）。AOT 编译的 Host 通过 stdio 端到端测试：设置 `TCODE_TEST_HOST_EXE=<AOT Host 路径>` 后运行 `RpcEndToEndTests` 即可复验。
+- `TKCode.Desktop` 和 `TKCode.AgentHost` 都设置了 `PublishAot=true`，构建时 AOT 和裁剪分析器始终开启；库项目标记 `IsAotCompatible`。
+- 验证基线（2026-10-16，osx-arm64）：两个可执行项目 AOT 发布均为 **0 个 IL/AOT 警告**（桌面端约 33 MB，Host 约 11 MB）。AOT 编译的 Host 通过 stdio 端到端测试：设置 `TKCODE_TEST_HOST_EXE=<AOT Host 路径>` 后运行 `RpcEndToEndTests` 即可复验。
 - 编码规则：
   - JSON 一律使用源生成的 `JsonSerializerContext`；构造请求体用 `JsonNode`，但不要调用泛型的 `JsonArray.Add<T>`。
   - 不使用反射、`Activator`、动态代理或运行时代码生成。
@@ -170,7 +170,7 @@ PromptAsync → AgentStart
 
 ## 6. 会话存储
 
-- 位置：`~/.tcode/sessions/<cwd 编码>/<时间戳>_<sessionId>.jsonl`。
+- 位置：`~/.tkcode/sessions/<cwd 编码>/<时间戳>_<sessionId>.jsonl`。
 - 第一行是 `session` header；其余每行一个带 `id` / `parentId` 的条目（`message`、`modelChange`、`optionsChange`、`systemPrompt` 等），组成一棵只追加的树。
 - 文件在写入第一条消息时才创建：此前追加的模型 / 参数变化先缓存在内存里，随第一条消息一起写入，所以空会话不会落盘。读取时跳过损坏的行。
 
@@ -182,7 +182,7 @@ PromptAsync → AgentStart
 - **主区**：
   - 空状态是居中的 Composer：上方是设备和项目，下方是检出和分支。
   - 会话中，标题栏显示模型图标、会话标题和“项目 @ 设备”；Composer 收成单行胶囊停靠在底部，下方是检出、分支和上下文占用环。
-  - 背景是三层径向渐变光晕（`TCode.GlowMain`、`GlowAccent`、`GlowSidebar`），不依赖系统材质。
+  - 背景是三层径向渐变光晕（`TKCode.GlowMain`、`GlowAccent`、`GlowSidebar`），不依赖系统材质。
 - **多会话**：`ConversationViewModel` 为每个打开的会话保留一个 `SessionViewModel`，Host 事件按 SessionId 分发，所以后台会话的转录和运行状态同样保持最新。
   - 等待输出时显示“思考中… Ns”。
   - 同一轮内工具调用前后的多条助手消息合并显示。
@@ -194,11 +194,11 @@ PromptAsync → AgentStart
   - 键盘：↑ ↓ 移动高亮，↵ 执行，Esc 返回或关闭。
 - **全局快捷键**（Windows / Linux 上 ⌘ 换成 Ctrl）：⌘K 命令面板、⌘N 新对话、⇧⌘N 新建项目、⌘B 切换侧栏。
 - **前进 / 后退**：在打开过的会话和新对话之间导航。
-- **数据目录**：`TCODE_HOME` 覆盖 `~/.tcode`，Host 子进程继承该变量；`TCODE_AGENTHOST_DIR` 指定 Host 位置。两者都供测试使用。
+- **数据目录**：`TKCODE_HOME` 覆盖 `~/.tkcode`，Host 子进程继承该变量；`TKCODE_AGENTHOST_DIR` 指定 Host 位置。两者都供测试使用。
 
 ### 7.1 主题
 
-- **`Assets/Themes/TCodeDark|TCodeLight.theme.xml`**：AtomUI 主题定义，包含：
+- **`Assets/Themes/TKCodeDark|TKCodeLight.theme.xml`**：AtomUI 主题定义，包含：
   - Seed：`ColorPrimary`、`FontSize=13` 等；
   - Map：`ColorBgContainer`、`ColorBgElevated`、`ColorBorder` 等；
   - 控件级 Token：`ToggleSwitch.SwitchColor`。
@@ -218,7 +218,7 @@ PromptAsync → AgentStart
 
 ### 7.3 控件
 
-- `Styling/Controls.axaml` 为 TCode 复合控件提供 ControlTheme：行按钮、磁贴、标签页、胶囊、分割条。
+- `Styling/Controls.axaml` 为 TKCode 复合控件提供 ControlTheme：行按钮、磁贴、标签页、胶囊、分割条。
 - 通用按钮、输入框、开关、弹层使用 AtomUI 控件：`atom:Button`、`atom:TextArea`、`atom:LineEdit`、`atom:ToggleSwitch`、`atom:FlyoutHost`、`atom:Avatar`。
 - 白色发送按钮直接用 `atom:Button Color="Default" Variant="Solid"`：暗色主题下它天然是白底深色字。
 - 图标用 `Icons/LucideIcon`：Lucide 风格线性图标，基于 AtomUI `Icon`，可以直接作为 `atom:Button.Icon` 使用。
@@ -234,15 +234,15 @@ PromptAsync → AgentStart
 ### 7.5 本地化
 
 - 使用 AtomUI 的 XLIFF 语言目录。文案的唯一来源是 `Localization/strings.tsv`（key、en-US、zh-CN）。
-- `tools/gen_strings.py` 根据这张表生成 `TCodeLangResourceKind.g.cs`、`en-US.xlf`、`zh-CN.xlf`。AtomUI 要求枚举成员与 XLIFF 单元一一对应，所以不要手改生成的文件。
+- `tools/gen_strings.py` 根据这张表生成 `TKCodeLangResourceKind.g.cs`、`en-US.xlf`、`zh-CN.xlf`。AtomUI 要求枚举成员与 XLIFF 单元一一对应，所以不要手改生成的文件。
 - 引用方式：
-  - AXAML：`{loc:TCodeLangResource Key}`，随语言切换自动刷新；
+  - AXAML：`{loc:TKCodeLangResource Key}`，随语言切换自动刷新；
   - C#：`Strings.Get / Format`，读取当前语言的快照，需要刷新时订阅 `Strings.LanguageChanged`。
 - 语言保存在 `desktop.json` 的 `language` 字段，启动时传给 `UseLanguages`。`ILanguageManager.ChangeLanguage` 会同时切换 AtomUI 内置控件的文案。
 
 ### 7.6 界面截图测试
 
-- `tests/TCode.Desktop.Tests` 用 Avalonia.Headless + Skia 启动真实的 `App`（主题、调色板、语言目录），把关键组件渲染成 PNG（默认写到测试输出目录的 `snapshots/` 下，也可以用 `TCODE_SNAPSHOT_DIR` 指定）。
+- `tests/TKCode.Desktop.Tests` 用 Avalonia.Headless + Skia 启动真实的 `App`（主题、调色板、语言目录），把关键组件渲染成 PNG（默认写到测试输出目录的 `snapshots/` 下，也可以用 `TKCODE_SNAPSHOT_DIR` 指定）。
 - `MainWindowSnapshotTests` 是端到端测试：它启动真实的 Host，用 Fake 模型跑完一轮带工具调用的对话，然后截取空状态、会话、思考展开和英文界面四张图。
 - 无头平台没有原生弹出窗口，测试中弹层改用窗口的覆盖层渲染。
 - 不要用合成鼠标事件或屏幕截图去操作真实桌面。

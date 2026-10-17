@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Avalonia.Headless" />
+        <PackageReference Include="Avalonia.Skia" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\TKCode.Desktop\TKCode.Desktop.csproj" />
+        <!-- 端到端界面测试通过 TKCODE_AGENTHOST_DIR 直接启动 Host 的构建输出 -->
+        <ProjectReference Include="..\..\src\TKCode.AgentHost\TKCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
+        <!-- MCP 设置页测试连接的 stdio 测试服务器 -->
+        <ProjectReference Include="..\TKCode.Mcp.TestServer\TKCode.Mcp.TestServer.csproj" ReferenceOutputAssembly="false" />
+        <!-- 终端会话测试在进程内运行 pty host（PtyHostServer），真实 PTY -->
+        <ProjectReference Include="..\..\src\TKCode.Terminal.Host\TKCode.Terminal.Host.csproj" />
+    </ItemGroup>
+</Project>

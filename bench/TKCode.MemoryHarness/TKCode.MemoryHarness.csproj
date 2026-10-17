@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- 内存 / 空闲 CPU 基准：在真实窗口中跑场景，按 NativeAOT 发布后测量（tools/mem-bench.sh） -->
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <PublishAot>true</PublishAot>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\TKCode.Desktop\TKCode.Desktop.csproj" />
+    </ItemGroup>
+</Project>

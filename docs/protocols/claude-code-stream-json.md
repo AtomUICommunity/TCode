@@ -1,6 +1,6 @@
-# Claude Code CLI stream-json 双向流与 stdio 控制协议规范（TCode 实现用）
+# Claude Code CLI stream-json 双向流与 stdio 控制协议规范（TKCode 实现用）
 
-> 适用：TCode（C#/.NET 10 NativeAOT）的 `ClaudeRuntime` 直接启动用户本机的 `claude` 可执行文件，用 `-p --input-format stream-json --output-format stream-json` 双向收发 NDJSON，并通过 stdio 控制通道（`control_request` / `control_response`）完成握手、审批、中断和在线改配置。不使用任何官方 SDK，也不引入 Node。
+> 适用：TKCode（C#/.NET 10 NativeAOT）的 `ClaudeRuntime` 直接启动用户本机的 `claude` 可执行文件，用 `-p --input-format stream-json --output-format stream-json` 双向收发 NDJSON，并通过 stdio 控制通道（`control_request` / `control_response`）完成握手、审批、中断和在线改配置。不使用任何官方 SDK，也不引入 Node。
 > 编写日期：2026-10-16。基线版本：Claude Code **2.1.301**（本机 `/Users/token/.npm-global/bin/claude`）。字段名、帧类型、subtype、错误文本一律保留英文原文。
 > 设计背景见 [../design/external-agent-runtimes.md](../design/external-agent-runtimes.md)。
 
@@ -25,17 +25,17 @@
 ## 1. 总体模型
 
 ```
-TCode.AgentHost (ClaudeRuntime)
-   │  stdin : NDJSON  ──▶  user 消息、control_request（TCode 发起）、control_response（回答 CLI）
+TKCode.AgentHost (ClaudeRuntime)
+   │  stdin : NDJSON  ──▶  user 消息、control_request（TKCode 发起）、control_response（回答 CLI）
    │  stdout: NDJSON  ◀──  system / stream_event / assistant / user / result / rate_limit_event /
-   │                        command_lifecycle / control_request（CLI 发起）/ control_response（回答 TCode）/ …
+   │                        command_lifecycle / control_request（CLI 发起）/ control_response（回答 TKCode）/ …
    │  stderr: 文本      ◀──  诊断日志，只保留尾部若干行用于报错
    ▼
 claude -p --input-format stream-json --output-format stream-json --verbose …
 ```
 
 - **一个进程 = 一个会话**。进程在 stdin 关闭之前一直存活，可以跑任意多个轮次（turn）。stdin EOF 后 CLI 跑完当前工作再退出。[Py:query.py `_track_task_lifecycle` 注释 "the CLI in stream-json mode only exits on stdin EOF"；zeron:mod.rs `StdinMsg::Close`]
-- stdout 上混着三类流量：**对话帧**（system/stream_event/assistant/user/result…）、**CLI 发起的控制请求**（`can_use_tool` 等，必须回答）、**对 TCode 控制请求的应答**。都按行分帧，用顶层 `type` 分派。
+- stdout 上混着三类流量：**对话帧**（system/stream_event/assistant/user/result…）、**CLI 发起的控制请求**（`can_use_tool` 等，必须回答）、**对 TKCode 控制请求的应答**。都按行分帧，用顶层 `type` 分派。
 - **一个轮次以且仅以一个 `result` 帧结束**。[TS:sdk.d.ts `SDKResultMessage` "The CLI emits exactly one result message per turn … treat it as the turn-complete signal"] 但 `result` 之后还可能有信息性帧（task 通知、`session_state_changed`、`command_lifecycle completed`），也可能紧接着开始下一个轮次（排队的消息、后台任务唤醒），见 §9。
 
 ---
@@ -44,13 +44,13 @@ claude -p --input-format stream-json --output-format stream-json --verbose …
 
 ### 2.1 可执行文件定位
 
-沿用设计文档 §4 的查找顺序（`TCODE_CLAUDE_PATH` → PATH → 登录 shell PATH 快照 → 已知目录）。补充事实：
+沿用设计文档 §4 的查找顺序（`TKCODE_CLAUDE_PATH` → PATH → 登录 shell PATH 快照 → 已知目录）。补充事实：
 
 - npm 安装的包里 `bin/claude.exe` 本身就是**原生可执行文件**（macOS 上也叫 `claude.exe`，约 250 MB），`~/.npm-global/bin/claude` 是指向它的符号链接。[CLI:本机 `ls -la`]
 - Python SDK 的已知位置列表：`~/.npm-global/bin/claude`、`/usr/local/bin/claude`、`~/.local/bin/claude`、`~/node_modules/.bin/claude`、`~/.yarn/bin/claude`、`~/.claude/local/claude`；Windows 只认 `~/.local/bin/claude.exe`。[Py:transport/subprocess_cli.py `_find_cli`]
 - **Windows 拒绝启动 `.cmd`/`.bat`**（npm 的 `claude.cmd` shim）：cmd.exe 会重新解析命令行，参数里的元字符可以注入命令。必须找到原生 `claude.exe`。[Py:subprocess_cli.py `_reject_windows_batch_cli`]
 
-### 2.2 TCode 使用的 argv
+### 2.2 TKCode 使用的 argv
 
 固定部分（每个会话都带）：
 
@@ -73,10 +73,10 @@ claude
   --model <alias|id>              # 例：opus、claude-opus-5-5、claude-opus-5-5[1m]
   --effort <low|medium|high|xhigh|max>
   --permission-mode <default|acceptEdits|plan|auto|dontAsk|bypassPermissions>
-  --session-id=<uuid>             # 新建会话：TCode 预先生成 UUID
+  --session-id=<uuid>             # 新建会话：TKCode 预先生成 UUID
   --resume=<session-id>           # 恢复会话（与 --session-id 互斥，除非同时带 --fork-session）
   --fork-session                  # 恢复时分叉出新 ID
-  --mcp-config <json-or-path>     # TCode 自己的 MCP 服务器
+  --mcp-config <json-or-path>     # TKCode 自己的 MCP 服务器
   --settings <json-or-path>       # 例：{"alwaysThinkingEnabled":true}
   --setting-sources <user,project,local>
   --add-dir <dir> …
@@ -87,7 +87,7 @@ claude
 
 | 参数 | 说明 | 来源 |
 |---|---|---|
-| `-p` / `--print` | 非交互模式。`--input-format`、`--output-format`、`--include-partial-messages` 都只在 `-p` 下生效。**Python SDK 实际上不传 `-p`**（只传 `--output-format stream-json --verbose … --input-format stream-json`），CLI 在 stdout 非 TTY 时同样进入非交互模式；TCode 显式传 `-p`，与 zeron 一致 | [CLI:help]；[Py:subprocess_cli.py `_build_command`]；[zeron:mod.rs `launch_args`] |
+| `-p` / `--print` | 非交互模式。`--input-format`、`--output-format`、`--include-partial-messages` 都只在 `-p` 下生效。**Python SDK 实际上不传 `-p`**（只传 `--output-format stream-json --verbose … --input-format stream-json`），CLI 在 stdout 非 TTY 时同样进入非交互模式；TKCode 显式传 `-p`，与 zeron 一致 | [CLI:help]；[Py:subprocess_cli.py `_build_command`]；[zeron:mod.rs `launch_args`] |
 | `--verbose` | **必填**。`-p` 配 `--output-format=stream-json` 而没有 `--verbose` 时，CLI 向 stderr 打印 `Error: When using --print, --output-format=stream-json requires --verbose` 并以 1 退出 | [CLI:bin]；[zeron:mod.rs 注释] |
 | `--include-partial-messages` | 输出 `stream_event`（原始 Messages API 流事件），这是 textDelta/thinkingDelta/工具参数增量的唯一来源 | [CLI:help]；[Doc:headless §Stream responses] |
 | `--replay-user-messages` | 把 stdin 收到的 user 消息回显到 stdout（`isReplay:true`），用于确认 CLI 已收到。要求两个 format 都是 stream-json | [CLI:help]；[Doc:cli-reference] |
@@ -95,18 +95,18 @@ claude
 | `--thinking-display summarized` | **隐藏参数**，取值 `summarized` / `omitted` / `highlights`。新模型默认不给可读的 thinking 文本，要显示思考内容必须传 `summarized` | [CLI:bin `f7e=["summarized","omitted","highlights"]`]；[Py:subprocess_cli.py `--thinking-display`]；[zeron:mod.rs] |
 | `--forward-subagent-text` | 子 Agent 的 text/thinking 块也作为带 `parent_tool_use_id` 的 assistant/user 帧转发（默认只转发 tool_use/tool_result）。≥ 2.1.211。也可以在 `initialize` 里传 `forwardSubagentText:true` | [CLI:help]；[Doc:headless §Follow subagent messages]；[Py:query.py `initialize`] |
 | `--model` | 别名（`opus`/`sonnet`/`haiku`/`fable`/`default`）或完整 ID；1M 上下文用 `<model>[1m]` 后缀 | [CLI:help]；[zeron:mod.rs `model_arg`] |
-| `--effort` | `low`/`medium`/`high`/`xhigh`/`max`；文档还列了 `ultracode`（≥ 2.1.203）。不支持 `xhigh` 的模型由 TCode 降到 `max`（zeron 的做法） | [CLI:help]；[Doc:cli-reference]；[zeron:catalog.rs `to_effort`] |
+| `--effort` | `low`/`medium`/`high`/`xhigh`/`max`；文档还列了 `ultracode`（≥ 2.1.203）。不支持 `xhigh` 的模型由 TKCode 降到 `max`（zeron 的做法） | [CLI:help]；[Doc:cli-reference]；[zeron:catalog.rs `to_effort`] |
 | `--permission-mode` | `--help` 列出 `acceptEdits, auto, bypassPermissions, manual, dontAsk, plan`。`manual` 是 `default` 的别名（≥ 2.1.200），两者都可用；内部值是 `default`，`system/init.permissionMode` 报告 `default`。**必须显式传**：不传时会话的起始模式可能是 `auto` | [CLI:help]；[Doc:cli-reference]；[CLI:bin `function Fh(e){return e==="manual"?"default":e}`]；[Doc:headless "which can be auto, so pass the one you want"] |
 | `--session-id=<uuid>` | 必须是合法 UUID，否则 `Error: Invalid session ID. Must be a valid UUID.`；已存在时 `Error: Session ID <id> is already in use.`；与 `--resume`/`--continue` 同用必须加 `--fork-session` | [CLI:help]；[CLI:bin] |
 | `--resume=<id>` | 用 `--flag=value` 形式：`--resume` 的值是可选的，两段式写法里以 `-` 开头的值会被解析成新参数，造成参数注入 | [Py:subprocess_cli.py 注释]；[zeron:mod.rs] |
 | `--mcp-config` | 可接 JSON 字符串或文件路径，与 settings 里的 MCP 配置**合并**（加 `--strict-mcp-config` 才排他）。`-p` 下 CLI 会等待 pending 的服务器连接（最多 `MCP_TIMEOUT`，默认 30s，≥ 2.1.221） | [Doc:cli-reference]；[zeron:mod.rs `mcp_config_arg`] |
 | `--settings` | JSON 字符串或文件路径，覆盖同名键 | [Doc:cli-reference] |
-| `--setting-sources` | 逗号分隔 `user,project,local`。**不传时加载全部来源**（与用户平时的 Claude Code 一致）；TCode 默认不传 | [Doc:cli-reference]；[Py:subprocess_cli.py 只在非 None 时传] |
-| `--system-prompt` | **TCode 不传**。注意 Python SDK 在 `system_prompt=None` 时会传 `--system-prompt ""`，等于清空 Claude Code 自带的系统提示词；TCode 要保留 Claude Code 的默认行为，只在需要时用 `--append-system-prompt` | [Py:subprocess_cli.py `_build_command`] |
+| `--setting-sources` | 逗号分隔 `user,project,local`。**不传时加载全部来源**（与用户平时的 Claude Code 一致）；TKCode 默认不传 | [Doc:cli-reference]；[Py:subprocess_cli.py 只在非 None 时传] |
+| `--system-prompt` | **TKCode 不传**。注意 Python SDK 在 `system_prompt=None` 时会传 `--system-prompt ""`，等于清空 Claude Code 自带的系统提示词；TKCode 要保留 Claude Code 的默认行为，只在需要时用 `--append-system-prompt` | [Py:subprocess_cli.py `_build_command`] |
 | `--bare` | 不推荐默认使用：会跳过 hooks、skills、CLAUDE.md、插件、MCP 自动发现，且**只认 `ANTHROPIC_API_KEY`/apiKeyHelper，不读 OAuth/钥匙串**，订阅用户会无法认证 | [CLI:help]；[Doc:headless] |
-| `--permission-prompts none` | 无人值守时让所有需要询问的请求自动拒绝（≥ 2.1.259）。TCode 的"自动放行"开关不用它，用 `bypassPermissions` | [CLI:help]；[Doc:headless] |
+| `--permission-prompts none` | 无人值守时让所有需要询问的请求自动拒绝（≥ 2.1.259）。TKCode 的"自动放行"开关不用它，用 `bypassPermissions` | [CLI:help]；[Doc:headless] |
 
-`--dangerously-skip-permissions` 等价于 `--permission-mode bypassPermissions`。[Doc:cli-reference] zeron 自动放行时两者都传；TCode 只传 `--permission-mode bypassPermissions` 即可。
+`--dangerously-skip-permissions` 等价于 `--permission-mode bypassPermissions`。[Doc:cli-reference] zeron 自动放行时两者都传；TKCode 只传 `--permission-mode bypassPermissions` 即可。
 
 ### 2.3 环境变量
 
@@ -114,16 +114,16 @@ claude
 
 | 变量 | 处理 | 说明 / 来源 |
 |---|---|---|
-| `CLAUDECODE` | **删除** | 防止 TCode 本身从 Claude Code 终端启动时，子进程误判为嵌套会话。[Py:subprocess_cli.py `inherited_env = {k: v … if k != "CLAUDECODE"}`] |
+| `CLAUDECODE` | **删除** | 防止 TKCode 本身从 Claude Code 终端启动时，子进程误判为嵌套会话。[Py:subprocess_cli.py `inherited_env = {k: v … if k != "CLAUDECODE"}`] |
 | `CLAUDE_CODE_ENTRYPOINT` | 设为 `sdk-cli`（或不设） | 不设时，CLI 在非交互模式下自己设为 `sdk-cli`。合法值里 `sdk-cli`/`sdk-ts`/`sdk-py` 都归类为 SDK；**不要冒充 `sdk-py`/`sdk-ts`**（Python SDK 设 `sdk-py`） [CLI:bin `a.set("CLAUDE_CODE_ENTRYPOINT",e?"sdk-cli":"cli")`；Py:subprocess_cli.py] |
 | `CLAUDE_CODE_SDK_READS_SESSION_STATE` | 设为 `1` | 让 CLI 输出带 `sdk_host_only:true` 的 `system/session_state_changed` 帧（`running` / `requires_action` / `idle`），用来判断整次运行是否真正空闲（§9.4）。[Py:subprocess_cli.py `_SDK_READS_SESSION_STATE_ENV`；CLI:bin] |
 | `PWD` | 设为会话 cwd | 与 `ProcessStartInfo.WorkingDirectory` 一致。[Py:subprocess_cli.py] |
 | `PATH` | 把可执行文件所在目录放在最前 | 设计文档 §4 |
-| `CLAUDE_AGENT_SDK_VERSION` | 不设 | 这是 SDK 的自报版本，TCode 不是 SDK |
+| `CLAUDE_AGENT_SDK_VERSION` | 不设 | 这是 SDK 的自报版本，TKCode 不是 SDK |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | 不设 | stdin 关闭后等待后台工作的上限，默认 600000ms，`0` 表示不限。[Doc:headless；Py:query.py] |
 | `CLAUDE_CONFIG_DIR` | 不改 | 若用户设置了它，会话存储在 `$CLAUDE_CONFIG_DIR/projects/` 下 [Doc:agent-sdk/sessions] |
 
-TCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继承。
+TKCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继承。
 
 ### 2.4 进程参数（.NET）
 
@@ -140,18 +140,18 @@ TCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继
 
 - 每行一个 JSON 对象，以 `\n` 结尾，UTF-8。读取端按 `\n` 切分，每行先 `Trim()`（去掉 CRLF 的 `\r`）。[Py:subprocess_cli.py `_parse_stdout_line`]
 - **空行跳过**；**不以 `{` 开头的行跳过并记 debug 日志**（某些构建会往 stdout 打 `[SandboxDebug] …` 之类的非 JSON 行）。[Py:subprocess_cli.py `_parse_stdout_line` (#347)]
-- 以 `{` 开头但解析失败的行：Python SDK 视为致命错误（完整分帧后不可能被后续数据补全）；zeron 选择跳过。TCode：记录错误并**跳过该行**，不中断会话；进程退出时缓冲区里残留的半行直接丢弃。[Py；zeron:mod.rs]
+- 以 `{` 开头但解析失败的行：Python SDK 视为致命错误（完整分帧后不可能被后续数据补全）；zeron 选择跳过。TKCode：记录错误并**跳过该行**，不中断会话；进程退出时缓冲区里残留的半行直接丢弃。[Py；zeron:mod.rs]
 - **未知 `type`、未知 `subtype`、未知字段一律忽略**。新版本 CLI 经常加帧类型（见 §8.10）。[Py:message_parser.py "Forward-compatible: skip unrecognized message types"；zeron:wire.rs `Frame::Other`]
 
 ### 3.2 大行
 
 - 单行可能非常大：`Read` 读取图片后的 `tool_result` 带 base64 图片、`tool_use_result` 带整个文件内容、`initialize` 应答带全部命令与模型列表。
-- Python SDK 默认单行上限 1 MiB（超限抛错），这个值对 TCode 太小。TCode 使用流式读取（`PipeReader` 或手写的分块拼接，不要用单次固定缓冲），单行上限设为 **64 MiB**；超过上限时丢弃该行并报协议错误，不终止进程。[Py:subprocess_cli.py `_DEFAULT_MAX_BUFFER_SIZE`、`_LineFramer`]
+- Python SDK 默认单行上限 1 MiB（超限抛错），这个值对 TKCode 太小。TKCode 使用流式读取（`PipeReader` 或手写的分块拼接，不要用单次固定缓冲），单行上限设为 **64 MiB**；超过上限时丢弃该行并报协议错误，不终止进程。[Py:subprocess_cli.py `_DEFAULT_MAX_BUFFER_SIZE`、`_LineFramer`]
 - 分块读取时**绝不能**对块做 trim：块边界可能落在 JSON 字符串内部。[Py:subprocess_cli.py `_LineFramer` 注释]
 
 ### 3.3 写入
 
-- 所有 stdin 写入经过**单一写入者**串行化（一个 Channel + 一个写任务）：user 消息、TCode 的控制请求、对 CLI 控制请求的应答共用同一个管道，交错写入会破坏行。[Py:subprocess_cli.py `_write_lock`；zeron:mod.rs `stdin_writer`]
+- 所有 stdin 写入经过**单一写入者**串行化（一个 Channel + 一个写任务）：user 消息、TKCode 的控制请求、对 CLI 控制请求的应答共用同一个管道，交错写入会破坏行。[Py:subprocess_cli.py `_write_lock`；zeron:mod.rs `stdin_writer`]
 - 每条写 `json + "\n"` 后立即 `Flush`。
 - 写入失败（EPIPE，进程已退出）：容忍并记录，转入"进程已退出"处理，不抛给 UI。[zeron:mod.rs `stdin_writer`]
 - JSON 序列化用 System.Text.Json 源生成器（AOT 安全）；输出紧凑格式，字符串里的换行必须转义（默认如此）。
@@ -173,8 +173,8 @@ TCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继
 {"type":"control_request","request_id":"<发起方生成，在其在途请求中唯一>","request":{"subtype":"<subtype>", "...":"..."}}
 ```
 
-- `request_id` 由发起方选择。Python SDK 用 `req_{计数}_{8位hex}`；zeron 用 `zeron_initialize`、`zeron_stop_1` 等。CLI 发起的请求 ID 由 CLI 生成，TCode 原样回填。[Py:query.py `_send_control_request`；TS:sdk.d.ts `SDKControlRequest`]
-- TCode 发起的 ID 用 `tcode_<用途>_<序号>`，便于日志检索。
+- `request_id` 由发起方选择。Python SDK 用 `req_{计数}_{8位hex}`；zeron 用 `zeron_initialize`、`zeron_stop_1` 等。CLI 发起的请求 ID 由 CLI 生成，TKCode 原样回填。[Py:query.py `_send_control_request`；TS:sdk.d.ts `SDKControlRequest`]
+- TKCode 发起的 ID 用 `tkcode_<用途>_<序号>`，便于日志检索。
 
 ### 4.2 应答
 
@@ -191,7 +191,7 @@ TCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继
 ```
 
 - CLI 的错误应答可能带 `error_code` 字段。[CLI:bin `function tB(e,n,t){return{type:"control_response",response:{subtype:"error",request_id:e,error:n,...t!==void 0&&{error_code:t}}}}`]
-- `initialize` 的成功应答在信封层（与 `response` 并列）带 `pending_permission_requests` 和 `pending_user_dialog_requests`：本进程已发出、尚未解决的 `can_use_tool` / `request_user_dialog` 请求（≥ 2.1.268 总是带，可能为空数组）。全新进程里总是空的；TCode 不做重连，可忽略，但解析时要容忍。[TS:sdk.d.ts `ControlResponse`]
+- `initialize` 的成功应答在信封层（与 `response` 并列）带 `pending_permission_requests` 和 `pending_user_dialog_requests`：本进程已发出、尚未解决的 `can_use_tool` / `request_user_dialog` 请求（≥ 2.1.268 总是带，可能为空数组）。全新进程里总是空的；TKCode 不做重连，可忽略，但解析时要容忍。[TS:sdk.d.ts `ControlResponse`]
 - 等待应答要有超时：`initialize` 60 秒（MCP 服务器启动可能很慢；Python SDK 取 `max(CLAUDE_CODE_STREAM_CLOSE_TIMEOUT, 60s)`），其他请求 60 秒。超时视为失败，但不杀进程。[Py:query.py `_send_control_request`、client.py]
 - 进程退出或读循环出错时，所有在途请求立即以错误完成，不要等超时。[Py:query.py `_read_messages` except 分支]
 
@@ -202,32 +202,32 @@ TCode 不读写任何凭据环境变量（`ANTHROPIC_API_KEY` 等），原样继
 ```
 
 - 任一方都可以撤回**自己发起**的在途请求（典型场景：轮次被中断后，CLI 撤回尚未回答的 `can_use_tool`）。发送方立即停止等待，之后到达的该 ID 的应答被忽略；对取消本身**没有应答**。[TS:sdk.d.ts `SDKControlCancelRequest`]
-- TCode 收到后：关闭对应的审批对话框，**不再发送应答**（Python SDK 取消处理任务、不写应答）。[Py:query.py `control_cancel_request` 分支和 `_handle_control_request` 的 cancelled 分支]
+- TKCode 收到后：关闭对应的审批对话框，**不再发送应答**（Python SDK 取消处理任务、不写应答）。[Py:query.py `control_cancel_request` 分支和 `_handle_control_request` 的 cancelled 分支]
 
 ### 4.4 未知 subtype
 
-- CLI 发来 TCode 不认识的 `control_request.subtype`：回 `subtype:"error"`，`error` 写 `Unsupported control request subtype: <x>`。不能不回——CLI 会一直阻塞等待。[Py:query.py `_handle_control_request` else 分支]
-- 例外：`request_user_dialog` 只会发给在 `initialize.supportedDialogKinds` 声明过该 kind 的客户端；收到未声明的 kind **不要回答**（error 应答会被丢弃，绝不能回 `{behavior:"cancelled"}`）。TCode 不声明任何 kind，正常不会收到。[TS:sdk.d.ts `SDKControlRequestUserDialogRequest`]
+- CLI 发来 TKCode 不认识的 `control_request.subtype`：回 `subtype:"error"`，`error` 写 `Unsupported control request subtype: <x>`。不能不回——CLI 会一直阻塞等待。[Py:query.py `_handle_control_request` else 分支]
+- 例外：`request_user_dialog` 只会发给在 `initialize.supportedDialogKinds` 声明过该 kind 的客户端；收到未声明的 kind **不要回答**（error 应答会被丢弃，绝不能回 `{behavior:"cancelled"}`）。TKCode 不声明任何 kind，正常不会收到。[TS:sdk.d.ts `SDKControlRequestUserDialogRequest`]
 
 ---
 
-## 5. TCode → CLI 的控制请求
+## 5. TKCode → CLI 的控制请求
 
 ### 5.1 `initialize`（必发，进程启动后的第一条 stdin 行）
 
-TCode 发送：
+TKCode 发送：
 
 ```json
-{"type":"control_request","request_id":"tcode_init_1","request":{"subtype":"initialize","hooks":null}}
+{"type":"control_request","request_id":"tkcode_init_1","request":{"subtype":"initialize","hooks":null}}
 ```
 
 可选字段（[TS:sdk.d.ts `SDKControlInitializeRequest`]；[Py:query.py `initialize`]）：
 
-| 字段 | TCode 用法 |
+| 字段 | TKCode 用法 |
 |---|---|
-| `hooks` | `null`（TCode 不注册 SDK 侧 hook；Python SDK 无 hook 时也发 `null`） |
+| `hooks` | `null`（TKCode 不注册 SDK 侧 hook；Python SDK 无 hook 时也发 `null`） |
 | `forwardSubagentText` | 已用 `--forward-subagent-text` 参数，可不传；两者等价 |
-| `perTaskStopAffordance` | **不传**。声明后，开放输入会话上的 `interrupt` 只结束当前轮次、保留后台子 Agent/工作流（需要 UI 提供逐任务的 `stop_task`）；不声明时 interrupt 会连同后台 Agent 一起停掉（后台 shell 两种情况都保留）。TCode 首版语义是"停止 = 全部停止"。zeron 声明了它 [zeron:wire.rs `initialize_request_line`，"verified live against 2.1.285"] |
+| `perTaskStopAffordance` | **不传**。声明后，开放输入会话上的 `interrupt` 只结束当前轮次、保留后台子 Agent/工作流（需要 UI 提供逐任务的 `stop_task`）；不声明时 interrupt 会连同后台 Agent 一起停掉（后台 shell 两种情况都保留）。TKCode 首版语义是"停止 = 全部停止"。zeron 声明了它 [zeron:wire.rs `initialize_request_line`，"verified live against 2.1.285"] |
 | `title` | 可传会话标题；传了就跳过自动生成标题，恢复已有会话时无效 |
 | `agents`、`skills`、`appendSystemPrompt`、`systemPrompt`、`jsonSchema`、`excludeDynamicSections`、`systemPromptSnapshot`、`promptSuggestions`、`supportedDialogKinds`、`sdkMcpServers`… | 首版不用 |
 
@@ -254,19 +254,19 @@ TCode 发送：
 ### 5.2 `interrupt`（结束当前轮次，进程保留）
 
 ```json
-{"type":"control_request","request_id":"tcode_int_3","request":{"subtype":"interrupt"}}
+{"type":"control_request","request_id":"tkcode_int_3","request":{"subtype":"interrupt"}}
 ```
 
-- 可选 `cancel_queued:true`：同时取消所有已排队但未开始的带 uuid 的 user 消息（每条发终态 `cancelled` 的 `command_lifecycle`，并列在应答的 `cancelled` 里）。由 `system/init.capabilities` 中的 `interrupt_cancel_queued_v1` 声明；旧 CLI 忽略此字段。TCode 的"停止"按钮发 `cancel_queued:true`（停止 = 连同排队消息一起停）。[TS:sdk.d.ts `SDKControlInterruptRequest`；zeron:wire.rs `stop_turn_request_line`]
+- 可选 `cancel_queued:true`：同时取消所有已排队但未开始的带 uuid 的 user 消息（每条发终态 `cancelled` 的 `command_lifecycle`，并列在应答的 `cancelled` 里）。由 `system/init.capabilities` 中的 `interrupt_cancel_queued_v1` 声明；旧 CLI 忽略此字段。TKCode 的"停止"按钮发 `cancel_queued:true`（停止 = 连同排队消息一起停）。[TS:sdk.d.ts `SDKControlInterruptRequest`；zeron:wire.rs `stop_turn_request_line`]
 - 成功应答（`interrupt_receipt_v1`，≥ 2.1.205）：`{"still_queued":[<uuid>…]}`，带 `cancel_queued:true` 时还有 `"cancelled":[<uuid>…]`。更早的 CLI 回空的成功应答。[TS:sdk.d.ts `SDKControlInterruptResponse`]
-- **顺序**：正常中断时，应答先于被中断轮次的 `result` 写出；轮次在中断处理中崩溃时，错误 result 可能先到。TCode 不能依赖二者的相对顺序。[TS:sdk.d.ts]
-- 被中断的轮次照常输出一个 `result`（见 §8.5.3）。**空闲时（没有轮次在跑）发 interrupt，只有成功应答，没有 result**——TCode 收到应答后若 3 秒内没有 result，就视为该次停止已结算。[zeron:mod.rs `STOP_SETTLE`]
+- **顺序**：正常中断时，应答先于被中断轮次的 `result` 写出；轮次在中断处理中崩溃时，错误 result 可能先到。TKCode 不能依赖二者的相对顺序。[TS:sdk.d.ts]
+- 被中断的轮次照常输出一个 `result`（见 §8.5.3）。**空闲时（没有轮次在跑）发 interrupt，只有成功应答，没有 result**——TKCode 收到应答后若 3 秒内没有 result，就视为该次停止已结算。[zeron:mod.rs `STOP_SETTLE`]
 - 中断时若有 `can_use_tool` 在等审批，CLI 会发 `control_cancel_request` 撤回它（§4.3）。
 
 ### 5.3 `set_permission_mode`
 
 ```json
-{"type":"control_request","request_id":"tcode_mode_1","request":{"subtype":"set_permission_mode","mode":"acceptEdits"}}
+{"type":"control_request","request_id":"tkcode_mode_1","request":{"subtype":"set_permission_mode","mode":"acceptEdits"}}
 ```
 
 `mode` ∈ `default`/`acceptEdits`/`bypassPermissions`/`plan`/`dontAsk`/`auto`。成功应答为空对象。切换到 `bypassPermissions` 需要启动时允许（`--allow-dangerously-skip-permissions` 或以该模式启动），否则返回错误；会话级"自动放行"开关若要在线切换，启动时加 `--allow-dangerously-skip-permissions`。[TS:sdk.d.ts `SDKControlSetPermissionModeRequest` "requires allowDangerouslySkipPermissions"；Doc:cli-reference] 模式变化也会出现在 `system/status.permissionMode` 和下一个 `system/init.permissionMode`。
@@ -274,7 +274,7 @@ TCode 发送：
 ### 5.4 `set_model`
 
 ```json
-{"type":"control_request","request_id":"tcode_model_2","request":{"subtype":"set_model","model":"claude-sonnet-5"}}
+{"type":"control_request","request_id":"tkcode_model_2","request":{"subtype":"set_model","model":"claude-sonnet-5"}}
 ```
 
 `model` 省略、为 `null` 或 `"default"` 时恢复会话默认模型。对后续轮次生效。[TS:sdk.d.ts `SDKControlSetModelRequest`；Py:query.py `set_model`；zeron:mod.rs 在线改模型]
@@ -282,7 +282,7 @@ TCode 发送：
 ### 5.5 `apply_flag_settings`（在线改 effort 等）
 
 ```json
-{"type":"control_request","request_id":"tcode_settings_3","request":{"subtype":"apply_flag_settings","settings":{"effortLevel":"high"}}}
+{"type":"control_request","request_id":"tkcode_settings_3","request":{"subtype":"apply_flag_settings","settings":{"effortLevel":"high"}}}
 ```
 
 替换"命令行参数层"的设置（只影响本会话，不写文件）。值为 `null` 表示去掉覆盖、回落到用户自己的设置。zeron 用它在线改 `effortLevel`、`fastMode`、`alwaysThinkingEnabled`、`ultracode`（"verified live on 2.1.286 through get_settings"）。[TS:sdk.d.ts `SDKControlApplyFlagSettingsRequest`；zeron:mod.rs `flag_settings`]
@@ -301,7 +301,7 @@ TCode 发送：
 
 ---
 
-## 6. CLI → TCode 的控制请求
+## 6. CLI → TKCode 的控制请求
 
 ### 6.1 `can_use_tool`（审批，核心）
 
@@ -341,22 +341,22 @@ TCode 发送：
 - **CLI 会一直阻塞等待应答**，没有超时。[Doc:agent-sdk/user-input "The callback can stay pending indefinitely"] 每个 `can_use_tool` 都必须得到应答或被 `control_cancel_request` 撤回。
 - 读循环不能被审批阻塞：收到请求后交给后台任务去等 UI，读循环继续处理后续帧（期间可能有子 Agent 帧、`tool_progress`、取消请求）。[zeron:mod.rs `handle_control_request` 用 `tokio::spawn`；Py:query.py `_spawn_control_request_handler`]
 - 自动放行的调用（allow 规则、`acceptEdits`、`bypassPermissions` 等）**不会**发 `can_use_tool`。[Doc:agent-sdk/user-input]
-- `AskUserQuestion` **总是**走 `can_use_tool`：它是提问而不是审批，TCode 走 `input/request`，用户回答后以 allow 回复，`updatedInput` = 原 `input` 加 `answers`（键为问题文本，值为所选选项的 `label`；多选为 label 数组或用 `", "` 连接）。[Doc:agent-sdk/user-input；zeron:mod.rs `updated_input_with_answers`] 细节见下面的 §6.1.1。
+- `AskUserQuestion` **总是**走 `can_use_tool`：它是提问而不是审批，TKCode 走 `input/request`，用户回答后以 allow 回复，`updatedInput` = 原 `input` 加 `answers`（键为问题文本，值为所选选项的 `label`；多选为 label 数组或用 `", "` 连接）。[Doc:agent-sdk/user-input；zeron:mod.rs `updated_input_with_answers`] 细节见下面的 §6.1.1。
 
-#### 6.1.1 `AskUserQuestion` 的完整约定（CLI 2.1.302，2026-10-18 核对；TCode 实现见 docs/design/ask-user.md §8）
+#### 6.1.1 `AskUserQuestion` 的完整约定（CLI 2.1.302，2026-10-18 核对；TKCode 实现见 docs/design/ask-user.md §8）
 
-- **启用条件**：`-p` 模式下只有设置了 `--permission-prompt-tool` 且不为 `none` 时才启用（TCode 传 `stdio`）。子 Agent 里不可用。[Doc:agent-sdk/user-input Limitations；CLI 包]
+- **启用条件**：`-p` 模式下只有设置了 `--permission-prompt-tool` 且不为 `none` 时才启用（TKCode 传 `stdio`）。子 Agent 里不可用。[Doc:agent-sdk/user-input Limitations；CLI 包]
 - **请求**：`can_use_tool` 带 `requires_user_interaction: true`。工具的 `checkPermissions` 总是返回 `ask`，所以任何权限模式（包括 `bypassPermissions`）下都会发来。
 - **input**：`{questions: [{question, header, options: [{label, description, preview?}], multiSelect}], metadata?}`。限制：1–4 个问题、每题 2–4 个选项、`header` 不超过 12 字符、问题文本互不相同、同一题内 label 互不相同。模型被告知不要自己加“Other”。
-  - `preview` 只在设置了 `CLAUDE_CODE_QUESTION_PREVIEW_FORMAT=markdown|html` 时出现。`CLAUDE_CODE_ENTRYPOINT` 以 `sdk-` 开头时没有默认值，TCode 用 `sdk-cli`，所以**没有 preview**。
-  - 扩展形态（`CLAUDE_CODE_QUESTION_EXTENDED`：顶层 `title`，每题 `kind: choice|text|number` 等）和 `CLAUDE_CODE_QUESTION_OPTIONAL_DESCRIPTIONS` TCode 都**不开启**。
+  - `preview` 只在设置了 `CLAUDE_CODE_QUESTION_PREVIEW_FORMAT=markdown|html` 时出现。`CLAUDE_CODE_ENTRYPOINT` 以 `sdk-` 开头时没有默认值，TKCode 用 `sdk-cli`，所以**没有 preview**。
+  - 扩展形态（`CLAUDE_CODE_QUESTION_EXTENDED`：顶层 `title`，每题 `kind: choice|text|number` 等）和 `CLAUDE_CODE_QUESTION_OPTIONAL_DESCRIPTIONS` TKCode 都**不开启**。
 - **回答**：`{"behavior":"allow","updatedInput":{…原 input…,"answers":{"<问题原文>":"<值>"}},"toolUseID":…}`。
   - 值：单选为 label；多选用 `", "` 连接（label 本身含 `", "` 或 `"` 时加引号，与 CLI 的编码一致；直接传数组时 CLI 会用 `","` 连接，没有空格）；用户自己输入的文本原样作为值。
-  - 还可以带 `annotations`（`{<问题>: {notes, preview}}`）、`response`（用一段自由文字代替回答）、`followUp`。TCode 不发送这些字段。
-  - 本地 stdio 会话里非空 `updatedInput` 直接替换 input；托管 / 远程会话的严格模式只接受新增 `answers`、`annotations`、`response`、`followUp`，其他改动会被拒绝。TCode 只追加 `answers`，两种模式都能通过。
-- **拒绝回答**：`{"behavior":"deny","message":…}`，message 作为工具错误交给模型。TCode 使用 ask-user.md §5.4 的拒绝文本。
+  - 还可以带 `annotations`（`{<问题>: {notes, preview}}`）、`response`（用一段自由文字代替回答）、`followUp`。TKCode 不发送这些字段。
+  - 本地 stdio 会话里非空 `updatedInput` 直接替换 input；托管 / 远程会话的严格模式只接受新增 `answers`、`annotations`、`response`、`followUp`，其他改动会被拒绝。TKCode 只追加 `answers`，两种模式都能通过。
+- **拒绝回答**：`{"behavior":"deny","message":…}`，message 作为工具错误交给模型。TKCode 使用 ask-user.md §5.4 的拒绝文本。
 - **模型看到的结果**：`Your questions have been answered: "Q"="A", …. You can now continue with these answers in mind.`；有不属于选项的答案时是 `The user answered: …. Read the answers carefully …`；全部未答时是 `The user did not answer the questions.`。
-- **超时**：设置项 `askUserQuestionTimeout`（`60s`/`5m`/`10m`/`never`，默认 `never`）。触发时结果带 `afkTimeoutMs`。TCode 不设置。
+- **超时**：设置项 `askUserQuestionTimeout`（`60s`/`5m`/`10m`/`never`，默认 `never`）。触发时结果带 `afkTimeoutMs`。TKCode 不设置。
 
 应答格式（`response.response`）：
 
@@ -375,15 +375,15 @@ TCode 发送：
 | `toolUseID` | 可选，回填请求的 `tool_use_id` | [TS] |
 | `decisionClassification` | 可选：`user_temporary`（允许一次）、`user_permanent`（总是允许）、`user_reject`（拒绝），只用于遥测；不填时 CLI 保守推断 | [TS:`PermissionDecisionClassification`] |
 
-TCode 内部处理审批出错（例如 UI 断开）时：回 **`behavior:"deny"`** 的成功应答（设计文档 §6 的安全规则），而不是 error 应答。
+TKCode 内部处理审批出错（例如 UI 断开）时：回 **`behavior:"deny"`** 的成功应答（设计文档 §6 的安全规则），而不是 error 应答。
 
 ### 6.2 `hook_callback`
 
-`{"subtype":"hook_callback","callback_id":"hook_0","input":{…},"tool_use_id":"…"}`。只有在 `initialize.hooks` 里注册过回调 ID 才会出现。TCode 不注册，收到即按 §4.4 回 error。应答体是 hook 输出对象（键名 `async`、`continue` 为原样英文）。[Py:query.py]
+`{"subtype":"hook_callback","callback_id":"hook_0","input":{…},"tool_use_id":"…"}`。只有在 `initialize.hooks` 里注册过回调 ID 才会出现。TKCode 不注册，收到即按 §4.4 回 error。应答体是 hook 输出对象（键名 `async`、`continue` 为原样英文）。[Py:query.py]
 
 ### 6.3 `mcp_message`
 
-`{"subtype":"mcp_message","server_name":"…","message":<JSON-RPC>}`，应答 `{"mcp_response":<JSON-RPC 响应>}`；通知类消息也要回 `{"mcp_response":{"jsonrpc":"2.0","result":{}}}`。只在 `--mcp-config` 里有 `type:"sdk"` 的服务器时出现。TCode 把自己的工具做成 stdio MCP 服务器传给 `--mcp-config`，不用 SDK MCP，因此收到即回 error。[Py:query.py `_handle_sdk_mcp_request`]
+`{"subtype":"mcp_message","server_name":"…","message":<JSON-RPC>}`，应答 `{"mcp_response":<JSON-RPC 响应>}`；通知类消息也要回 `{"mcp_response":{"jsonrpc":"2.0","result":{}}}`。只在 `--mcp-config` 里有 `type:"sdk"` 的服务器时出现。TKCode 把自己的工具做成 stdio MCP 服务器传给 `--mcp-config`，不用 SDK MCP，因此收到即回 error。[Py:query.py `_handle_sdk_mcp_request`]
 
 ### 6.4 `elicitation` / `request_user_dialog`
 
@@ -404,11 +404,11 @@ MCP 服务器的 elicitation 请求和工具驱动的对话框。首版：`elici
 | `type` | 是 | `"user"` | [Py；zeron] |
 | `message` | 是 | Messages API 的 `MessageParam`：`role:"user"`，`content` 为字符串或 content block 数组（`text`、`image`、`document`…） | [TS:`SDKUserMessage`] |
 | `parent_tool_use_id` | 是 | 主会话消息填 `null` | [Py；zeron] |
-| `uuid` | 推荐 | 客户端生成的 UUID。**带了 uuid 才会有 `command_lifecycle` 帧**，result 也会回显 `user_message_uuid`，这是 TCode 把输出和发送关联起来的键 | [TS；CLI:bin `command_lifecycle` 描述 "Commands enqueued without a uuid … emit no lifecycle events"；zeron] |
+| `uuid` | 推荐 | 客户端生成的 UUID。**带了 uuid 才会有 `command_lifecycle` 帧**，result 也会回显 `user_message_uuid`，这是 TKCode 把输出和发送关联起来的键 | [TS；CLI:bin `command_lifecycle` 描述 "Commands enqueued without a uuid … emit no lifecycle events"；zeron] |
 | `priority` | 否 | `now` / `next` / `later`，见 §7.3 | [TS；zeron:wire.rs] |
 | `session_id` | 否 | 可省略。Python SDK 填 `""` 或 `"default"`，CLI 不依赖它 | [Py:client.py] |
 | `shouldQuery` | 否 | `false` 时只追加到转录，不触发轮次，合并进下一条会触发轮次的消息 | [TS] |
-| `client_composed` | 否 | `true` 时文本原样投递：不展开 `@path`、不分派斜杠命令，并跳过轮次开始时的附件注入（嵌套 CLAUDE.md、提醒等）。≥ 2.1.248。TCode 用户手打的消息**不设**；TCode 程序生成的消息才设 | [TS；Py:subprocess_cli.py `VERBATIM_PROMPTS_MINIMUM_CLAUDE_CODE_VERSION`] |
+| `client_composed` | 否 | `true` 时文本原样投递：不展开 `@path`、不分派斜杠命令，并跳过轮次开始时的附件注入（嵌套 CLAUDE.md、提醒等）。≥ 2.1.248。TKCode 用户手打的消息**不设**；TKCode 程序生成的消息才设 | [TS；Py:subprocess_cli.py `VERBATIM_PROMPTS_MINIMUM_CLAUDE_CODE_VERSION`] |
 | `pasted_content` / `inline_pastes` | 否 | 粘贴内容标注 | [TS] |
 
 斜杠命令（`/compact`、`/review` 等）直接作为文本发送，CLI 会展开。[Doc:headless 命令支持说明]
@@ -435,7 +435,7 @@ MCP 服务器的 elicitation 请求和工具驱动的对话框。首版：`elici
   - `now`：立即停止正在流式输出的文本或 thinking，被中断的轮次输出自己的 `result`，然后新轮次处理这条消息。**`now` 也会中止正在运行的 MCP 工具调用**（"The tool call was interrupted before a result was received"）。
   - `later`：当前轮次结束后作为新轮次处理。
   - 省略：CLI 默认行为 [推断：与 `next` 相同，在步骤边界并入]。
-- TCode 规则（照搬 zeron）：有工具在运行（已见 `tool_use`、未见对应 `tool_result`）时用 `next`，否则用 `now`。
+- TKCode 规则（照搬 zeron）：有工具在运行（已见 `tool_use`、未见对应 `tool_result`）时用 `next`，否则用 `now`。
 - 并入当前轮次的消息与该轮次共用一个 `result`，`result.user_message_uuids` 会列出该轮次消费的全部 uuid。[TS:`SDKResultError.user_message_uuids`]
 
 ### 7.4 回显（`--replay-user-messages`）
@@ -443,11 +443,11 @@ MCP 服务器的 elicitation 请求和工具驱动的对话框。首版：`elici
 CLI 收到 stdin 的 user 消息后在 stdout 回显：
 
 ```json
-{"type":"user","message":{…原样…},"parent_tool_use_id":null,"session_id":"…","uuid":"<TCode 发送时的 uuid>","isReplay":true,"timestamp":"…"}
+{"type":"user","message":{…原样…},"parent_tool_use_id":null,"session_id":"…","uuid":"<TKCode 发送时的 uuid>","isReplay":true,"timestamp":"…"}
 ```
 
 - `isReplay:true` 是区分标志，`uuid` 必有。[TS:`SDKUserMessageReplay`]
-- TCode 用它（或 `command_lifecycle`）确认消息已被 CLI 接收。回显帧**不能**被当成工具结果或新的用户输入处理。
+- TKCode 用它（或 `command_lifecycle`）确认消息已被 CLI 接收。回显帧**不能**被当成工具结果或新的用户输入处理。
 - 被更晚的消息取代而从未开始的消息可能不会被回显；回显一条消息意味着它之前写入的消息也都已被接收。[zeron:mod.rs 注释 "superseded steers are never replayed themselves"]
 
 ---
@@ -460,7 +460,7 @@ CLI 收到 stdin 的 user 消息后在 stdout 回显：
 
 用 `subtype` 分派。已知 subtype：
 
-| subtype | 内容 | TCode 处理 | 来源 |
+| subtype | 内容 | TKCode 处理 | 来源 |
 |---|---|---|---|
 | `init` | 会话元数据，见 §8.1.1 | 更新会话信息；**每个轮次开始时都会再发一次** | [TS；Doc:headless；zeron:normalize.rs] |
 | `api_retry` | `attempt`、`max_retries`、`retry_delay_ms`、`error_status`（无 HTTP 响应时为 null）、`error`（错误类别）、`no_response?{waited_ms, retry_wait_ms}` | 显示"正在重试 (n/max)"，不结束轮次 | [Doc:headless §Handle API retries；TS:`SDKAPIRetryMessage`] |
@@ -479,7 +479,7 @@ CLI 收到 stdin 的 user 消息后在 stdout 回显：
 
 ```json
 {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"…","tools":["Task","Bash","Read","Edit","…"],
- "mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default",
+ "mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default",
  "slash_commands":["compact","review","…"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default",
  "agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],
  "fast_mode_state":"off","uuid":"…"}
@@ -489,7 +489,7 @@ CLI 收到 stdin 的 user 消息后在 stdout 回显：
 - 可选：`agents`、`betas`、`terminal_slash_commands`、`plugin_errors`、`fast_mode_state`、`effort`、`view_mode`、`capabilities`（≥ 2.1.205）。
 - **`capabilities` 用于特性检测**，不要比较版本号；开放集合，忽略不认识的值。已知：`interrupt_receipt_v1`、`interrupt_cancel_queued_v1`、`mcp_read_resource_v1`…[TS；Doc:headless]
 - 在流中通常是**每个轮次的第一帧**（之前可能有 `plugin_install`、SessionStart hook 帧）。[Doc:headless §Read session metadata]
-- **同一进程会重复发 init**：每个轮次一次，包括后台子 Agent 完成后的唤醒轮次（`session_id` 相同）。TCode 只把**第一次** init 当作会话建立；之后的 init 只用于刷新 `model`、`permissionMode`、`tools` 等元数据，不能重置转录。[zeron:normalize.rs `saw_init` "live-verified against 2.1.228"]
+- **同一进程会重复发 init**：每个轮次一次，包括后台子 Agent 完成后的唤醒轮次（`session_id` 相同）。TKCode 只把**第一次** init 当作会话建立；之后的 init 只用于刷新 `model`、`permissionMode`、`tools` 等元数据，不能重置转录。[zeron:normalize.rs `saw_init` "live-verified against 2.1.228"]
 
 ### 8.2 `stream_event`
 
@@ -498,7 +498,7 @@ CLI 收到 stdin 的 user 消息后在 stdout 回显：
 ```
 
 - `event` 就是 Messages API SSE 的 data 对象：`message_start`、`content_block_start`、`content_block_delta`（`text_delta` / `thinking_delta` / `signature_delta` / `input_json_delta` / `citations_delta`）、`content_block_stop`、`message_delta`、`message_stop`（以及可能的 `ping`）。各事件字段与 [anthropic-messages.md](anthropic-messages.md) §6 完全相同。[Doc:agent-sdk/streaming-output；TS:`SDKPartialAssistantMessage`]
-- **只有主会话有 stream_event**，`parent_tool_use_id` 总是 `null`；子 Agent 不转发 token 级增量。[Doc:agent-sdk/streaming-output；zeron:normalize.rs "The 2.1.x wire streams NO tagged partial deltas (live-verified)"] TCode 仍然按非 null 的 `parent_tool_use_id` 归属处理（防御性）。
+- **只有主会话有 stream_event**，`parent_tool_use_id` 总是 `null`；子 Agent 不转发 token 级增量。[Doc:agent-sdk/streaming-output；zeron:normalize.rs "The 2.1.x wire streams NO tagged partial deltas (live-verified)"] TKCode 仍然按非 null 的 `parent_tool_use_id` 归属处理（防御性）。
 - 每个 API 请求一组 `message_start … message_stop`；一个轮次有多次工具往返时就有多组。
 - 可选字段：`ttft_ms`（首个事件）、`user_message_uuid` / `user_message_uuids`（轮次第一个非 ping 事件）。[TS]
 - `thinking_delta` 可能是空串并带 `estimated_tokens`（display 为 omitted 时）。空 thinking 不产生 thinkingDelta。[zeron:normalize.rs 测试夹具]
@@ -549,7 +549,7 @@ stdout 上的 user 帧有四种来源：
 
    - `tool_result.content` 是给模型看的内容（字符串或 block 数组，可能含图片）；`is_error` 可能缺省（视为 false）。
    - `tool_use_result` 是工具的**结构化输出**，形状按工具而定（Bash：`stdout`/`stderr`/`interrupted`/`isImage`…；Agent/Task：子 Agent 的最终报告和统计；被移到后台的调用是 `{detachedToolCall:true}`）。UI 渲染优先用它。[TS:`SDKUserMessage.tool_use_result`；Py:message_parser.py]
-   - zeron 丢弃了工具输出，TCode **必须保留**（设计文档 §5）。
+   - zeron 丢弃了工具输出，TKCode **必须保留**（设计文档 §5）。
 2. **子 Agent 的帧**（`parent_tool_use_id` 非 null）：它的工具结果，以及父 Agent 发给它的 prompt / 后续消息（text 块）。
 3. **回显**（`isReplay:true`，§7.4）。
 4. **合成标记**：`[Request interrupted by user]`、`[Request interrupted by user for tool use]`、以 `<system-reminder>` 开头的注入文本。它们不是用户输入，不能当成 steering 显示。按前缀匹配（至少有两种拼法）。[zeron:normalize.rs `is_synthetic_user_text`；CLI:bin 字符串] 也可能带 `isSynthetic:true`。[TS]
@@ -581,15 +581,15 @@ stdout 上的 user 帧有四种来源：
 | `total_cost_usd` | **同一进程内跨轮次累计**的估算费用；恢复/分叉的会话从转录里保存的总数继续；`/clear` 清零。是估算，不是账单 | [TS] |
 | `permission_denials` | `[{tool_name, tool_use_id, tool_input}]`，权威的拒绝记录 | [TS；Doc:headless] |
 | `queued_turn_count` | 结果产生时命令队列里还有几条用户发送；>0 表示后面还会有轮次（和 result） | [TS] |
-| `user_message_uuid` / `user_message_uuids` | 本轮次回答的 user 消息 uuid（TCode 发送时给的） | [TS] |
+| `user_message_uuid` / `user_message_uuids` | 本轮次回答的 user 消息 uuid（TKCode 发送时给的） | [TS] |
 | `result_index` | 本进程内 result 的序号（从 0 开始）；出现跳号说明有 result 丢失 | [TS] |
 | `origin` | 触发本轮次的消息来源；`{"kind":"task-notification"}` 表示后台任务唤醒的轮次，不是用户发起的 | [Py:types.py；TS] |
 | `deferred_tool_use`、`structured_output`、`fast_mode_state`、`resume_reason`、`subagent_stats`… | 可选 | |
 
-#### 8.5.2 用量语义（TCode 的计算方式）
+#### 8.5.2 用量语义（TKCode 的计算方式）
 
 - 本轮次 token：取 `result.usage`（主循环）。显示"本轮次总消耗"时用 `modelUsage` 各模型之和的**差值**（本次 result 减上次 result）。
-- 本轮次费用：`total_cost_usd` 差值。进程内第一个 result 的基准：新会话为 0；恢复的会话**第一个 result 已经包含之前的总数**，基准要取恢复前 TCode 记录的最后值，没有记录时这一轮的费用显示为未知。[TS]
+- 本轮次费用：`total_cost_usd` 差值。进程内第一个 result 的基准：新会话为 0；恢复的会话**第一个 result 已经包含之前的总数**，基准要取恢复前 TKCode 记录的最后值，没有记录时这一轮的费用显示为未知。[TS]
 - 上下文占用（显示"已用多少上下文"）：取主会话最后一次 API 调用的 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`，来源是 `stream_event` 的 `message_start.message.usage`（输入侧）和 `message_delta.usage`（最终值）；上下文窗口大小取 `modelUsage[<当前模型>].contextWindow`。子 Agent 帧的 usage 不计入。[zeron:normalize.rs `ContextUsage`]
 
 #### 8.5.3 被中断轮次的 result
@@ -600,7 +600,7 @@ stdout 上的 user 帧有四种来源：
 - `subtype` 取决于中断时转录的最后一条消息 [CLI:bin `Ins`/`Mns`/`e7r`]：
   - 最后一条是 user 消息（通常是 `[Request interrupted by user]` 标记，或还没产生任何回复）→ **`subtype:"error_during_execution"`、`is_error:true`**，`errors` 为 `["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"]` 一类的诊断。zeron 的测试夹具里就是这个字符串。[zeron:normalize.rs 测试]
   - 最后一条是以 text/thinking 结尾的 assistant 消息，或全是 tool_result 的 user 消息 → `subtype:"success"`、`is_error:false`。
-- 旧 CLI 没有 `terminal_reason`：TCode 在"已发出 interrupt 且尚未结算"期间收到的 result 一律视为中断。[zeron:normalize.rs `normalize(frame, interrupted)`]
+- 旧 CLI 没有 `terminal_reason`：TKCode 在"已发出 interrupt 且尚未结算"期间收到的 result 一律视为中断。[zeron:normalize.rs `normalize(frame, interrupted)`]
 - 被中断轮次消费的 user 消息收到 `command_lifecycle` 的 `cancelled`。
 
 ### 8.6 `rate_limit_event`
@@ -615,7 +615,7 @@ stdout 上的 user 帧有四种来源：
 ### 8.7 `command_lifecycle`
 
 ```json
-{"type":"command_lifecycle","command_uuid":"<TCode 发送的 uuid>","state":"queued","uuid":"…","session_id":"…"}
+{"type":"command_lifecycle","command_uuid":"<TKCode 发送的 uuid>","state":"queued","uuid":"…","session_id":"…"}
 ```
 
 - 只针对带 `uuid` 的 stdin user 消息。`state`：`queued`（进入队列）→ `started`（被某个轮次取用；`next` 消息在并入的步骤边界 started）→ 恰好一个终态：`completed`、`cancelled`（被撤回、被 `cancel_queued` 扫掉、或所在轮次被中断/失败）、`discarded`（会话结束时仍在队列）、`refused`。[CLI:bin schema 描述；zeron:wire.rs "verified live against CLI 2.1.286"]
@@ -625,7 +625,7 @@ stdout 上的 user 帧有四种来源：
 
 ### 8.8 控制帧
 
-`control_request`（§6）、`control_response`（对 TCode 请求的应答，§4.2）、`control_cancel_request`（§4.3）。
+`control_request`（§6）、`control_response`（对 TKCode 请求的应答，§4.2）、`control_cancel_request`（§4.3）。
 
 ### 8.9 其他帧
 
@@ -649,7 +649,7 @@ stdout 上的 user 帧有四种来源：
 ### 9.1 启动握手
 
 ```
-TCode                                    CLI
+TKCode                                    CLI
   │ spawn(argv, env, cwd)                  │
   │ ── control_request initialize ───────▶ │
   │ ◀── control_response (success) ─────── │   ← 第一行 stdout，不触发 API
@@ -663,21 +663,21 @@ TCode                                    CLI
   │ ◀── command_lifecycle U1 completed ─── │
 ```
 
-`queued` / 回显 / `init` / `started` 之间的相对顺序 [推断]，TCode 不要依赖。`system/session_state_changed`（若开启）的 `running` 在轮次开始时、`idle` 在 result 前后到达。
+`queued` / 回显 / `init` / `started` 之间的相对顺序 [推断]，TKCode 不要依赖。`system/session_state_changed`（若开启）的 `running` 在轮次开始时、`idle` 在 result 前后到达。
 
 ### 9.2 轮次结束
 
 - **以 `result` 帧为唯一的轮次结束信号**，不用静默计时器猜测。[设计文档 §5；zeron:mod.rs `deterministic_turn_end`]
-- 收到 result 时，若 `queued_turn_count > 0`，或 TCode 自己还有已写入但没有 `started`/终态的消息，则**下一个轮次会紧接着开始**；TCode 仍对每个 result 发 agentEnded，再为下一个轮次发 agentStarted。（zeron 把这种 result 暂存为"steer 边界"，因为它的上层模型是"一条 prompt = 一次运行"；TCode 的事件流按轮次划分，不需要暂存。）
+- 收到 result 时，若 `queued_turn_count > 0`，或 TKCode 自己还有已写入但没有 `started`/终态的消息，则**下一个轮次会紧接着开始**；TKCode 仍对每个 result 发 agentEnded，再为下一个轮次发 agentStarted。（zeron 把这种 result 暂存为"steer 边界"，因为它的上层模型是"一条 prompt = 一次运行"；TKCode 的事件流按轮次划分，不需要暂存。）
 - 进程在没有任何 result 的情况下退出：合成 agentEnded（状态 = 错误，错误信息 = 退出码 + stderr 尾部）。[zeron:mod.rs 结尾的 terminal bookkeeping]
 
 ### 9.3 后台任务唤醒轮次
 
-后台子 Agent 或后台命令完成后，CLI 会**自己再跑一个轮次**来处理结果：一个新的 `system/init`（同一 `session_id`）、新的流事件、新的 `result`（`origin.kind == "task-notification"`），期间 TCode 没有发任何消息。TCode 把它当成一个普通的新轮次（agentStarted…agentEnded），UI 标注为"后台任务唤醒"。[zeron:mod.rs 头注释 "a fresh init (same session id, deduped) plus another result"；Py:types.py `origin`]
+后台子 Agent 或后台命令完成后，CLI 会**自己再跑一个轮次**来处理结果：一个新的 `system/init`（同一 `session_id`）、新的流事件、新的 `result`（`origin.kind == "task-notification"`），期间 TKCode 没有发任何消息。TKCode 把它当成一个普通的新轮次（agentStarted…agentEnded），UI 标注为"后台任务唤醒"。[zeron:mod.rs 头注释 "a fresh init (same session id, deduped) plus another result"；Py:types.py `origin`]
 
 ### 9.4 运行是否真正空闲
 
-一个 result 只表示一个轮次结束，不表示整次运行结束：后台 Agent 可能还在跑，之后还会唤醒。TCode 设了 `CLAUDE_CODE_SDK_READS_SESSION_STATE=1` 时，用 `system/session_state_changed` 判断：
+一个 result 只表示一个轮次结束，不表示整次运行结束：后台 Agent 可能还在跑，之后还会唤醒。TKCode 设了 `CLAUDE_CODE_SDK_READS_SESSION_STATE=1` 时，用 `system/session_state_changed` 判断：
 
 - `running`：有工作在进行（含后台 Agent 存活、唤醒轮次待处理）。
 - `requires_action`：在等宿主回答（如 `can_use_tool`）。
@@ -685,7 +685,7 @@ TCode                                    CLI
 
 用途：UI 的"会话忙碌"指示、决定拆除前是否需要等待。带 `sdk_host_only:true` 的帧是因为环境变量才发出的，不进入转录。[Py:query.py `_on_session_state`、`_maybe_end_run`；CLI:bin]
 
-### 9.5 状态机（TCode 侧）
+### 9.5 状态机（TKCode 侧）
 
 ```
 Starting ──initialize ok──▶ Idle ──写入 user──▶ Pending ──首个轮次帧──▶ Running
@@ -705,7 +705,7 @@ Running ──发出 interrupt──▶ Stopping ──result / 应答后 3 秒�
 1. 写 `{"subtype":"interrupt","cancel_queued":true}`（CLI 不支持 `interrupt_cancel_queued_v1` 时去掉该字段）。
 2. 关闭所有挂起的审批对话框；之后收到的 `control_cancel_request` 照常处理。
 3. 等待被中断轮次的 result（按 §8.5.3 映射为"已中断"）。CLI 应答后 3 秒内没有 result，就合成一个"已中断"的 agentEnded。[zeron:mod.rs `STOP_SETTLE`]
-4. 停止后 3 秒内到达的、且其间没有任何新活动（TCode 没写新消息、没有新的内容输出）的 result，是被停止轮次的迟到报告，丢弃。[zeron:mod.rs "late result of a stopped turn dropped"]
+4. 停止后 3 秒内到达的、且其间没有任何新活动（TKCode 没写新消息、没有新的内容输出）的 result，是被停止轮次的迟到报告，丢弃。[zeron:mod.rs "late result of a stopped turn dropped"]
 
 ### 10.2 SIGTERM / SIGINT 语义
 
@@ -726,7 +726,7 @@ Running ──发出 interrupt──▶ Stopping ──result / 应答后 3 秒�
 
 [Py:subprocess_cli.py `close()`：关 stdin → wait 5s → terminate → wait 5s → kill；zeron:mod.rs 中断升级 2s → SIGTERM → 3s → SIGKILL]
 
-TCode 进程自身退出时，要对所有存活的 CLI 子进程发 SIGTERM（Python SDK 的 atexit 处理），避免留下孤儿进程。[Py:subprocess_cli.py `_kill_active_children`]
+TKCode 进程自身退出时，要对所有存活的 CLI 子进程发 SIGTERM（Python SDK 的 atexit 处理），避免留下孤儿进程。[Py:subprocess_cli.py `_kill_active_children`]
 
 ### 10.4 退出码
 
@@ -738,14 +738,14 @@ TCode 进程自身退出时，要对所有存活的 CLI 子进程发 SIGTERM（P
 
 ## 11. 会话、恢复与存储
 
-- 会话 ID：`system/init.session_id`，每个 result 也带 `session_id`。新会话由 TCode 用 `--session-id=<uuid>` 预先指定，免得等第一帧。[Doc:agent-sdk/sessions；CLI:help]
+- 会话 ID：`system/init.session_id`，每个 result 也带 `session_id`。新会话由 TKCode 用 `--session-id=<uuid>` 预先指定，免得等第一帧。[Doc:agent-sdk/sessions；CLI:help]
 - 恢复：`--resume=<id>`。2.1.223 起 CLI 会在当前项目目录、其 git worktree、再到本机所有项目中查找该 ID；也接受 `.jsonl` 转录文件的绝对路径。会话文件必须在本机。[Doc:headless、cli-reference、agent-sdk/sessions]
 - 分叉：`--resume=<id> --fork-session`，新的 `session_id` 从第一个 init/result 读取。[Doc:agent-sdk/sessions]
-- 存储位置：`~/.claude/projects/<编码后的 cwd>/<session-id>.jsonl`（设置 `CLAUDE_CONFIG_DIR` 时在其 `projects/` 下）。编码方式：绝对路径中每个非字母数字字符替换为 `-`；超过 200 字符时截断并加哈希。TCode **不解析**这些文件（设计文档 §7）。[Doc:agent-sdk/sessions]
+- 存储位置：`~/.claude/projects/<编码后的 cwd>/<session-id>.jsonl`（设置 `CLAUDE_CONFIG_DIR` 时在其 `projects/` 下）。编码方式：绝对路径中每个非字母数字字符替换为 `-`；超过 200 字符时截断并加哈希。TKCode **不解析**这些文件（设计文档 §7）。[Doc:agent-sdk/sessions]
 - 恢复失败：stderr/result 文本为 `No conversation found with session ID: <id>`，进程以 1 退出。[CLI:bin；Py:query.py "a refused resume"]
-- `--no-session-persistence` 让会话不落盘（无法恢复）；TCode 不用。
+- `--no-session-persistence` 让会话不落盘（无法恢复）；TKCode 不用。
 - `system/init` 不会重放历史；恢复后的进程不会重发之前的 `task_started`（后台任务身份要靠自己记录）。[zeron:normalize.rs `for_resume`]
-- 尽管 2.1.223 起可以跨目录查找，TCode 仍只在原 cwd 下恢复（设计文档 §7）。
+- 尽管 2.1.223 起可以跨目录查找，TKCode 仍只在原 cwd 下恢复（设计文档 §7）。
 
 ---
 
@@ -764,10 +764,10 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 - `authMethod` ∈ `none`、`claude.ai`、`oauth_token`、`api_key`、`api_key_helper`、`third_party`。[Doc:cli-reference]
 - `configDirectory` ≥ 2.1.268。[Doc:cli-reference]
 - 其他字段（`apiProvider`、`email`、`orgId`、`subscriptionType`…）以本机 2.1.301 输出为准 [CLI:help]，解析时全部按可选处理。
-- **隐私**：`email`、`orgId` 是个人信息，TCode 只取 `loggedIn`、`authMethod`、`apiProvider`、`subscriptionType`，不落盘、不上传。
+- **隐私**：`email`、`orgId` 是个人信息，TKCode 只取 `loggedIn`、`authMethod`、`apiProvider`、`subscriptionType`，不落盘、不上传。
 - 凭据优先级（用于向用户解释"当前用的是哪个凭据"）：云厂商（`CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`）> `ANTHROPIC_AUTH_TOKEN` > `ANTHROPIC_API_KEY` > apiKeyHelper > `CLAUDE_CODE_OAUTH_TOKEN` > Anthropic profile > `/login` 订阅。[Doc:authentication §Authentication precedence]
 - 运行时的认证失败不会体现在 `auth status` 上，而是以合成 assistant 帧（`error:"authentication_failed"`）+ is_error 的 result 出现（§13）。
-- 未登录时 TCode 只提示用户在终端运行 `claude` 登录，TCode 不代为登录（设计文档 §2）。
+- 未登录时 TKCode 只提示用户在终端运行 `claude` 登录，TKCode 不代为登录（设计文档 §2）。
 
 ### 12.2 版本
 
@@ -791,7 +791,7 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 
 ## 13. 错误处理
 
-| 情形 | 表现 | TCode 处理 |
+| 情形 | 表现 | TKCode 处理 |
 |---|---|---|
 | 可重试的 API 错误 | `system/api_retry`（attempt/max_retries/retry_delay_ms/error_status/error） | 显示重试进度；轮次继续 |
 | API 失败结束轮次 | 合成 assistant 帧（`model:"<synthetic>"`，`error` 字段）+ `result{subtype:"success", is_error:true, result:"<错误文本>", api_error_status}` | 显示错误；agentEnded(错误)。错误文本优先级：`errors[]` → `result` → 非 success 的 `subtype` → `API error (HTTP <status>)` → "unknown error" [Py:query.py `_error_result_text`] |
@@ -807,11 +807,11 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 
 ---
 
-## 14. TCode 事件映射
+## 14. TKCode 事件映射
 
 ### 14.1 映射表
 
-| TCode 事件 | 触发帧 | 关键字段 / 说明 |
+| TKCode 事件 | 触发帧 | 关键字段 / 说明 |
 |---|---|---|
 | **agentStarted** | 空闲状态下主会话的第一个轮次帧（§9.5）；第一次 `system/init` 同时触发会话元数据更新 | `nativeSessionId = session_id`；`model`；`origin`（用户 / 后台唤醒）；关联的 user uuid 取 `command_lifecycle started` 或 stream_event 的 `user_message_uuid` |
 | **messageStarted** | `stream_event` `message_start`（`parent_tool_use_id == null`） | `messageId = event.message.id`，`model = event.message.model` |
@@ -822,7 +822,7 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 | **toolCallDelta** | `content_block_delta` 且 `delta.type == "input_json_delta"` | 追加 `partial_json` 到该 index 的缓冲 |
 | **toolCallEnded** | 该工具块的**完整 assistant 帧**或 `content_block_stop`，以先到者为准，只发一次 | 参数以 assistant 帧的 `input`（已解析对象）为准；只等到了 `content_block_stop` 时解析缓冲（空串视为 `{}`）。`message_stop` 时仍未结束的工具块：发 toolCallEnded(`incomplete=true`) |
 | **toolExecutionStarted** | ① 对该 `tool_use_id` 回复了 `can_use_tool` allow；② 该工具没有审批请求时：首个 `tool_progress`，或包含它的消息的 `message_stop`（`stop_reason == "tool_use"`），以先到者为准 | 被 deny 的工具**不发**此事件 |
-| **toolExecutionEnded** | 主会话 user 帧中的 `tool_result` 块（按 `tool_use_id` 关联） | `isError = is_error ?? false`；`content`（给模型的内容）；`structured = tool_use_result`；被拒绝时 `status = denied`（该 id 在 TCode 的拒绝集合里，或出现在 result 的 `permission_denials`） |
+| **toolExecutionEnded** | 主会话 user 帧中的 `tool_result` 块（按 `tool_use_id` 关联） | `isError = is_error ?? false`；`content`（给模型的内容）；`structured = tool_use_result`；被拒绝时 `status = denied`（该 id 在 TKCode 的拒绝集合里，或出现在 result 的 `permission_denials`） |
 | **messageEnded** | `stream_event` `message_stop` | `stopReason` 取之前 `message_delta.delta.stop_reason`；被中断时为 null |
 | **usage** | ① `message_delta.usage`（每次 API 调用，用于上下文占用）；② `result`（本轮次 usage + `modelUsage`/`total_cost_usd` 的差值） | §8.5.2 |
 | **agentEnded** | `result` | 状态映射见 §14.3；`resultText = result`；`sessionId` |
@@ -847,7 +847,7 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 
 | 条件 | agentEnded.status |
 |---|---|
-| `terminal_reason ∈ {aborted_streaming, aborted_tools}`，或 TCode 处于 Stopping 状态 | `interrupted` |
+| `terminal_reason ∈ {aborted_streaming, aborted_tools}`，或 TKCode 处于 Stopping 状态 | `interrupted` |
 | `subtype == "success"` 且 `is_error == false` | `completed` |
 | `subtype == "success"` 且 `is_error == true` | `error`（API 错误，带 `api_error_status`） |
 | `subtype == "error_max_turns"` | `maxTurns` |
@@ -865,9 +865,9 @@ $ claude auth status          # 默认输出 JSON（--json），--text 为人类
 
 ## 15. 审批映射
 
-TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
+TKCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
-| TCode 选项 | 应答 `response.response` |
+| TKCode 选项 | 应答 `response.response` |
 |---|---|
 | **允许一次** | `{"behavior":"allow","updatedInput":<原 input>,"toolUseID":<tool_use_id>,"decisionClassification":"user_temporary"}` |
 | **本会话允许** | `{"behavior":"allow","updatedInput":<原 input>,"updatedPermissions":<见下>,"toolUseID":…,"decisionClassification":"user_permanent"}` |
@@ -891,7 +891,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
 `destination` ∈ `userSettings`、`projectSettings`、`localSettings`、`session`、`cliArg`。
 
-自动放行模式下（会话级开关）：TCode 用 `set_permission_mode` 切到 `bypassPermissions`（需启动时带 `--allow-dangerously-skip-permissions`），或重启进程。此时仍可能收到 `can_use_tool`（`AskUserQuestion`、需要用户交互的 MCP 工具），照常处理。
+自动放行模式下（会话级开关）：TKCode 用 `set_permission_mode` 切到 `bypassPermissions`（需启动时带 `--allow-dangerously-skip-permissions`），或重启进程。此时仍可能收到 `can_use_tool`（`AskUserQuestion`、需要用户交互的 MCP 工具），照常处理。
 
 ---
 
@@ -917,7 +917,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
 **控制协议**
 
-- [ ] TCode 发起的请求按 `request_id` 关联应答；`subtype:"error"` 转为失败；60 秒超时；进程退出时在途请求立即失败。
+- [ ] TKCode 发起的请求按 `request_id` 关联应答；`subtype:"error"` 转为失败；60 秒超时；进程退出时在途请求立即失败。
 - [ ] CLI 发起的每个 `control_request` 都有且只有一个应答（被 `control_cancel_request` 撤回的除外）；未知 subtype 回 error。
 - [ ] 读循环不被审批阻塞；审批在后台等待 UI。
 - [ ] 收到 `control_cancel_request` 时关闭对应对话框、不再应答。
@@ -950,7 +950,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 - [ ] `errors` 中的 `[ede_diagnostic]` 只写日志；为空时用固定文案兜底。
 - [ ] `subtype:"success"` + `is_error:true` 当作错误处理；同时显示合成 assistant 帧的 `error` 类别。
 - [ ] `total_cost_usd`、`modelUsage` 是进程内累计值，按差值计算本轮次；`result.usage` 只含主循环。
-- [ ] 后台唤醒轮次（没有 TCode 输入的新 init + result）作为新轮次处理。
+- [ ] 后台唤醒轮次（没有 TKCode 输入的新 init + result）作为新轮次处理。
 - [ ] `rate_limit_event` 只在真正阻塞时报错（考虑 overage 字段）。
 - [ ] 进程无 result 退出时合成 agentEnded(错误)，附退出码和 stderr 尾部；退出码 1 时优先显示最后一个 is_error result 的文本。
 
@@ -958,7 +958,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
 - [ ] 停止：`interrupt` → 等 result（应答后 3 秒兜底）→ 丢弃停止后 3 秒内无新活动的迟到 result。
 - [ ] 拆除：interrupt（若在跑，等 2 秒）→ 关 stdin → 等 5 秒 → 进程组 SIGTERM → 等 5 秒 → SIGKILL；Windows 用 Job Object。
-- [ ] TCode 退出时清理所有存活的 CLI 子进程。
+- [ ] TKCode 退出时清理所有存活的 CLI 子进程。
 
 **探测**
 
@@ -979,7 +979,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 ### A.0 格式约定
 
 - 每行 = 2 字符方向前缀 + 一个完整 JSON 对象：
-  - `> ` = TCode 写入 CLI 的 stdin
+  - `> ` = TKCode 写入 CLI 的 stdin
   - `< ` = CLI 写到 stdout
 - 测试代码去掉前 2 个字符后按行解析；代码块内不含其他内容。
 - 时间、ID、token 数为虚构但自洽。所有夹具共用：
@@ -995,13 +995,13 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 期望事件：agentStarted → messageStarted(msg_01A) → thinkingDelta×2 → textDelta×2 → messageEnded(end_turn) → usage → agentEnded(completed)。thinking 和 text 的 assistant 帧不产生重复 delta。
 
 ```jsonl
-> {"type":"control_request","request_id":"tcode_init_1","request":{"subtype":"initialize","hooks":null}}
-< {"type":"control_response","response":{"subtype":"success","request_id":"tcode_init_1","response":{"commands":[{"name":"compact","description":"Clear conversation history but keep a summary in context","argumentHint":"<optional custom summarization instructions>"},{"name":"review","description":"Review a pull request","argumentHint":""}],"agents":[{"name":"general-purpose","description":"General-purpose agent for researching complex questions and executing multi-step tasks"},{"name":"Explore","description":"Fast agent specialized for exploring codebases","model":"haiku"}],"output_style":"default","available_output_styles":["default","Explanatory","Learning"],"models":[{"value":"default","resolvedModel":"claude-opus-5-5","displayName":"Default (recommended)","description":"Opus 5.5 · Most capable for complex work","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true,"supportsFastMode":true,"supportsAutoMode":true},{"value":"sonnet","resolvedModel":"claude-sonnet-5","displayName":"Sonnet","description":"Sonnet 5 · Best for everyday tasks","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true},{"value":"haiku","resolvedModel":"claude-haiku-4-5-20251001","displayName":"Haiku","description":"Haiku 4.5 · Fastest for quick answers"}],"account":{"subscriptionType":"max","tokenSource":"claude.ai","apiKeySource":"none","apiProvider":"firstParty"},"claude_code_version":"2.1.301","fast_mode_state":"off"},"pending_permission_requests":[],"pending_user_dialog_requests":[]}}
+> {"type":"control_request","request_id":"tkcode_init_1","request":{"subtype":"initialize","hooks":null}}
+< {"type":"control_response","response":{"subtype":"success","request_id":"tkcode_init_1","response":{"commands":[{"name":"compact","description":"Clear conversation history but keep a summary in context","argumentHint":"<optional custom summarization instructions>"},{"name":"review","description":"Review a pull request","argumentHint":""}],"agents":[{"name":"general-purpose","description":"General-purpose agent for researching complex questions and executing multi-step tasks"},{"name":"Explore","description":"Fast agent specialized for exploring codebases","model":"haiku"}],"output_style":"default","available_output_styles":["default","Explanatory","Learning"],"models":[{"value":"default","resolvedModel":"claude-opus-5-5","displayName":"Default (recommended)","description":"Opus 5.5 · Most capable for complex work","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true,"supportsFastMode":true,"supportsAutoMode":true},{"value":"sonnet","resolvedModel":"claude-sonnet-5","displayName":"Sonnet","description":"Sonnet 5 · Best for everyday tasks","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true},{"value":"haiku","resolvedModel":"claude-haiku-4-5-20251001","displayName":"Haiku","description":"Haiku 4.5 · Fastest for quick answers"}],"account":{"subscriptionType":"max","tokenSource":"claude.ai","apiKeySource":"none","apiProvider":"firstParty"},"claude_code_version":"2.1.301","fast_mode_state":"off"},"pending_permission_requests":[],"pending_user_dialog_requests":[]}}
 > {"type":"user","message":{"role":"user","content":[{"type":"text","text":"用一句话解释什么是递归。"}]},"parent_tool_use_id":null,"uuid":"3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61"}
 < {"type":"command_lifecycle","command_uuid":"3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61","state":"queued","uuid":"c0a80101-0000-4000-8000-000000000001","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"user","message":{"role":"user","content":[{"type":"text","text":"用一句话解释什么是递归。"}]},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61","timestamp":"2026-10-16T08:00:00.120Z","isReplay":true}
 < {"type":"system","subtype":"session_state_changed","state":"running","sdk_host_only":true,"uuid":"c0a80101-0000-4000-8000-000000000002","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
-< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tcode__open_file"],"mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80101-0000-4000-8000-000000000003"}
+< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tkcode__open_file"],"mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80101-0000-4000-8000-000000000003"}
 < {"type":"command_lifecycle","command_uuid":"3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61","state":"started","uuid":"c0a80101-0000-4000-8000-000000000004","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"system","subtype":"status","status":"requesting","uuid":"c0a80101-0000-4000-8000-000000000005","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_01AbCdEfGhIjKlMnOpQrStUv","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":3,"cache_creation_input_tokens":1520,"cache_read_input_tokens":14210,"output_tokens":1,"service_tier":"standard"}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80101-0000-4000-8000-000000000006","ttft_ms":812,"user_message_uuid":"3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61","user_message_uuids":["3f9a6c1e-2b7d-4e8a-9c05-1d2e3f4a5b61"]}
@@ -1034,7 +1034,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 > {"type":"user","message":{"role":"user","content":[{"type":"text","text":"列出 src 目录下的文件。"}]},"parent_tool_use_id":null,"uuid":"7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72"}
 < {"type":"command_lifecycle","command_uuid":"7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72","state":"queued","uuid":"c0a80102-0000-4000-8000-000000000001","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"user","message":{"role":"user","content":[{"type":"text","text":"列出 src 目录下的文件。"}]},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72","timestamp":"2026-10-16T08:01:00.050Z","isReplay":true}
-< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tcode__open_file"],"mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80102-0000-4000-8000-000000000002"}
+< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tkcode__open_file"],"mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80102-0000-4000-8000-000000000002"}
 < {"type":"command_lifecycle","command_uuid":"7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72","state":"started","uuid":"c0a80102-0000-4000-8000-000000000003","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_01BcDeFgHiJkLmNoPqRsTuVw","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":210,"cache_read_input_tokens":15730,"output_tokens":1,"service_tier":"standard"}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80102-0000-4000-8000-000000000004","user_message_uuid":"7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72","user_message_uuids":["7c2e9b40-5a1f-4d63-8e07-9b3c2d1e0f72"]}
 < {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80102-0000-4000-8000-000000000005"}
@@ -1075,7 +1075,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 > {"type":"user","message":{"role":"user","content":[{"type":"text","text":"清理 build 目录。"}]},"parent_tool_use_id":null,"uuid":"9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03"}
 < {"type":"command_lifecycle","command_uuid":"9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03","state":"queued","uuid":"c0a80103-0000-4000-8000-000000000001","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"user","message":{"role":"user","content":[{"type":"text","text":"清理 build 目录。"}]},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03","timestamp":"2026-10-16T08:02:00.010Z","isReplay":true}
-< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tcode__open_file"],"mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80103-0000-4000-8000-000000000002"}
+< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tkcode__open_file"],"mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80103-0000-4000-8000-000000000002"}
 < {"type":"command_lifecycle","command_uuid":"9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03","state":"started","uuid":"c0a80103-0000-4000-8000-000000000003","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_01DeFgHiJkLmNoPqRsTuVwXy","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":140,"cache_read_input_tokens":16100,"output_tokens":1,"service_tier":"standard"}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80103-0000-4000-8000-000000000004","user_message_uuid":"9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03","user_message_uuids":["9d4f1a62-3b8c-4e7d-a051-6c2b8e9f1d03"]}
 < {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01RmBuild0000000000002","name":"Bash","input":{}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80103-0000-4000-8000-000000000005"}
@@ -1102,7 +1102,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
 #### (d1) 文本流式输出时中断
 
-前置：已完成握手。TCode 在第二个 text_delta 之后发 interrupt（带 `cancel_queued`）。
+前置：已完成握手。TKCode 在第二个 text_delta 之后发 interrupt（带 `cancel_queued`）。
 
 期望事件：agentStarted → messageStarted(msg_01F) → textDelta×2 → [发出 interrupt，进入 Stopping] → messageEnded(stopReason=null) → agentEnded(**interrupted**)。判断依据是 `terminal_reason:"aborted_streaming"`，与 `subtype:"error_during_execution"`/`is_error:true` 无关；`[ede_diagnostic]` 只写日志；`[Request interrupted by user]` user 帧不产生对话事件；`aborted:true` 的 assistant 帧只用于校正转录，不产生重复 delta。
 
@@ -1110,14 +1110,14 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 > {"type":"user","message":{"role":"user","content":[{"type":"text","text":"详细介绍一下这个项目的架构。"}]},"parent_tool_use_id":null,"uuid":"a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94"}
 < {"type":"command_lifecycle","command_uuid":"a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94","state":"queued","uuid":"c0a80104-0000-4000-8000-000000000001","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"user","message":{"role":"user","content":[{"type":"text","text":"详细介绍一下这个项目的架构。"}]},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94","timestamp":"2026-10-16T08:03:00.000Z","isReplay":true}
-< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tcode__open_file"],"mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80104-0000-4000-8000-000000000002"}
+< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tkcode__open_file"],"mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80104-0000-4000-8000-000000000002"}
 < {"type":"command_lifecycle","command_uuid":"a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94","state":"started","uuid":"c0a80104-0000-4000-8000-000000000003","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11"}
 < {"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_01FgHiJkLmNoPqRsTuVwXyZa","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":120,"cache_read_input_tokens":16380,"output_tokens":1,"service_tier":"standard"}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-000000000004","user_message_uuid":"a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94","user_message_uuids":["a8e3c5d7-6f21-4b09-9d4e-2c7b1a0f3e94"]}
 < {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-000000000005"}
 < {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"这个项目分为三层："}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-000000000006"}
 < {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"桌面 UI、Agent Host 和"}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-000000000007"}
-> {"type":"control_request","request_id":"tcode_int_1","request":{"subtype":"interrupt","cancel_queued":true}}
-< {"type":"control_response","response":{"subtype":"success","request_id":"tcode_int_1","response":{"still_queued":[],"cancelled":[]}}}
+> {"type":"control_request","request_id":"tkcode_int_1","request":{"subtype":"interrupt","cancel_queued":true}}
+< {"type":"control_response","response":{"subtype":"success","request_id":"tkcode_int_1","response":{"still_queued":[],"cancelled":[]}}}
 < {"type":"assistant","message":{"model":"claude-opus-5-5","id":"msg_01FgHiJkLmNoPqRsTuVwXyZa","type":"message","role":"assistant","content":[{"type":"text","text":"这个项目分为三层：桌面 UI、Agent Host 和"}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":120,"cache_read_input_tokens":16380,"output_tokens":1,"service_tier":"standard"}},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"c0a80104-0000-4000-8000-000000000008","aborted":true}
 < {"type":"stream_event","event":{"type":"content_block_stop","index":0},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-000000000009"}
 < {"type":"stream_event","event":{"type":"message_stop"},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80104-0000-4000-8000-00000000000a"}
@@ -1134,7 +1134,7 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 
 ```jsonl
 > {"type":"user","message":{"role":"user","content":[{"type":"text","text":"运行全部测试。"}]},"parent_tool_use_id":null,"uuid":"b2f7d9e1-4c3a-4a58-8f60-1e9d7c5b3a25"}
-< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tcode__open_file"],"mcp_servers":[{"name":"tcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80105-0000-4000-8000-000000000001"}
+< {"type":"system","subtype":"init","cwd":"/Users/dev/proj","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","tools":["Task","Bash","Glob","Grep","Read","Edit","Write","WebFetch","WebSearch","TodoWrite","AskUserQuestion","mcp__tkcode__open_file"],"mcp_servers":[{"name":"tkcode","status":"connected"}],"model":"claude-opus-5-5","permissionMode":"default","slash_commands":["compact","context","cost","init","review"],"apiKeySource":"none","claude_code_version":"2.1.301","output_style":"default","agents":["general-purpose","Explore","Plan"],"skills":[],"plugins":[],"capabilities":["interrupt_receipt_v1","interrupt_cancel_queued_v1"],"fast_mode_state":"off","uuid":"c0a80105-0000-4000-8000-000000000001"}
 < {"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","id":"msg_01GhIjKlMnOpQrStUvWxYzAb","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"cache_creation_input_tokens":90,"cache_read_input_tokens":16500,"output_tokens":1,"service_tier":"standard"}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80105-0000-4000-8000-000000000002"}
 < {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01DotnetTest00000000003","name":"Bash","input":{}}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80105-0000-4000-8000-000000000003"}
 < {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\": \"dotnet test\", \"description\": \"Run all tests\"}"}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80105-0000-4000-8000-000000000004"}
@@ -1143,9 +1143,9 @@ TCode 的 `tool/approve` 有三个选项，映射到 `can_use_tool` 应答：
 < {"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":2,"cache_creation_input_tokens":90,"cache_read_input_tokens":16500,"output_tokens":37}},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80105-0000-4000-8000-000000000007"}
 < {"type":"stream_event","event":{"type":"message_stop"},"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","parent_tool_use_id":null,"uuid":"c0a80105-0000-4000-8000-000000000008"}
 < {"type":"control_request","request_id":"6f9e3d82-1b5c-4a07-a4f3-8b2d0e9f7a16","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"dotnet test","description":"Run all tests"},"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"dotnet test"}],"behavior":"allow","destination":"localSettings"}],"tool_use_id":"toolu_01DotnetTest00000000003","description":"Run all tests"}}
-> {"type":"control_request","request_id":"tcode_int_2","request":{"subtype":"interrupt","cancel_queued":true}}
+> {"type":"control_request","request_id":"tkcode_int_2","request":{"subtype":"interrupt","cancel_queued":true}}
 < {"type":"control_cancel_request","request_id":"6f9e3d82-1b5c-4a07-a4f3-8b2d0e9f7a16"}
-< {"type":"control_response","response":{"subtype":"success","request_id":"tcode_int_2","response":{"still_queued":[],"cancelled":[]}}}
+< {"type":"control_response","response":{"subtype":"success","request_id":"tkcode_int_2","response":{"still_queued":[],"cancelled":[]}}}
 < {"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"[Request interrupted by user for tool use]","is_error":true,"tool_use_id":"toolu_01DotnetTest00000000003"}]},"parent_tool_use_id":null,"session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","uuid":"c0a80105-0000-4000-8000-000000000009","timestamp":"2026-10-16T08:04:03.200Z"}
 < {"type":"result","subtype":"success","is_error":false,"duration_ms":3300,"duration_api_ms":1900,"num_turns":1,"result":"","stop_reason":"tool_use","session_id":"5f0c2d1e-8a47-4c3b-9e21-7d6b4a9f0c11","total_cost_usd":0.0951,"usage":{"input_tokens":2,"cache_creation_input_tokens":90,"cache_read_input_tokens":16500,"output_tokens":37,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard"},"modelUsage":{"claude-opus-5-5":{"inputTokens":13,"outputTokens":304,"cacheReadInputTokens":111100,"cacheCreationInputTokens":2246,"webSearchRequests":0,"costUSD":0.0951,"contextWindow":1000000,"maxOutputTokens":128000}},"permission_denials":[],"terminal_reason":"aborted_tools","queued_turn_count":0,"result_index":4,"user_message_uuid":"b2f7d9e1-4c3a-4a58-8f60-1e9d7c5b3a25","user_message_uuids":["b2f7d9e1-4c3a-4a58-8f60-1e9d7c5b3a25"],"uuid":"c0a80105-0000-4000-8000-00000000000a"}
 ```
@@ -1172,7 +1172,7 @@ argv 带 `--resume=0d9b7e55-1c2a-4f3e-8b6d-5a4c3b2a1f00`。CLI 在 `initialize` 
 期望行为：等待 `initialize` 的逻辑因这个 result 立即失败；不发 agentStarted；向 UI 报"会话不存在：…"（文本取 `errors[0]`，不是 `[ede_diagnostic]`）；进程退出码 1 不再单独报错。
 
 ```jsonl
-> {"type":"control_request","request_id":"tcode_init_1","request":{"subtype":"initialize","hooks":null}}
+> {"type":"control_request","request_id":"tkcode_init_1","request":{"subtype":"initialize","hooks":null}}
 < {"type":"result","subtype":"error_during_execution","duration_ms":0,"duration_api_ms":0,"is_error":true,"num_turns":0,"stop_reason":null,"session_id":"0d9b7e55-1c2a-4f3e-8b6d-5a4c3b2a1f00","total_cost_usd":0,"usage":{"output_tokens_details":{"thinking_tokens":0},"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0},"inference_geo":"","iterations":[],"speed":"standard","fallback_credit":null},"modelUsage":{},"permission_denials":[],"uuid":"c0a80107-0000-4000-8000-000000000001","errors":["No conversation found with session ID: 0d9b7e55-1c2a-4f3e-8b6d-5a4c3b2a1f00"]}
 ```
 
@@ -1180,9 +1180,9 @@ argv 带 `--resume=0d9b7e55-1c2a-4f3e-8b6d-5a4c3b2a1f00`。CLI 在 `initialize` 
 
 ---
 
-## 附录 B. 与 zeron 的差异（TCode 的取舍）
+## 附录 B. 与 zeron 的差异（TKCode 的取舍）
 
-| 点 | zeron | TCode |
+| 点 | zeron | TKCode |
 |---|---|---|
 | 工具审批 | 全部自动放行，只拦 `AskUserQuestion` | 默认弹审批（允许一次 / 本会话允许 / 拒绝） |
 | 工具输出 | 丢弃（`output: None`） | 保留 `tool_result.content` 和 `tool_use_result` |

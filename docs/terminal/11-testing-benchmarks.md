@@ -1,4 +1,4 @@
-# TCode 终端：测试与基准（11）
+# TKCode 终端：测试与基准（11）
 
 > 状态：设计稿 v1（2026-10-16）。上位文档：[01-architecture.md](01-architecture.md)（§1 数字目标、§4 项目划分、§10 里程碑）。依据：[research/03](research/03-vt-protocol.md) §9（测试计划）、[research/04](research/04-rendering-performance.md) §7.3、§9（数字目标、基准计划）、[research/01](research/01-emulator-cores.md) §4.1.5（libghostty 的一致性测试）、[research/02](research/02-pty.md) §5、§9（PTY 验证与压力测试）。CI 作业的布局与 YAML 见 [12-build-and-ci.md](12-build-and-ci.md)。Agent 集成的端到端用例见 [09-agent-integration.md](09-agent-integration.md) §16。
 >
@@ -13,45 +13,45 @@
 | 主题 | 结论 |
 |---|---|
 | 分层 | L1 核心（回放 → 网格快照、增量 vs 全量差分、应答、编码表、esctest2、fuzz 语料回放）；L2 PTY（真实 PTY 往返、退出码、关闭语义、ConPTY）；L3 pty host 协议（握手、流控、重连快照、持久化、多客户端）；L4 视图截图（Avalonia Headless + Skia）；L5 端到端 TUI（录制字节流 → 网格快照，真实 PTY + shell 冒烟）；L6 手工（vttest、ucs-detect、"与系统一致"清单、Typometer） |
-| 夹具格式 | 字节流用 **asciicast v2**（`.cast`），加一个 TCode 扩展事件码 `"ob"` 承载非 UTF-8 的原始字节；网格快照用自定义的纯文本格式 **`.grid`**（文本 + 样式表 + 行内属性游程 + 光标 / 模式），跨平台逐字节一致 |
+| 夹具格式 | 字节流用 **asciicast v2**（`.cast`），加一个 TKCode 扩展事件码 `"ob"` 承载非 UTF-8 的原始字节；网格快照用自定义的纯文本格式 **`.grid`**（文本 + 样式表 + 行内属性游程 + 光标 / 模式），跨平台逐字节一致 |
 | esctest2 | 自写无头驱动（C#，`tools/terminal/EscTestRunner`）：真实 PTY 中运行 esctest2，输出经镜像核心处理并回写应答；开启 libghostty 的 DECRQCRA 校验和选项（`GHOSTTY_TERMINAL_OPT_XT_CHECKSUM_REPORT = 44`）。CI 中只报告、不阻断，失败项进 known-failures 列表，**新增失败**才阻断 |
 | fuzz | **不用 SharpFuzz**：它对托管 IL 插桩，而解析器在原生库里，插桩覆盖不到；NativeAOT 也不适用。改为①回放上游 AFL++ 语料（`test/fuzz-libghostty/corpus/*`）经过我们的 C# 门面；②自写的确定性结构化随机生成器（固定种子进 PR，长跑进每晚）；③不变量检查 |
-| 基准 | `tests/TCode.Terminal.Benchmarks`（BenchmarkDotNet）。数据集由 `tools/terminal/gen-bench-data` 确定性生成到 `artifacts/bench-data/`，仓库只提交清单和 SHA-256。JIT 与 NativeAOT 两种工具链都跑。PR 跑短作业并做"同机 A/B"比较；每晚跑完整的 S1–S15 |
-| 端到端指标 | 进程内 `System.Diagnostics.Metrics`（`Meter`）计数，`TCODE_TERMINAL_METRICS=<file>` 时由 `MeterListener` 写 JSON Lines；需要 `dotnet-counters` 时另做打开 `EventSourceSupport` 的诊断构建（NativeAOT 默认关闭 EventSource [推断：需核对当前 .NET 10 默认值]） |
+| 基准 | `tests/TKCode.Terminal.Benchmarks`（BenchmarkDotNet）。数据集由 `tools/terminal/gen-bench-data` 确定性生成到 `artifacts/bench-data/`，仓库只提交清单和 SHA-256。JIT 与 NativeAOT 两种工具链都跑。PR 跑短作业并做"同机 A/B"比较；每晚跑完整的 S1–S15 |
+| 端到端指标 | 进程内 `System.Diagnostics.Metrics`（`Meter`）计数，`TKCODE_TERMINAL_METRICS=<file>` 时由 `MeterListener` 写 JSON Lines；需要 `dotnet-counters` 时另做打开 `EventSourceSupport` 的诊断构建（NativeAOT 默认关闭 EventSource [推断：需核对当前 .NET 10 默认值]） |
 | 延迟 | 自动化部分：内部分段时间戳（KeyDown → 写 PTY → 回显解析 → 快照发布 → 绘制结束）。端到端：Typometer **仅人工**在开发机上测量，不进 CI，不由 Agent 执行（遵守项目"不合成输入、不截屏幕区域"的约定） |
 
 ---
 
 > **M1 实际落地（2026-10-17）**：
-> - `.grid` 与 asciicast 读取在 `src/TCode.Terminal.Core/Testing/`（`GridSnapshot`、`Cast`），与 §2.2 的差异写在 `GridSnapshot` 的注释里（不写 margins、`e:`；语义区间按行写游程）。
-> - 黄金样本在 `tests/TCode.Terminal.Core.Tests/Replay/`，夹具在 `Fixtures/{xtermjs,alacritty}/`，每个夹具有 `.cast`、`.ref.txt`（上游参照）、`.grid`（TCode 的回归锁定）；参照差异登记在 `Fixtures/known-differences.txt`。
+> - `.grid` 与 asciicast 读取在 `src/TKCode.Terminal.Core/Testing/`（`GridSnapshot`、`Cast`），与 §2.2 的差异写在 `GridSnapshot` 的注释里（不写 margins、`e:`；语义区间按行写游程）。
+> - 黄金样本在 `tests/TKCode.Terminal.Core.Tests/Replay/`，夹具在 `Fixtures/{xtermjs,alacritty}/`，每个夹具有 `.cast`、`.ref.txt`（上游参照）、`.grid`（TKCode 的回归锁定）；参照差异登记在 `Fixtures/known-differences.txt`。
 > - fuzz 在 `Fuzz/`：上游语料子集打包为 `Fixtures/fuzz/corpus.jsonl`；暂在进程内运行（子进程隔离未做）。
 > - esctest 驱动是 `tools/terminal/EscTestRunner`，esctest2 由 `tools/terminal/fetch-esctest.sh` 按 `native/ghostty/esctest.json` 下载校验；§1.1.4 的 `TestMode` 实现为 `TerminalCoreOptions.Conformance`（`ConformanceMode`），另外开启了标题回报。
-> - 每晚任务：`TCODE_DIFF_SEEDS=200`、`TCODE_FUZZ_MINUTES=20`、`TCODE_PTY_STRESS=1`。实测数字见 [13](13-roadmap.md) "M1 实施状态"。
+> - 每晚任务：`TKCODE_DIFF_SEEDS=200`、`TKCODE_FUZZ_MINUTES=20`、`TKCODE_PTY_STRESS=1`。实测数字见 [13](13-roadmap.md) "M1 实施状态"。
 
 ## 1. 测试分层
 
 | 层 | 项目 | 运行时机 | 平台 | 里程碑 |
 |---|---|---|---|---|
-| L1 核心 | `tests/TCode.Terminal.Core.Tests` | 每次 PR | 3 平台（linux-x64、osx-arm64、win-x64） | M0 起，M1 完整 |
+| L1 核心 | `tests/TKCode.Terminal.Core.Tests` | 每次 PR | 3 平台（linux-x64、osx-arm64、win-x64） | M0 起，M1 完整 |
 | L1b esctest2 | `tools/terminal/EscTestRunner` | 每次 PR（报告）+ 每晚 | linux-x64 | M1 |
-| L1c fuzz 长跑 | `tests/TCode.Terminal.Core.Tests`（`[Trait("Category","FuzzLong")]`） | 每晚 1 h | linux-x64 | M1 |
-| L2 PTY | `tests/TCode.Terminal.Pty.Tests` | 每次 PR | 3 平台 + 每晚 linux-arm64、win-arm64 | M0 往返，M1 完整 |
-| L3 pty host | `tests/TCode.Terminal.Host.Tests` | 每次 PR | 3 平台 | M2 |
-| L4 视图截图 | `tests/TCode.Desktop.Tests`（`Terminal*SnapshotTests`）、`tests/TCode.Terminal.Avalonia.Tests`（控件级，不依赖 Desktop） | 每次 PR | 3 平台 | M3 |
-| L5 TUI 回放 | `tests/TCode.Terminal.Core.Tests/Tui/` | 每次 PR | 3 平台 | M1（夹具逐步补齐到 M4） |
-| L5b 真实 shell 端到端 | `tests/TCode.Terminal.Host.Tests/Shell/` | 每次 PR | 3 平台 | M4 |
+| L1c fuzz 长跑 | `tests/TKCode.Terminal.Core.Tests`（`[Trait("Category","FuzzLong")]`） | 每晚 1 h | linux-x64 | M1 |
+| L2 PTY | `tests/TKCode.Terminal.Pty.Tests` | 每次 PR | 3 平台 + 每晚 linux-arm64、win-arm64 | M0 往返，M1 完整 |
+| L3 pty host | `tests/TKCode.Terminal.Host.Tests` | 每次 PR | 3 平台 | M2 |
+| L4 视图截图 | `tests/TKCode.Desktop.Tests`（`Terminal*SnapshotTests`）、`tests/TKCode.Terminal.Avalonia.Tests`（控件级，不依赖 Desktop） | 每次 PR | 3 平台 | M3 |
+| L5 TUI 回放 | `tests/TKCode.Terminal.Core.Tests/Tui/` | 每次 PR | 3 平台 | M1（夹具逐步补齐到 M4） |
+| L5b 真实 shell 端到端 | `tests/TKCode.Terminal.Host.Tests/Shell/` | 每次 PR | 3 平台 | M4 |
 | L6 手工 | 本文 §7 清单 | 每个发布版本 | 3 平台实机 | M4 起 |
 | Agent 端到端 | 见 09 §16 | 每次 PR | 3 平台 | M5 |
 
-> `TCode.Terminal.Avalonia.Tests` 是新增项目（01 §4 的测试列表中只有 `TCode.Desktop.Tests` 承担截图）。理由：`TCode.Terminal.Avalonia` 不依赖 AtomUI 与 TCode（01 §4），它的截图测试不应依赖启动整个 TCode App；Desktop 侧只测集成（主题映射、标签、分屏）。列入待决问题。
+> `TKCode.Terminal.Avalonia.Tests` 是新增项目（01 §4 的测试列表中只有 `TKCode.Desktop.Tests` 承担截图）。理由：`TKCode.Terminal.Avalonia` 不依赖 AtomUI 与 TKCode（01 §4），它的截图测试不应依赖启动整个 TKCode App；Desktop 侧只测集成（主题映射、标签、分屏）。列入待决问题。
 
 ### 1.1 L1 核心
 
 #### 1.1.1 回放 → 网格断言（黄金样本）
 
 ```
-tests/TCode.Terminal.Core.Tests/
+tests/TKCode.Terminal.Core.Tests/
   Fixtures/
     xtermjs/            *.cast + *.grid      xterm.js escape_sequence_files 转换而来（MIT）
     alacritty/          *.cast + *.grid      Alacritty ref tests 转换而来（Apache-2.0 / MIT）
@@ -65,7 +65,7 @@ tests/TCode.Terminal.Core.Tests/
 - 每个夹具一对文件：`.cast`（输入字节流，§2.1）、`.grid`（期望网格，§2.2）。
 - 测试：读 `.cast` → 按事件依次 `TerminalCore.Write` / `Resize` → `GridSnapshot.Capture(core)` → 与 `.grid` 逐字节比较；不一致时把实际结果写到 `artifacts/test-results/grid/<name>.actual.grid` 并输出 unified diff。
 - **分块不变性**：同一夹具再按 1 字节、7 字节、4 KiB、随机块大小各回放一次，结果必须相同（覆盖 UTF-8 和转义序列跨块截断，research/03 §9.2 第 1 条）。
-- **更新黄金样本**：`TCODE_UPDATE_GOLDEN=1 dotnet test --filter Category=Golden` 覆盖写回 `.grid`；PR 中黄金样本的变化需要人工审阅（CI 里永远不设这个变量）。
+- **更新黄金样本**：`TKCODE_UPDATE_GOLDEN=1 dotnet test --filter Category=Golden` 覆盖写回 `.grid`；PR 中黄金样本的变化需要人工审阅（CI 里永远不设这个变量）。
 - 第三方素材的转换器在 `tools/terminal/fixtures/`：`convert-xtermjs.py`（`.in` + `.text` → `.cast` + `.grid`，按 xterm.js NOTES 处理末尾空行）、`convert-alacritty.py`（`alacritty.recording` + `grid.json` + `size.json` → `.cast` + `.grid`）。转换结果入库，转换器只在更新素材时运行。
 
 #### 1.1.2 增量 vs 全量差分（render state 正确性）
@@ -96,7 +96,7 @@ tests/TCode.Terminal.Core.Tests/
 
 #### 1.1.4 esctest2
 
-- 驱动：`tools/terminal/EscTestRunner`（.NET 控制台程序，引用 `TCode.Terminal.Core` 与 `TCode.Terminal.Pty`）。参照 Ghostty `test/esctest` 的做法 [已核实 ghostty@b3dc3d7 `test/esctest/README.md`、`src/main.zig`]：
+- 驱动：`tools/terminal/EscTestRunner`（.NET 控制台程序，引用 `TKCode.Terminal.Core` 与 `TKCode.Terminal.Pty`）。参照 Ghostty `test/esctest` 的做法 [已核实 ghostty@b3dc3d7 `test/esctest/README.md`、`src/main.zig`]：
   1. 在真实 PTY 中启动 `python3 esctest.py --expected-terminal=xterm --xterm-checksum=411 --xterm-reverse-wrap=411 --max-vt-level=5 --logfile=<out>`；
   2. 屏幕 80×25（esctest 每个测试前重置到这个尺寸）；
   3. 输出全部写入 `TerminalCore`；核心通过 `WriteToPty` 回写的应答写回 PTY；
@@ -104,16 +104,16 @@ tests/TCode.Terminal.Core.Tests/
   5. DA 应答为 VT520 级别；XTWINOPS 尺寸报告开启。
 - 这两个选项只在 `TerminalCoreOptions.TestMode` 中开启，产品构建的门面不暴露。
 - esctest2 本身：pin 一个提交（`native/ghostty/esctest.json` 中记录 URL + 提交 + SHA-256），CI 下载 tarball，只运行 Python 脚本，没有构建步骤。
-- 结果处理：解析日志中的 `tests passed` 汇总与失败用例名 → 与 `tests/TCode.Terminal.Core.Tests/EscTest/known-failures.txt` 比较：
+- 结果处理：解析日志中的 `tests passed` 汇总与失败用例名 → 与 `tests/TKCode.Terminal.Core.Tests/EscTest/known-failures.txt` 比较：
   - 新增失败 → 作业失败（PR 门禁）；
   - known-failures 中的用例通过了 → 作业警告，提示从列表中删除；
   - 汇总写入 GitHub 步骤摘要，完整日志作为工件上传。
-- 已知会失败的类别（Ghostty 同样遇到）：DECSTR 没有完整实现导致的状态残留；终端不改变尺寸导致 XTWINOPS / DECCOLM 相关测试失败 [已核实 Ghostty esctest README]。TCode 的驱动可以真正执行 resize（我们有完整的连接层），所以第二类有机会通过。
+- 已知会失败的类别（Ghostty 同样遇到）：DECSTR 没有完整实现导致的状态残留；终端不改变尺寸导致 XTWINOPS / DECCOLM 相关测试失败 [已核实 Ghostty esctest README]。TKCode 的驱动可以真正执行 resize（我们有完整的连接层），所以第二类有机会通过。
 - 验收门槛（research/03 §9.3）：xterm 模式下 Tier 0 / Tier 1 相关测试文件通过率 ≥ 95%。
 
 #### 1.1.5 fuzz
 
-**SharpFuzz 评估** [推断]：SharpFuzz 通过改写托管程序集的 IL 插入覆盖率探针（需要 .NET 8+，配合 AFL 或 libFuzzer）[已核实 https://github.com/Metalnem/sharpfuzz 页面；"改写 IL"一点页面未明说，按其依赖 Mono.Cecil / dnlib 推断]。对 TCode 的问题：①VT 解析与网格都在 libghostty（原生 Zig）里，IL 插桩看不到它的分支，覆盖率反馈几乎只来自门面的薄层；②插桩后的程序集以 JIT 运行，无法用于 NativeAOT。因此**不采用**。
+**SharpFuzz 评估** [推断]：SharpFuzz 通过改写托管程序集的 IL 插入覆盖率探针（需要 .NET 8+，配合 AFL 或 libFuzzer）[已核实 https://github.com/Metalnem/sharpfuzz 页面；"改写 IL"一点页面未明说，按其依赖 Mono.Cecil / dnlib 推断]。对 TKCode 的问题：①VT 解析与网格都在 libghostty（原生 Zig）里，IL 插桩看不到它的分支，覆盖率反馈几乎只来自门面的薄层；②插桩后的程序集以 JIT 运行，无法用于 NativeAOT。因此**不采用**。
 
 采用的方案：
 
@@ -125,17 +125,17 @@ tests/TCode.Terminal.Core.Tests/
 | 崩溃回归 | 发现的输入最小化后放进 `Fixtures/fuzz-regressions/*.bin`，永久回放 | 每次 PR |
 | 上游 AFL++ | 不在我们的 CI 中运行（上游已经在跑 [已核实]）。升级 Ghostty 时检查上游 fuzz 目录的变更 | — |
 
-原生崩溃会带走测试进程：fuzz 测试在**子进程**中运行（`tests/TCode.Terminal.Core.Tests` 以 `--fuzz-child <seed>` 启动自身），父进程收集退出码与 stderr，得到崩溃时可以复现的种子。
+原生崩溃会带走测试进程：fuzz 测试在**子进程**中运行（`tests/TKCode.Terminal.Core.Tests` 以 `--fuzz-child <seed>` 启动自身），父进程收集退出码与 stderr，得到崩溃时可以复现的种子。
 
 ### 1.2 L2 PTY
 
-`tests/TCode.Terminal.Pty.Tests`，全部使用真实 PTY 和真实进程，不 mock。**用例清单以 [03-pty.md](03-pty.md) §14（T1–T19、W-T1–W-T6）为准**，下表是分组概览与对应关系。
+`tests/TKCode.Terminal.Pty.Tests`，全部使用真实 PTY 和真实进程，不 mock。**用例清单以 [03-pty.md](03-pty.md) §14（T1–T19、W-T1–W-T6）为准**，下表是分组概览与对应关系。
 
 | 组 | 用例 | 依据 |
 |---|---|---|
 | 往返 | 启动 `/bin/sh -c 'printf hello'` / `cmd /c echo hello`，读到 `hello`；输入回显 | research/02 §9 M1 |
 | 控制终端 | 子进程 `tty` 输出 `/dev/ttys*`/`/dev/pts/*`；`ps -o tpgid` 与 `tcgetpgrp(master)` 一致；macOS 上经 helper 获得控制终端 | research/02 §2.2–2.3 |
-| 退出码 | `exit 7` → 7；`kill -TERM $$` → signal=TERM；早于 watch 注册就退出的进程（kqueue `ESRCH` 竞态）；RHEL 8 内核回退路径（`TCODE_PTY_FORCE_WAITPID=1` 强制） | research/02 §2.5 |
+| 退出码 | `exit 7` → 7；`kill -TERM $$` → signal=TERM；早于 watch 注册就退出的进程（kqueue `ESRCH` 竞态）；RHEL 8 内核回退路径（`TKCODE_PTY_FORCE_WAITPID=1` 强制） | research/02 §2.5 |
 | 信号默认值 | `bash -c 'yes \| head -1; echo ${PIPESTATUS[0]}'` 输出 `141`（PTY 路径与 helper `--exec` 路径各一次；`trap - PIPE` 对 bash 无效，03 §12 实测） | 03 §14 T3、T19 |
 | 与 .NET SIGCHLD 共存 | 同一进程中同时运行 `Process.Start` 与 PTY 子进程各 100 个，全部正确回收，`Process.ExitCode` 不受影响 | research/02 §1 第 3 条 |
 | resize | `TIOCSWINSZ` 后子进程 `stty size` 与像素尺寸（`ws_xpixel = cols × cellWidth`，01 已改为每 cell 像素）正确 | 01 §6.1；04 §19 第 10 条 |
@@ -152,7 +152,7 @@ tests/TCode.Terminal.Core.Tests/
 
 ### 1.3 L3 pty host 协议
 
-`tests/TCode.Terminal.Host.Tests`。host 在测试进程内以库方式启动（`PtyHostServer.StartInProcess(options)`），另有一组用例启动**构建出的可执行文件**（`TCODE_PTYHOST_DIR`，与 `TCODE_AGENTHOST_DIR` 的做法相同 [已核实 `src/TCode.Desktop/Services/AgentHostConnection.cs:54-58`]）；设置 `TCODE_TEST_PTYHOST_EXE` 时改用 AOT 发布的二进制（与现有 `TCODE_TEST_HOST_EXE` 的做法相同 [已核实 `tests/TCode.Agent.Tests/RpcEndToEndTests.cs:13-18`]）。
+`tests/TKCode.Terminal.Host.Tests`。host 在测试进程内以库方式启动（`PtyHostServer.StartInProcess(options)`），另有一组用例启动**构建出的可执行文件**（`TKCODE_PTYHOST_DIR`，与 `TKCODE_AGENTHOST_DIR` 的做法相同 [已核实 `src/TKCode.Desktop/Services/AgentHostConnection.cs:54-58`]）；设置 `TKCODE_TEST_PTYHOST_EXE` 时改用 AOT 发布的二进制（与现有 `TKCODE_TEST_HOST_EXE` 的做法相同 [已核实 `tests/TKCode.Agent.Tests/RpcEndToEndTests.cs:13-18`]）。
 
 | 组 | 用例 |
 |---|---|
@@ -169,12 +169,12 @@ tests/TCode.Terminal.Core.Tests/
 
 ### 1.4 L4 视图截图（Headless + Skia）
 
-沿用 TCode 现有做法：`AppBuilder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })`，`TopLevel.CaptureRenderedFrame()` 截图，`TCODE_SNAPSHOT_DIR` 指定输出目录 [已核实 `tests/TCode.Desktop.Tests/HeadlessApp.cs`]。
+沿用 TKCode 现有做法：`AppBuilder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })`，`TopLevel.CaptureRenderedFrame()` 截图，`TKCODE_SNAPSHOT_DIR` 指定输出目录 [已核实 `tests/TKCode.Desktop.Tests/HeadlessApp.cs`]。
 
 - **输入来源**：`TerminalView.Session` 接一个 `ReplayTerminalViewSession`（读取 `.cast`），不启动 PTY，不合成任何键鼠事件（遵守项目约定）。
 - **覆盖**：box drawing 与块元素的拼接（每个字号、1×/1.5×/2× 缩放）、Powerline 符号、光标四种形状与闪烁相位、宽字符与 emoji（含 ZWJ、VS16、旗帜）、下划线五种样式与颜色、删除线 / 上划线、超链接下划线、选区、搜索高亮、最小对比度、暗淡、反显、Kitty 图形放置（M6）。
 - **比较方式**：像素比较不能跨平台逐字节一致（字体栅格化不同）。规则：
-  1. 每个平台各自一套基线 PNG：`tests/TCode.Terminal.Avalonia.Tests/Baselines/<os>/<name>.png`；
+  1. 每个平台各自一套基线 PNG：`tests/TKCode.Terminal.Avalonia.Tests/Baselines/<os>/<name>.png`；
   2. 比较采用"允许每像素 ΔE ≤ 2 且不同像素 ≤ 0.1%"的容差；
   3. **几何断言优先**：对 box drawing、光标、下划线这类程序化绘制的元素，直接断言像素坐标（例如"└ 的竖线在 cell 的第 x 列像素，且与上一行的 │ 连续"），这类断言跨平台成立；
   4. 字体：测试使用随测试项目分发的固定字体（JetBrains Mono，OFL），不依赖系统字体。
@@ -185,7 +185,7 @@ tests/TCode.Terminal.Core.Tests/
 
 #### 1.5.1 录制
 
-在开发机上用 **TCode 自己的录制功能**（pty host 的调试开关 `TCODE_PTYHOST_RECORD=<dir>`：把每个会话的输出日志按 §2.1 格式落盘，包括 Resize 记录）或 `asciinema rec`（v2 格式）录制。录制脚本 `tools/terminal/record/*.sh` 记录了步骤，便于重录：
+在开发机上用 **TKCode 自己的录制功能**（pty host 的调试开关 `TKCODE_PTYHOST_RECORD=<dir>`：把每个会话的输出日志按 §2.1 格式落盘，包括 Resize 记录）或 `asciinema rec`（v2 格式）录制。录制脚本 `tools/terminal/record/*.sh` 记录了步骤，便于重录：
 
 | 夹具 | 步骤（人工操作，录制 PTY 输出） | 尺寸 | 关注点 |
 |---|---|---|---|
@@ -209,7 +209,7 @@ tests/TCode.Terminal.Core.Tests/
 
 #### 1.5.3 真实 shell 冒烟（L5b）
 
-`tests/TCode.Terminal.Host.Tests/Shell/`：真实 pty host + 真实 shell（bash、zsh、fish（若安装）、pwsh、Git Bash），只向 PTY **写字节**：
+`tests/TKCode.Terminal.Host.Tests/Shell/`：真实 pty host + 真实 shell（bash、zsh、fish（若安装）、pwsh、Git Bash），只向 PTY **写字节**：
 
 - shell 集成注入成功，OSC 133 A/B/C/D 与退出码到达，`CommandRecord` 正确；
 - `echo $TERM $COLORTERM $TERM_PROGRAM`；
@@ -224,13 +224,13 @@ tests/TCode.Terminal.Core.Tests/
 | 类 | 检查项（预期：与对照终端相同） | 依据 |
 |---|---|---|
 | 启动 | 默认 shell 取自账户记录（`getpwuid`）；macOS login shell（`ps` 中 `-zsh`）；Linux 非 login；Windows 优先 pwsh；新标签继承 cwd | research/05 §1、D9 |
-| 环境 | `TERM=xterm-256color`、`COLORTERM=truecolor`、`TERM_PROGRAM=TCode`；`LANG` 处理；PATH 与系统终端一致（macOS 的 `path_helper`） | research/05 §2 |
+| 环境 | `TERM=xterm-256color`、`COLORTERM=truecolor`、`TERM_PROGRAM=TKCode`；`LANG` 处理；PATH 与系统终端一致（macOS 的 `path_helper`） | research/05 §2 |
 | 键盘 | macOS：⌘C/⌘V/⌘K（清屏）/⌘T/⌘W；Option 作 Meta 的默认值；Windows / Linux：Ctrl+字母交给 shell，Ctrl+Shift+C/V；Ctrl+C 中断；Alt+Backspace；Home/End/PgUp/PgDn | D6、research/05 §4 |
 | 鼠标 | 双击选词规则、三击选行；Linux 中键粘贴 PRIMARY；右键菜单；Shift 强制本地选择 | research/05 §4 |
 | 剪贴板 | 复制时去除软换行；粘贴多行警告 | 01 §8 |
 | 外观 | 默认字体与字号；光标形状与闪烁；铃声（系统提示音 / 视觉） | research/05 §5 |
 | 输入法 | 中文、日文 IME 的组合窗口位置与提交 | research/04 §6.2 |
-| 生命周期 | 有程序运行时关闭标签确认；退出 TCode 的汇总确认；revive 恢复 | 01 §3.3 |
+| 生命周期 | 有程序运行时关闭标签确认；退出 TKCode 的汇总确认；revive 恢复 | 01 §3.3 |
 | 程序 | vim、tmux、htop、less、fzf、neovim、Claude Code、Codex 的日常操作 | 01 §1 |
 | vttest | 菜单 1–8、11 人工通过 | research/03 §9.3 |
 | ucs-detect | `ucs-detect --save-yaml`；2027 模式下 WIDE / ZWJ / VS16 / VS15 ≥ 98%；与 Ghostty 的 data/*.yaml 对照 | research/03 §9.1、§9.3 |
@@ -240,23 +240,23 @@ tests/TCode.Terminal.Core.Tests/
 
 ## 2. 测试工具与文件格式
 
-### 2.1 字节流：asciicast v2 + TCode 扩展
+### 2.1 字节流：asciicast v2 + TKCode 扩展
 
 格式规范 [已核实 https://docs.asciinema.org/manual/asciicast/v2/]：NDJSON；首行为头（必填 `version: 2`、`width`、`height`；可选 `timestamp`、`command`、`title`、`env`、`theme`）；之后每行一个事件 `[time, code, data]`，`code` 为 `o`（输出）、`i`（输入）、`m`（标记）、`r`（尺寸，`"COLSxROWS"`）；**事件码表是开放的，读取方应忽略不认识的事件码**；`data` 必须是合法的 UTF-8 JSON 字符串。
 
-问题：PTY 输出不一定是合法 UTF-8，且 UTF-8 字符可能跨块；asciicast 的字符串无法逐字节保真。TCode 的约定：
+问题：PTY 输出不一定是合法 UTF-8，且 UTF-8 字符可能跨块；asciicast 的字符串无法逐字节保真。TKCode 的约定：
 
 | 事件 | 含义 | 何时使用 |
 |---|---|---|
 | `o` | 输出，UTF-8 文本 | 块是合法 UTF-8 且不在字符中间截断 |
-| `ob` | **TCode 扩展**：输出，`data` 为原始字节的 base64 | 其他情况（含跨块截断）。其他播放器会忽略它，所以这类文件只用 TCode 回放 |
-| `r` | resize，`"COLSxROWS"`；TCode 扩展可选第二种写法 `"COLSxROWS@CWxCH"`（每 cell 像素，与 01 的 `TerminalSize` 定义一致） | |
+| `ob` | **TKCode 扩展**：输出，`data` 为原始字节的 base64 | 其他情况（含跨块截断）。其他播放器会忽略它，所以这类文件只用 TKCode 回放 |
+| `r` | resize，`"COLSxROWS"`；TKCode 扩展可选第二种写法 `"COLSxROWS@CWxCH"`（每 cell 像素，与 01 的 `TerminalSize` 定义一致） | |
 | `m` | 标记，`data` 为快照点名称 | `.grid` 按标记分段 |
 | `i` | 输入 | 只用于录制说明，回放时忽略（输入的效果已在输出中） |
-| `xc` | **TCode 扩展**：`SetColors`，data 为 JSON 调色板 | 对应 pty host 日志的 SetColors 记录 |
-| `xr` | **TCode 扩展**：`Reset`（`"hard"`/`"soft"`） | |
+| `xc` | **TKCode 扩展**：`SetColors`，data 为 JSON 调色板 | 对应 pty host 日志的 SetColors 记录 |
+| `xr` | **TKCode 扩展**：`Reset`（`"hard"`/`"soft"`） | |
 
-头部扩展字段（读取方忽略未知字段）：`"tcode": {"widthMode": "compat", "scrollback": 1000, "palette": "default-dark", "source": "xtermjs:vttest-2.in", "license": "MIT"}`。
+头部扩展字段（读取方忽略未知字段）：`"tkcode": {"widthMode": "compat", "scrollback": 1000, "palette": "default-dark", "source": "xtermjs:vttest-2.in", "license": "MIT"}`。
 
 时间戳：回放测试不使用时间（按顺序写入）；基准与 S4 的"按真实节奏回放"使用时间。
 
@@ -267,7 +267,7 @@ tests/TCode.Terminal.Core.Tests/
 要求：纯文本、可读、可 diff、跨平台逐字节一致（LF、UTF-8、无 BOM）、与 libghostty 的内部布局无关（以 `FrameSnapshot` 为准，01 §6.1）。
 
 ```
-tcode-grid 1
+tkcode-grid 1
 size 80x24 cell 9x18
 cursor 12,3 shape=block visible=1 blink=0 wide=0
 screen primary
@@ -308,11 +308,11 @@ semantic
 | 语义 | OSC 133 区间与退出码 |
 | 多段 | 每个 `m` 标记一段，以 `---- mark: <name>` 分隔 |
 
-实现：`TCode.Terminal.Core` 中的 `GridSnapshot.Capture(TerminalCore core, GridSnapshotOptions options)` → `string`，属于测试辅助，但放在主程序集的 `TCode.Terminal.Core.Testing` 命名空间（L3、L4、Agent 测试都要用，且必须 AOT 安全，`tcode-ptyhost --self-test` 也用它）。
+实现：`TKCode.Terminal.Core` 中的 `GridSnapshot.Capture(TerminalCore core, GridSnapshotOptions options)` → `string`，属于测试辅助，但放在主程序集的 `TKCode.Terminal.Core.Testing` 命名空间（L3、L4、Agent 测试都要用，且必须 AOT 安全，`tkcode-ptyhost --self-test` 也用它）。
 
 ### 2.3 在 xunit v3 中的组织
 
-TCode 现有测试项目是 xunit v3 3.2.2 + `Microsoft.NET.Test.Sdk`，项目 `OutputType=Exe` [已核实 `Directory.Packages.props`、`tests/TCode.Desktop.Tests/TCode.Desktop.Tests.csproj`]。新增测试项目沿用同样配置。
+TKCode 现有测试项目是 xunit v3 3.2.2 + `Microsoft.NET.Test.Sdk`，项目 `OutputType=Exe` [已核实 `Directory.Packages.props`、`tests/TKCode.Desktop.Tests/TKCode.Desktop.Tests.csproj`]。新增测试项目沿用同样配置。
 
 | 机制 | 用法 |
 |---|---|
@@ -321,7 +321,7 @@ TCode 现有测试项目是 xunit v3 3.2.2 + `Microsoft.NET.Test.Sdk`，项目 `
 | 平台条件 | `Assert.SkipUnless(OperatingSystem.IsWindows(), "ConPTY")` 动态跳过 |
 | 取消与超时 | 每个 PTY / host 用例使用 `TestContext.Current.CancellationToken` 并设 30 s 超时；超时时 dump 会话日志 |
 | 夹具复制 | `Fixtures/**` 设为 `CopyToOutputDirectory=PreserveNewest`；`.cast`、`.grid` 在 `.gitattributes` 中设为 `-text`（禁止 CRLF 转换） |
-| 并行 | L1 可并行；L2/L3/L4 设 `[assembly: CollectionBehavior(DisableTestParallelization = true)]`（与 `TCode.Desktop.Tests` 相同 [已核实 `HeadlessApp.cs:6`]），避免 PTY 与时钟竞争 |
+| 并行 | L1 可并行；L2/L3/L4 设 `[assembly: CollectionBehavior(DisableTestParallelization = true)]`（与 `TKCode.Desktop.Tests` 相同 [已核实 `HeadlessApp.cs:6`]），避免 PTY 与时钟竞争 |
 | 工件 | 失败时写 `artifacts/test-results/<project>/`：actual `.grid`、diff、截图、host 日志；CI 统一上传 |
 
 ---
@@ -331,8 +331,8 @@ TCode 现有测试项目是 xunit v3 3.2.2 + `Microsoft.NET.Test.Sdk`，项目 `
 ### 3.1 项目结构
 
 ```
-tests/TCode.Terminal.Benchmarks/
-  TCode.Terminal.Benchmarks.csproj      OutputType=Exe；BenchmarkDotNet；引用 Core、Protocol、Host（库方式）、Avalonia（R1/R3 绘制）
+tests/TKCode.Terminal.Benchmarks/
+  TKCode.Terminal.Benchmarks.csproj      OutputType=Exe；BenchmarkDotNet；引用 Core、Protocol、Host（库方式）、Avalonia（R1/R3 绘制）
   Program.cs                            BenchmarkSwitcher；--data <dir>；--profile pr|nightly
   Config/
     JitAotConfig.cs                      两个 Job：Jit（默认 RyuJIT + 动态 PGO）、NativeAot（BDN 的 NativeAOT 工具链）
@@ -353,7 +353,7 @@ tests/TCode.Terminal.Benchmarks/
     E2EDriver.cs                         启动 Desktop（--bench-mode），回放数据集，读 metrics 文件
 ```
 
-- 数据集路径通过 `--data` 或环境变量 `TCODE_BENCH_DATA` 传入，默认 `artifacts/bench-data/`。
+- 数据集路径通过 `--data` 或环境变量 `TKCODE_BENCH_DATA` 传入，默认 `artifacts/bench-data/`。
 - 基准中的"关闭渲染"= 只调 `TerminalCore.Write`，不调 `CaptureFrame`。另有一组"开启渲染"= 每 8 ms（模拟 120 Hz）调用一次 `CaptureFrame` + Painter。
 - 每个基准都加 `[MemoryDiagnoser]`；热路径基准另加 `[DisassemblyDiagnoser]`（只在 JIT 作业中有意义）。
 - BenchmarkDotNet 的版本：使用支持 .NET 10 与 `nativeaot10.0` 运行时标识的版本，进入 `Directory.Packages.props` [推断：落地时选当时的最新稳定版]。
@@ -363,7 +363,7 @@ tests/TCode.Terminal.Benchmarks/
 产品发布的是 NativeAOT（项目约定），而 AOT 没有动态 PGO、默认指令集基线较低（research/04 §9.1、§11 第 5 条），所以两者都跑：
 
 ```
-dotnet run -c Release --project tests/TCode.Terminal.Benchmarks -- --runtimes net10.0 nativeaot10.0 --filter '*Parse*'
+dotnet run -c Release --project tests/TKCode.Terminal.Benchmarks -- --runtimes net10.0 nativeaot10.0 --filter '*Parse*'
 ```
 
 - NativeAOT 作业：BDN 为每个基准类生成并发布一个 AOT 程序，首次运行较慢（每个类一次 ILC），所以 PR 作业只对 S1/S3/S5 跑 AOT。
@@ -387,7 +387,7 @@ S1–S12 来自 research/04 §9.2；S13–S15 为本文新增（pty host 架构 
 | S9 | 内存 | 1 万 / 10 万行的纯文本、彩色（dense_cells 截取）、CJK（ja-5m 截取） | 托管堆、原生页、压缩后大小 | 每 1 万行 × 120 列 ≤ 10 MB，压缩后 ≤ 3 MB |
 | S10 | 空闲 | 10 个终端空闲，光标闪烁，10 min | CPU、唤醒次数 | 合计 < 0.5% CPU |
 | S11 | 背压 | `yes` 运行 30 s 后发 `^C`（写字节，不合成按键） | 内存是否有界；`^C` 到提示符出现的时间 | 内存平稳；≤ 100 ms |
-| S12 | 与 Agent UI 共存 | 终端 S1 洪流 + StreamMark 流式渲染长 Markdown（TCode 现有的 Fake 模型流式输出） | 两边的帧时间 | 终端帧率不受 UI 线程负载影响（R1 阶段的验收，M6） |
+| S12 | 与 Agent UI 共存 | 终端 S1 洪流 + StreamMark 流式渲染长 Markdown（TKCode 现有的 Fake 模型流式输出） | 两边的帧时间 | 终端帧率不受 UI 线程负载影响（R1 阶段的验收，M6） |
 | S13 | host → UI 吞吐（新增） | S1 数据经真实 pty host（`cat` 文件）→ IPC → UI 侧核心 | 吞吐、Ack 往返、暂停次数 | 不低于单进程核心吞吐的 0.7× [推断：目标值] |
 | S14 | attach / 重连（新增） | 10 k / 100 k 行回滚的会话 | `session/attach` 到 READY 段可渲染的时间；全部回滚到达的时间 | READY ≤ 50 ms；10 k 行快照编码 < 20 ms（04 §18 第 1 条） |
 | S15 | Agent 读取（新增） | 50 k 行命令输出 | `command/output` 的 plain 格式化耗时（09 §5.4 每 250 ms 调用） | ≤ 5 ms / 64 KiB [推断：目标值] |
@@ -417,13 +417,13 @@ GitHub 托管 runner 的性能噪声通常在 ±10% 以上 [推断]，直接与�
 
 方案：
 
-1. 代码中只用 `System.Diagnostics.Metrics.Meter`（AOT 安全）：`Meter("TCode.Terminal")`，仪表：
+1. 代码中只用 `System.Diagnostics.Metrics.Meter`（AOT 安全）：`Meter("TKCode.Terminal")`，仪表：
    - `terminal.bytes_parsed`（Counter，按 view/mirror 标签）；
    - `terminal.snapshots_published`、`terminal.frames_rendered`（Counter）；
    - `terminal.render_ms`、`terminal.snapshot_us`、`terminal.input_latency_us`（Histogram；input 分段：`keydown→pty_write`、`pty_write→echo_parsed`、`echo_parsed→snapshot`、`snapshot→render_end`）；
    - `terminal.flow_paused`（Counter，host 侧）、`terminal.ack_rtt_us`（Histogram）；
    - `gc.gen0`（从 `GC.CollectionCount` 每秒采样）。
-2. 设置环境变量 `TCODE_TERMINAL_METRICS=<path>` 时，进程内 `MeterListener` 每秒把聚合结果（计数、Histogram 的 p50/p95/p99）写成 JSON Lines；未设置时不注册监听器（零开销）。
+2. 设置环境变量 `TKCODE_TERMINAL_METRICS=<path>` 时，进程内 `MeterListener` 每秒把聚合结果（计数、Histogram 的 p50/p95/p99）写成 JSON Lines；未设置时不注册监听器（零开销）。
 3. 需要 `dotnet-counters` / `dotnet-trace` 实时观察时，用 `-p:EventSourceSupport=true` 构建诊断版（JIT 构建本身就支持）。
 4. `E2EDriver` 启动 Desktop（`--bench-mode`：Headless 关闭，真实窗口，打开指定场景的终端标签），按数据集回放，读取 metrics 文件并输出汇总表。
 
@@ -435,10 +435,10 @@ Typometer 通过向目标窗口发送按键并截取屏幕区域来测量延迟�
 |---|---|
 | 1 环境 | 接电源、关闭省电与 True Tone / Night Shift、关闭其他应用；显示器原生刷新率记录在结果里；macOS 关闭"降低透明度"之外的视觉效果保持默认 |
 | 2 对照组 | 同机安装 Ghostty、Alacritty、kitty、WezTerm；macOS 加 Terminal.app、iTerm2；Windows 加 Windows Terminal；字体、字号、窗口尺寸（100×30）一致 |
-| 3 被测状态 | TCode 的终端标签单独占据窗口（工作台其他面板折叠）；shell 为 `sh`（避免提示符主题影响）；分别测 R3 与 R1 构建 |
-| 4 测量 | Typometer 默认设置，每个终端 200 次按键 × 3 轮；第二组在后台运行 `yes > /dev/null`（S8"洪流"条件）——注意这条命令不输出到终端，用来测 CPU 争用；第三组在另一个 TCode 终端标签运行 `yes`（测本进程负载） |
+| 3 被测状态 | TKCode 的终端标签单独占据窗口（工作台其他面板折叠）；shell 为 `sh`（避免提示符主题影响）；分别测 R3 与 R1 构建 |
+| 4 测量 | Typometer 默认设置，每个终端 200 次按键 × 3 轮；第二组在后台运行 `yes > /dev/null`（S8"洪流"条件）——注意这条命令不输出到终端，用来测 CPU 争用；第三组在另一个 TKCode 终端标签运行 `yes`（测本进程负载） |
 | 5 记录 | min / avg / max / 标准差，写入 `docs/terminal/bench/typometer-<date>-<machine>.md`（表格 + 环境描述） |
-| 6 判定 | TCode 均值 ≤ 同机 Alacritty 或 Ghostty 均值 + 2 ms（research/04 §7.3） |
+| 6 判定 | TKCode 均值 ≤ 同机 Alacritty 或 Ghostty 均值 + 2 ms（research/04 §7.3） |
 
 ---
 
@@ -477,7 +477,7 @@ Typometer 通过向目标窗口发送按键并截取屏幕区域来测量延迟�
 |---|---|
 | M0 Spike | 6 个 RID 加载 libghostty 并通过一个回放用例；PTY 往返（Unix helper + ConPTY）；AOT 二进制运行 `vim` 并退出（人工 + 一个 L5b 冒烟） |
 | M1 核心与 PTY | L1 全部（黄金样本、差分、应答、编码表、fuzz PR 子集）；esctest 进 CI 且门槛达标；L2 全部（压力测试在每晚） |
-| M2 pty host | L3 全部；`tcode-ptyhost --self-test` 在 aot-smoke 中运行 |
+| M2 pty host | L3 全部；`tkcode-ptyhost --self-test` 在 aot-smoke 中运行 |
 | M3 视图 | L4 全部；S1、S3、S4、S5 达标；S8 自动部分 |
 | M4 集成 | L5b；§1.6 手工清单三平台完成 |
 | M5 Agent | 09 §16 全部 |
@@ -488,7 +488,7 @@ Typometer 通过向目标窗口发送按键并截取屏幕区域来测量延迟�
 ## 6. 待决问题
 
 1. **win-x64 的 libghostty 可能使用标量构建**（12 号文档 §4.3），S1 的 500 MB/s 目标在该 RID 上是否放宽，或者要求 SIMD 构建通过 CPU 兼容性验证后再发布。
-2. 是否新增 `tests/TCode.Terminal.Avalonia.Tests`（§1 表后的说明）；01 §4 的测试项目列表需要相应补充 `TCode.Terminal.Avalonia.Tests` 与 `tools/terminal/EscTestRunner`。
+2. 是否新增 `tests/TKCode.Terminal.Avalonia.Tests`（§1 表后的说明）；01 §4 的测试项目列表需要相应补充 `TKCode.Terminal.Avalonia.Tests` 与 `tools/terminal/EscTestRunner`。
 3. 有无固定硬件的自托管 runner 跑每晚基准（§3.4）。
 4. Claude Code / Codex 录制夹具的来源：是否允许开发者本人录制一次真实会话入库（不在 CI 中调用模型）。
 
@@ -496,7 +496,7 @@ Typometer 通过向目标窗口发送按键并截取屏幕区域来测量延迟�
 
 ## 来源
 
-- 本仓库：`Directory.Packages.props`；`tests/TCode.Desktop.Tests/HeadlessApp.cs`、`TCode.Desktop.Tests.csproj`；`tests/TCode.Agent.Tests/RpcEndToEndTests.cs`；`src/TCode.Desktop/Services/AgentHostConnection.cs`。
+- 本仓库：`Directory.Packages.props`；`tests/TKCode.Desktop.Tests/HeadlessApp.cs`、`TKCode.Desktop.Tests.csproj`；`tests/TKCode.Agent.Tests/RpcEndToEndTests.cs`；`src/TKCode.Desktop/Services/AgentHostConnection.cs`。
 - Ghostty `ghostty-org/ghostty@b3dc3d7`：`test/esctest/README.md`、`test/esctest/src/main.zig`、`test/fuzz-libghostty/README.md` 与 `corpus/`、`include/ghostty/vt/terminal.h`（XT_CHECKSUM 选项）、`include/ghostty/vt/build_info.h`。
 - asciicast 规范：https://docs.asciinema.org/manual/asciicast/v2/ 、https://docs.asciinema.org/manual/asciicast/v3/ （2026-10-16 读取）。
 - SharpFuzz：https://github.com/Metalnem/sharpfuzz （2026-10-16 读取）。

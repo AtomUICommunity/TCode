@@ -1,0 +1,47 @@
+tkcode-grid 1
+size 139x35 cell 8x16
+cursor 47,2 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=1 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+  s1 fg=0 bg=9
+  s2 fg=7 bg=8
+  s3 inverse
+rows
+   0 | UL  ~/…/tests/ref/zerowidth  zerowidth-slice  echo "( <0361>° <035c>ʖ <0361>°)"                                                           | s1:0-3 s2:4-28 s1:29-45 s0:46-54 s3:55-60 s0:61-62 s3:63-68 s0:69-70 s3:71-76 s0:77-138
+   1 |( ° ʖ °)                                                                                                                                   | s0  g:1=U+0020,U+0361 g:3=U+0020,U+035C g:5=U+0020,U+0361
+   2 | UL  ~/…/tests/ref/zerowidth  zerowidth-slice                                                                                              | s1:0-3 s2:4-28 s1:29-45 s0:46-138
+   3 |                                                                                                                                           | s0
+   4 |                                                                                                                                           | s0
+   5 |                                                                                                                                           | s0
+   6 |                                                                                                                                           | s0
+   7 |                                                                                                                                           | s0
+   8 |                                                                                                                                           | s0
+   9 |                                                                                                                                           | s0
+  10 |                                                                                                                                           | s0
+  11 |                                                                                                                                           | s0
+  12 |                                                                                                                                           | s0
+  13 |                                                                                                                                           | s0
+  14 |                                                                                                                                           | s0
+  15 |                                                                                                                                           | s0
+  16 |                                                                                                                                           | s0
+  17 |                                                                                                                                           | s0
+  18 |                                                                                                                                           | s0
+  19 |                                                                                                                                           | s0
+  20 |                                                                                                                                           | s0
+  21 |                                                                                                                                           | s0
+  22 |                                                                                                                                           | s0
+  23 |                                                                                                                                           | s0
+  24 |                                                                                                                                           | s0
+  25 |                                                                                                                                           | s0
+  26 |                                                                                                                                           | s0
+  27 |                                                                                                                                           | s0
+  28 |                                                                                                                                           | s0
+  29 |                                                                                                                                           | s0
+  30 |                                                                                                                                           | s0
+  31 |                                                                                                                                           | s0
+  32 |                                                                                                                                           | s0
+  33 |                                                                                                                                           | s0
+  34 |                                                                                                                                           | s0

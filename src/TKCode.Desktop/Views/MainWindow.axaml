@@ -1,0 +1,977 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:motion="using:TKCode.Desktop.Motion"
+        xmlns:sm="using:StreamMark.Avalonia.Transcript"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:views="using:TKCode.Desktop.Views"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:controls="using:TKCode.Desktop.Controls"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.MainWindow"
+        xmlns:composer="using:TKCode.Desktop.Controls.Composer"
+             x:DataType="vm:MainWindowViewModel"
+             Title="TKCode"
+             Icon="avares://TKCode/Assets/app-logo.png"
+             Width="1280" Height="800" MinWidth="880" MinHeight="560"
+             IsTitleBarVisible="False"
+             Background="{DynamicResource TKCode.WindowBg}"
+             Foreground="{DynamicResource TKCode.TextPrimary}">
+    <Grid>
+        <!-- 主区背景光晕（铺满整个窗口，侧栏在其上方叠加自己的底色） -->
+        <Border Background="{DynamicResource TKCode.GlowMain}" IsHitTestVisible="False" />
+        <Border Background="{DynamicResource TKCode.GlowAccent}" IsHitTestVisible="False" />
+
+        <Grid x:Name="AppPage" ColumnDefinitions="Auto,*" motion:Presence.IsPresent="{Binding !IsSettingsOpen}">
+            <!-- ============ 侧栏：项目筛选 + 会话列表 ============ -->
+            <!-- 侧栏开合：宽度动画，内容固定 256 宽、随边缘滑入滑出 -->
+            <motion:Reveal x:Name="SidebarReveal" Grid.Column="0" Orientation="Horizontal" IsOpen="{Binding IsSidebarOpen}" Offset="-256" Fade="False">
+            <Border Width="256"
+                    Background="{DynamicResource TKCode.SidebarBg}"
+                    BorderBrush="{DynamicResource TKCode.Divider}" BorderThickness="0,0,1,0">
+                <Panel>
+                    <Border Background="{DynamicResource TKCode.GlowSidebar}" IsHitTestVisible="False" />
+                    <DockPanel>
+                        <Panel DockPanel.Dock="Top" Height="44" Background="Transparent"
+                               WindowDecorationProperties.ElementRole="TitleBar">
+                            <StackPanel x:Name="SidebarHeader" Orientation="Horizontal" Spacing="2"
+                                        VerticalAlignment="Center" Margin="8,0,0,0">
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding ToggleSidebarCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource ToggleSidebar}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="PanelLeft" /></atom:Button.Icon>
+                                </atom:Button>
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding Conversation.GoBackCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource Back}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="ArrowLeft" /></atom:Button.Icon>
+                                </atom:Button>
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding Conversation.GoForwardCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource Forward}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="ArrowRight" /></atom:Button.Icon>
+                                </atom:Button>
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding Sidebar.NewSessionCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource NewSession}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="Plus" /></atom:Button.Icon>
+                                </atom:Button>
+                            </StackPanel>
+                        </Panel>
+
+                        <!-- 项目筛选 -->
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="8,4,8,0">
+                            <views:ProjectPickerView Classes="sidebar" DataContext="{Binding Sidebar.FilterPicker}" />
+                            <atom:Button Grid.Column="1" Color="Default" Variant="Text" SizeType="Small" Margin="2,0,0,0"
+                                         ToolTip.Tip="{loc:TKCodeLangResource More}" Click="OnAddProjectClick">
+                                <atom:Button.Icon><icons:LucideIcon Kind="Ellipsis" /></atom:Button.Icon>
+                            </atom:Button>
+                        </Grid>
+
+                        <!-- 底部：用户、语言、主题、设置 -->
+                        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="12,6,8,12">
+                            <Border Width="18" Height="18" CornerRadius="9" Background="{DynamicResource TKCode.TextPrimary}"
+                                    ToolTip.Tip="{Binding Sidebar.UserName}" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Sidebar.UserInitial}" FontSize="10" FontWeight="Bold"
+                                           Foreground="{DynamicResource TKCode.WindowBg}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <atom:Button Grid.Column="2" Color="Default" Variant="Text" SizeType="Small"
+                                         Command="{Binding ToggleLanguageCommand}" ToolTip.Tip="{loc:TKCodeLangResource SwitchLanguage}">
+                                <atom:Button.Icon><icons:LucideIcon Kind="Languages" /></atom:Button.Icon>
+                            </atom:Button>
+                            <atom:Button Grid.Column="3" Color="Default" Variant="Text" SizeType="Small"
+                                         Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:TKCodeLangResource ToggleTheme}">
+                                <atom:Button.Icon>
+                                    <icons:LucideIcon Kind="{Binding Themes.IsDark, Converter={x:Static views:Converters.ThemeIcon}}" />
+                                </atom:Button.Icon>
+                            </atom:Button>
+                            <Panel Grid.Column="4">
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding OpenSettingsCommand}"
+                                             ToolTip.Tip="{loc:TKCodeLangResource OpenSettings}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="Settings" /></atom:Button.Icon>
+                                </atom:Button>
+                                <!-- 有可用更新：关闭提醒卡片后仍能从这里进入设置 › 关于 -->
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource TKCode.Accent}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                         Margin="0,3,3,0" IsHitTestVisible="False" IsVisible="{Binding Updates.HasUpdate}"
+                                         ToolTip.Tip="{loc:TKCodeLangResource UpdateBadgeTip}" />
+                            </Panel>
+                        </Grid>
+
+                        <!-- 会话列表：标题行固定，列表虚拟化（只创建可见行），滚到底部时加载下一页 -->
+                        <DockPanel Margin="8,6,8,8">
+                            <StackPanel DockPanel.Dock="Top">
+                                <TextBlock Classes="secondary" Text="{loc:TKCodeLangResource NoSessions}" FontSize="12" Margin="8,8,0,0"
+                                           IsVisible="{Binding Sidebar.HasNoSessions}" />
+                                <Button Theme="{StaticResource TKCode.RowButton}" MinHeight="28" Padding="8,0" Margin="0,8,0,2"
+                                        IsVisible="{Binding !Sidebar.HasNoSessions}" Command="{Binding Sidebar.ToggleSessionsCommand}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Classes="section" Text="{loc:TKCodeLangResource Sessions}" VerticalAlignment="Center" />
+                                        <icons:LucideIcon Grid.Column="1" Kind="ChevronDown" Width="12" Height="12"
+                                                          motion:Turn.IsOn="{Binding !Sidebar.IsSessionsExpanded}" motion:Turn.Angle="-90"
+                                                          StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                                    </Grid>
+                                </Button>
+                            </StackPanel>
+                            <motion:Reveal IsOpen="{Binding Sidebar.IsSessionsExpanded}" Offset="-10">
+                            <ItemsControl x:Name="SessionList" ItemsSource="{Binding Sidebar.VisibleSessions}" motion:ItemsMotion.Enter="SlideDown">
+                                <ItemsControl.Template>
+                                    <ControlTemplate>
+                                        <ScrollViewer atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SessionItemViewModel">
+                                        <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsSelected}" MinHeight="30" Margin="0,0,0,1"
+                                                Padding="6,0,8,0" ToolTip.Tip="{Binding DisplayTitle}" DoubleTapped="OnSessionDoubleTapped"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.OpenSessionCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Button.ContextMenu>
+                                                <atom:ContextMenu>
+                                                    <atom:MenuItem Header="{loc:TKCodeLangResource SessionRename}" Command="{Binding BeginRenameCommand}">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="Pencil" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                    <atom:MenuItem Header="{Binding PinMenuText}" Command="{Binding TogglePinCommand}">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="Pin" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                    <atom:MenuItem Header="{loc:TKCodeLangResource SessionFork}" Command="{Binding ForkCommand}" IsEnabled="{Binding CanFork}">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="GitBranch" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                    <atom:MenuSeparator />
+                                                    <atom:MenuItem Header="{Binding RevealMenuText}" Command="{Binding RevealCommand}">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="Folder" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                    <atom:MenuItem Header="{loc:TKCodeLangResource SessionCopyId}" Command="{Binding CopyIdCommand}">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="Copy" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                    <atom:MenuSeparator />
+                                                    <atom:MenuItem Header="{loc:TKCodeLangResource SessionDelete}" Command="{Binding DeleteCommand}" Classes="danger">
+                                                        <atom:MenuItem.Icon><icons:LucideIcon Kind="Trash" StrokeBrush="{DynamicResource TKCode.Danger}" /></atom:MenuItem.Icon>
+                                                    </atom:MenuItem>
+                                                </atom:ContextMenu>
+                                            </Button.ContextMenu>
+                                            <Grid ColumnDefinitions="12,Auto,Auto,*,Auto">
+                                                <Panel VerticalAlignment="Center">
+                                                    <controls:DotSpinner Width="9" Height="9" IsVisible="{Binding ShowSpinner}" HorizontalAlignment="Center" />
+                                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource TKCode.TextTertiary}" HorizontalAlignment="Center"
+                                                             IsVisible="{Binding ShowIdleDot}" />
+                                                    <Ellipse Width="7" Height="7" Fill="{DynamicResource TKCode.GitModified}" HorizontalAlignment="Center"
+                                                             IsVisible="{Binding IsWaitingApproval}" ToolTip.Tip="{loc:TKCodeLangResource SessionWaitingForYou}" />
+                                                </Panel>
+                                                <Panel Grid.Column="1" Width="14" Height="14" Margin="4,0,6,0" VerticalAlignment="Center">
+                                                    <icons:ProviderLogo Key="{Binding ModelIconKey}" Width="14" Height="14" />
+                                                    <!-- 外部运行时：右下角叠加运行时小图标 -->
+                                                    <Border Width="9" Height="9" CornerRadius="2" Margin="0,0,-4,-4" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                                            Background="{DynamicResource TKCode.SidebarBg}" IsVisible="{Binding HasRuntime}" ToolTip.Tip="{Binding RuntimeTip}">
+                                                        <icons:ProviderLogo Key="{Binding RuntimeIconKey}" Width="8" Height="8" />
+                                                    </Border>
+                                                </Panel>
+                                                <Border Grid.Column="2" Width="14" Height="14" CornerRadius="3" Background="{DynamicResource TKCode.BadgeBg}"
+                                                        ToolTip.Tip="{Binding ProjectName}" VerticalAlignment="Center" Margin="0,0,7,0">
+                                                    <TextBlock Text="{Binding ProjectInitial}" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TKCode.BadgeFg}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <TextBlock Grid.Column="3" Classes="strong" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" MaxLines="1"
+                                                           VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" />
+                                                <!-- 行内重命名：Enter 保存，Esc 取消，失去焦点保存 -->
+                                                <atom:LineEdit Grid.Column="3" Grid.ColumnSpan="2" SizeType="Small" IsVisible="{Binding IsRenaming}"
+                                                               Text="{Binding EditTitle, Mode=TwoWay}" VerticalAlignment="Center"
+                                                               controls:InlineEdit.CommitCommand="{Binding CommitRenameCommand}"
+                                                               controls:InlineEdit.CancelCommand="{Binding CancelRenameCommand}" />
+                                                <Panel Grid.Column="4" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}">
+                                                    <TextBlock Classes="tertiary" Text="{Binding RelativeTime}" FontSize="11" IsVisible="{Binding !IsPinned}" />
+                                                    <icons:LucideIcon Kind="Pin" Width="11" Height="11" IsVisible="{Binding IsPinned}"
+                                                                      StrokeBrush="{DynamicResource TKCode.TextTertiary}" ToolTip.Tip="{loc:TKCodeLangResource SessionPinned}" />
+                                                </Panel>
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            </motion:Reveal>
+                        </DockPanel>
+                    </DockPanel>
+                </Panel>
+            </Border>
+            </motion:Reveal>
+
+            <!-- ============ 主区域：对话 | 分割条 | 编辑区 | 分割条 | 文件树 ============ -->
+            <Grid x:Name="MainGrid" Grid.Column="1" ColumnDefinitions="*,Auto,0,Auto,0">
+                <DockPanel x:Name="ConversationColumn" Grid.Column="0" ClipToBounds="True">
+                    <Panel x:Name="ConversationHeader" DockPanel.Dock="Top" Height="44" Background="Transparent"
+                           WindowDecorationProperties.ElementRole="TitleBar">
+                        <StackPanel x:Name="MainHeaderLeft" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="2" motion:Presence.IsPresent="{Binding !IsSidebarOpen}" motion:Presence.Effect="Fade"
+                                        motion:Presence.AnimateExit="False">
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding ToggleSidebarCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource ToggleSidebar}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="PanelLeft" /></atom:Button.Icon>
+                                </atom:Button>
+                                <atom:Button Color="Default" Variant="Text" SizeType="Small" Command="{Binding Sidebar.NewSessionCommand}"
+                                             WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource NewSession}">
+                                    <atom:Button.Icon><icons:LucideIcon Kind="Plus" /></atom:Button.Icon>
+                                </atom:Button>
+                            </StackPanel>
+                            <!-- 会话标题：模型图标 + 标题 + 项目 @ 设备 -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="8,0,0,0"
+                                        motion:Presence.IsPresent="{Binding !Conversation.IsEmpty}" motion:Presence.Effect="SlideRight">
+                                <icons:ProviderLogo Key="{Binding Conversation.HeaderIconKey}" Width="15" Height="15" VerticalAlignment="Center" />
+                                <TextBlock Classes="strong" Text="{Binding Conversation.HeaderTitle}" MaxWidth="360" TextTrimming="CharacterEllipsis" MaxLines="1"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Classes="secondary" Text="{Binding Conversation.HeaderSubtitle}" FontSize="12" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Panel>
+
+                    <Panel>
+                        <!-- 空状态：居中的 Composer，上方是设备 / 项目，下方是检出 / 分支 -->
+                        <StackPanel MaxWidth="620" Margin="32,0,32,72" Spacing="8" VerticalAlignment="Center"
+                                    motion:Presence.IsPresent="{Binding Conversation.IsEmpty}" motion:Presence.Effect="Zoom" motion:Presence.Distance="-8">
+                            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                                <Button Theme="{StaticResource TKCode.ChipButton}" ToolTip.Tip="{loc:TKCodeLangResource Online}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:LucideIcon Kind="Monitor" Width="12" Height="12" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Conversation.DeviceName}" FontSize="12"
+                                                   VerticalAlignment="Center" />
+                                        <icons:LucideIcon Kind="ChevronDown" Width="11" Height="11" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <views:ProjectPickerView DataContext="{Binding Sidebar.WorkspacePicker}" />
+                            </StackPanel>
+
+                            <views:ComposerView x:Name="EmptyComposer" DataContext="{Binding Conversation}" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Theme="{StaticResource TKCode.ChipButton}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <icons:LucideIcon Kind="Folder" Width="12" Height="12" VerticalAlignment="Center" />
+                                        <TextBlock Text="{loc:TKCodeLangResource CurrentCheckout}" FontSize="12" VerticalAlignment="Center" />
+                                        <icons:LucideIcon Kind="ChevronDown" Width="11" Height="11" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <views:BranchPickerView DataContext="{Binding Conversation.BranchPicker}" />
+                                <!-- 权限档位（询问 / 自动放行 / 完全授权） -->
+                                <views:PermissionPickerView DataContext="{Binding Conversation.Permission}" Margin="4,0,0,0" />
+                                <!-- 模式（Agent / Ask / Plan / 自定义 role） -->
+                                <views:RolePickerView x:Name="EmptyRolePicker" DataContext="{Binding Conversation.RolePicker}" Margin="2,0,0,0" />
+                            </StackPanel>
+
+                            <motion:Reveal IsOpen="{Binding Conversation.StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <TextBlock Classes="secondary" Text="{Binding Conversation.StatusMessage}" TextWrapping="Wrap" Margin="8,4,0,0" />
+                            </motion:Reveal>
+                        </StackPanel>
+
+                        <!-- 会话转录 -->
+                        <DockPanel motion:Presence.IsPresent="{Binding !Conversation.IsEmpty}" motion:Presence.Effect="Fade">
+                            <StackPanel DockPanel.Dock="Bottom" Margin="32,6,32,14" MaxWidth="760" Spacing="6">
+                                <!-- 运行中发送的消息：排队，可编辑、移除或立即插入当前轮 -->
+                                <!-- 卡片出现 / 消失时高度平滑过渡，输入框被顺滑地推上去 -->
+                                <motion:Reveal IsOpen="{Binding Conversation.Active.HasQueuedPrompts, FallbackValue=False}" Offset="10">
+                                <Border Classes="card" Padding="10,8">
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,2">
+                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock Classes="secondary" FontSize="12" Text="{Binding Conversation.Active.QueueTitle, FallbackValue={x:Null}}" />
+                                                <TextBlock Classes="tertiary" FontSize="12" Text="{loc:TKCodeLangResource QueuePaused}"
+                                                           IsVisible="{Binding Conversation.Active.IsQueuePaused, FallbackValue=False}" />
+                                            </StackPanel>
+                                            <atom:Button Grid.Column="1" SizeType="Small" Variant="Text" Command="{Binding Conversation.ResumeQueueCommand}"
+                                                         IsVisible="{Binding Conversation.Active.IsQueuePaused, FallbackValue=False}"
+                                                         Content="{loc:TKCodeLangResource QueueResume}" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Conversation.Active.QueuedPrompts, FallbackValue={x:Null}}" motion:ItemsMotion.Enter="SlideUp">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:QueuedPromptViewModel">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="30">
+                                                        <icons:LucideIcon Kind="CornerDownLeft" Width="12" Height="12" Margin="4,0,8,0" VerticalAlignment="Center"
+                                                                          StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                                   IsVisible="{Binding !IsEditing}" ToolTip.Tip="{Binding DisplayText}" />
+                                                        <atom:LineEdit Grid.Column="1" Grid.ColumnSpan="2" SizeType="Small" IsVisible="{Binding IsEditing}"
+                                                                       Text="{Binding EditText, Mode=TwoWay}" VerticalAlignment="Center"
+                                                                       controls:InlineEdit.CommitCommand="{Binding CommitEditCommand}"
+                                                                       controls:InlineEdit.CancelCommand="{Binding CancelEditCommand}" />
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="8,0,0,0" IsVisible="{Binding !IsEditing}">
+                                                            <atom:Button SizeType="Small" Variant="Text" Shape="Circle" Command="{Binding BeginEditCommand}"
+                                                                         ToolTip.Tip="{loc:TKCodeLangResource QueueEdit}">
+                                                                <atom:Button.Icon><icons:LucideIcon Kind="Pencil" /></atom:Button.Icon>
+                                                            </atom:Button>
+                                                            <atom:Button SizeType="Small" Variant="Text" Command="{Binding SendNowCommand}"
+                                                                         ToolTip.Tip="{loc:TKCodeLangResource QueueSendNowTip}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                    <icons:LucideIcon Kind="ArrowUp" Width="12" Height="12" VerticalAlignment="Center" />
+                                                                    <TextBlock Text="{loc:TKCodeLangResource QueueSendNow}" FontSize="12" VerticalAlignment="Center" />
+                                                                </StackPanel>
+                                                            </atom:Button>
+                                                            <atom:Button SizeType="Small" Variant="Text" Shape="Circle" Command="{Binding RemoveCommand}"
+                                                                         ToolTip.Tip="{loc:TKCodeLangResource QueueRemove}">
+                                                                <atom:Button.Icon><icons:LucideIcon Kind="X" /></atom:Button.Icon>
+                                                            </atom:Button>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                </motion:Reveal>
+                                <!-- 等待批准的操作 -->
+                                <motion:Reveal IsOpen="{Binding Conversation.Active.HasPendingApproval, FallbackValue=False}" Offset="12">
+                                <Border Classes="card" Padding="14,12" BorderBrush="{DynamicResource TKCode.GitModified}">
+                                    <StackPanel Spacing="8" DataContext="{Binding Conversation.Active.CurrentApproval, FallbackValue={x:Null}}"
+                                                x:DataType="vm:ApprovalRequestViewModel">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <icons:LucideIcon Kind="{Binding Icon}" Width="15" Height="15" VerticalAlignment="Center"
+                                                              StrokeBrush="{DynamicResource TKCode.GitModified}" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="10,0" VerticalAlignment="Center">
+                                                <TextBlock Classes="strong" Text="{loc:TKCodeLangResource ApprovalTitle}" />
+                                                <TextBlock Classes="secondary" Text="{Binding KindText}" FontSize="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Classes="tertiary" VerticalAlignment="Center"
+                                                       Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.Active.MoreApprovalsText, FallbackValue=''}"
+                                                       IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.Active.HasMoreApprovals, FallbackValue=False}" />
+                                        </Grid>
+                                        <Border Background="{DynamicResource TKCode.CodeBg}" CornerRadius="6" Padding="10,6">
+                                            <SelectableTextBlock Text="{Binding Title}" FontFamily="{StaticResource TKCode.MonoFont}" FontSize="12" TextWrapping="Wrap" />
+                                        </Border>
+                                        <SelectableTextBlock Text="{Binding Details}" FontFamily="{StaticResource TKCode.MonoFont}" FontSize="11" TextWrapping="Wrap"
+                                                             MaxHeight="120" Foreground="{DynamicResource TKCode.TextSecondary}" IsVisible="{Binding HasDetails}" />
+                                        <TextBlock Classes="secondary" Text="{Binding Reason}" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasReason}" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                            <atom:Button SizeType="Small" Color="Default" Variant="Text" Command="{Binding DenyCommand}" Content="{loc:TKCodeLangResource Deny}" />
+                                            <atom:Button SizeType="Small" Color="Default" Variant="Outlined" Command="{Binding AllowForSessionCommand}"
+                                                         IsVisible="{Binding CanAllowForSession}" Content="{loc:TKCodeLangResource AllowForSession}" />
+                                            <atom:Button SizeType="Small" Color="Default" Variant="Solid" Command="{Binding AllowOnceCommand}"
+                                                         Content="{loc:TKCodeLangResource AllowOnce}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                </motion:Reveal>
+                                <!-- MCP 服务器请求用户输入 -->
+                                <motion:Reveal IsOpen="{Binding Conversation.Active.HasPendingElicitation, FallbackValue=False}" Offset="12">
+                                    <views:McpElicitationView DataContext="{Binding Conversation.Active.CurrentElicitation, FallbackValue={x:Null}}" />
+                                </motion:Reveal>
+                                <!-- Agent 提问：问答面板替换输入框，必须先回答或拒绝回答（docs/design/ask-user.md §7） -->
+                                <views:QuestionPanelView x:Name="QuestionPanel" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.IsAnsweringQuestion, FallbackValue=False}"
+                                                         DataContext="{Binding Conversation.Active.CurrentQuestion, FallbackValue={x:Null}}" />
+                                <views:ComposerView x:Name="DockedComposer" Classes="compact" DataContext="{Binding Conversation}"
+                                                    IsVisible="{Binding !IsAnsweringQuestion}" />
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="6,0">
+                                    <Button Theme="{StaticResource TKCode.ChipButton}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <icons:LucideIcon Kind="Folder" Width="12" Height="12" VerticalAlignment="Center" />
+                                            <TextBlock Text="{loc:TKCodeLangResource LocalCheckout}" FontSize="12" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <views:BranchPickerView Grid.Column="1" DataContext="{Binding Conversation.BranchPicker}" />
+                                    <views:PermissionPickerView Grid.Column="2" DataContext="{Binding Conversation.Permission}" Margin="4,0,0,0" />
+                                    <views:RolePickerView x:Name="DockedRolePicker" Grid.Column="3" DataContext="{Binding Conversation.RolePicker}" Margin="2,0,0,0" />
+                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                                IsVisible="{Binding Conversation.HasContextUsage}" ToolTip.Tip="{Binding Conversation.ContextUsageTip}"
+                                                Background="Transparent">
+                                        <Panel>
+                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
+                                                                  TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.TextSecondary}"
+                                                                  IsVisible="{Binding !Conversation.IsContextNearlyFull}" />
+                                            <!-- 接近自动压缩阈值：换成强调色 -->
+                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
+                                                                  TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.FileOrange}"
+                                                                  IsVisible="{Binding Conversation.IsContextNearlyFull}" />
+                                        </Panel>
+                                        <TextBlock Classes="secondary" Text="{Binding Conversation.ContextUsageText}" FontSize="12" />
+                                    </StackPanel>
+                                </Grid>
+                                <motion:Reveal IsOpen="{Binding Conversation.StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <TextBlock Classes="secondary" Text="{Binding Conversation.StatusMessage}" TextWrapping="Wrap" Margin="8,0" />
+                                </motion:Reveal>
+                            </StackPanel>
+                            <!-- 会话：StreamMark 虚拟化会话视图（正文块按顶层 Markdown 块虚拟化，可跨消息选择）；
+                                 其余条目（用户消息、思考、工具调用、消息底栏、等待指示）使用下面的数据模板 -->
+                            <Panel>
+                            <sm:TranscriptView x:Name="Transcript" MaxContentWidth="760" Padding="32,8,32,16" EntrySpacing="12"
+                                               atom:ScrollViewer.IsLiteMode="True">
+                                <sm:TranscriptView.DataTemplates>
+                                    <!-- 一轮结束的改动：N 个文件已更改，整轮撤销，逐文件审查 / 打开 -->
+                                    <DataTemplate DataType="vm:TurnChangesItemViewModel">
+                                        <views:TurnChangesView />
+                                    </DataTemplate>
+                                    <!-- Agent 的提问与用户的回答 -->
+                                    <DataTemplate DataType="vm:QuestionCardViewModel">
+                                        <views:QuestionCardView />
+                                    </DataTemplate>
+                                    <!-- 非用户输入：后台任务通知 / 其他 Agent 会话的消息，一行提示，展开看正文 -->
+                                    <DataTemplate DataType="vm:NotificationItemViewModel">
+                                        <StackPanel Margin="0,4">
+                                            <Button Theme="{StaticResource TKCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <icons:LucideIcon Kind="{Binding Icon}" Width="13" Height="13" VerticalAlignment="Center"
+                                                                      StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                                                    <TextBlock Classes="secondary" Text="{Binding Header}" FontSize="13" VerticalAlignment="Center" />
+                                                    <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                                                      motion:Turn.IsOn="{Binding IsExpanded}" />
+                                                </StackPanel>
+                                            </Button>
+                                            <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                                <Border Background="{DynamicResource TKCode.CodeBg}" CornerRadius="6" Padding="10,8" Margin="22,4,0,0">
+                                                    <ScrollViewer MaxHeight="240" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                                                        <SelectableTextBlock Text="{Binding Body}" FontSize="12" TextWrapping="Wrap"
+                                                                             Foreground="{DynamicResource TKCode.TextSecondary}" />
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </motion:Reveal>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 上下文压缩：分隔线中间一行状态（压缩中 / 已压缩 N → M / 失败），点击展开摘要 -->
+                                    <DataTemplate DataType="vm:CompactionItemViewModel">
+                                        <StackPanel Margin="0,8">
+                                            <Grid ColumnDefinitions="*,Auto,*">
+                                                <Border Height="1" Background="{DynamicResource TKCode.Divider}" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Theme="{StaticResource TKCode.ChipButton}" Padding="8,0" Margin="8,0"
+                                                        Command="{Binding ToggleCommand}" Cursor="{Binding HasSummary, Converter={x:Static vm:CompactionCursors.Of}}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <controls:DotSpinner Width="10" Height="10" VerticalAlignment="Center" IsVisible="{Binding IsRunning}" />
+                                                        <icons:LucideIcon Kind="Minimize2" Width="12" Height="12" VerticalAlignment="Center"
+                                                                          StrokeBrush="{DynamicResource TKCode.TextTertiary}"
+                                                                          IsVisible="{Binding !IsRunning}" />
+                                                        <TextBlock Classes="secondary" Text="{Binding Header}" FontSize="12" VerticalAlignment="Center"
+                                                                   TextWrapping="Wrap" MaxWidth="520" />
+                                                        <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                                                          IsVisible="{Binding HasSummary}" motion:Turn.IsOn="{Binding IsExpanded}" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Border Grid.Column="2" Height="1" Background="{DynamicResource TKCode.Divider}" VerticalAlignment="Center" />
+                                            </Grid>
+                                            <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                                <Border Background="{DynamicResource TKCode.CodeBg}" CornerRadius="6" Padding="10,8" Margin="0,6,0,0">
+                                                    <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled">
+                                                        <SelectableTextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap"
+                                                                             Foreground="{DynamicResource TKCode.TextSecondary}" />
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </motion:Reveal>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <DataTemplate DataType="vm:UserMessageItemViewModel">
+                                        <StackPanel HorizontalAlignment="Right" MaxWidth="560" Margin="0,8,0,4" Spacing="6"
+                                                    motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="14">
+                                            <!-- 附图：点击全屏查看；附件文件已删除时显示占位 -->
+                                            <ItemsControl ItemsSource="{Binding Images}" IsVisible="{Binding HasImages}" HorizontalAlignment="Right">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:ImageAttachmentViewModel">
+                                                        <Border CornerRadius="10" ClipToBounds="True" Margin="6,0,0,6"
+                                                                BorderBrush="{DynamicResource TKCode.ComposerBorder}" BorderThickness="1"
+                                                                Background="{DynamicResource TKCode.UserBubble}"
+                                                                Cursor="Hand" ToolTip.Tip="{Binding FileName}" Tapped="OnMessageImageTapped">
+                                                            <Panel>
+                                                                <Image Source="{Binding Thumbnail}" MaxHeight="160" MaxWidth="240" Stretch="Uniform"
+                                                                       IsVisible="{Binding HasThumbnail}" />
+                                                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="12,8" IsVisible="{Binding !HasThumbnail}">
+                                                                    <icons:LucideIcon Kind="Image" Width="14" Height="14" VerticalAlignment="Center"
+                                                                                      StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                                                                    <TextBlock Classes="tertiary" FontSize="12" VerticalAlignment="Center"
+                                                                               Text="{loc:TKCodeLangResource ImageMissing}" />
+                                                                </StackPanel>
+                                                            </Panel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Border Background="{DynamicResource TKCode.UserBubble}" CornerRadius="14" Padding="14,9" HorizontalAlignment="Right">
+                                                <Panel>
+                                                    <SelectableTextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" IsVisible="{Binding !HasSegments}" />
+                                                    <!-- 带 tag 的消息：与输入框相同的样子（只读，可选择复制） -->
+                                                    <composer:ComposerEditor IsReadOnly="True" IsVisible="{Binding HasSegments}" Cursor="Arrow"
+                                                                             Document="{Binding Segments, FallbackValue={x:Null}}" />
+                                                </Panel>
+                                            </Border>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 会话顶部：还有更早的消息（滚动到顶部时自动加载） -->
+                                    <DataTemplate DataType="vm:EarlierHistoryViewModel">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,4,0,8">
+                                            <controls:DotSpinner Width="10" Height="10" VerticalAlignment="Center" IsVisible="{Binding Session.IsLoadingEarlier}" />
+                                            <icons:LucideIcon Kind="ArrowUp" Width="12" Height="12" VerticalAlignment="Center"
+                                                              StrokeBrush="{DynamicResource TKCode.TextTertiary}" IsVisible="{Binding !Session.IsLoadingEarlier}" />
+                                            <TextBlock Classes="tertiary" FontSize="12" VerticalAlignment="Center" Text="{loc:TKCodeLangResource EarlierMessages}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 单独的一段思考（其后紧跟正文）：› 思考过程 -->
+                                    <DataTemplate DataType="vm:ThinkingBlockViewModel">
+                                        <StackPanel motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="6">
+                                            <Button Theme="{StaticResource TKCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                                                      motion:Turn.IsOn="{Binding IsExpanded}" />
+                                                    <TextBlock Text="{Binding Header}" FontSize="13" VerticalAlignment="Center" />
+                                                    <TextBlock Classes="tertiary" Text="{Binding Stats}" FontSize="12" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="9,2,0,4">
+                                                <Border Width="1" Background="{DynamicResource TKCode.TreeLine}" />
+                                                <!-- 固定最大高度，超出在框内滚动，流式时贴底 -->
+                                                <ScrollViewer Grid.Column="1" MaxHeight="240" Margin="18,2,0,2" atom:ScrollViewer.IsLiteMode="True"
+                                                              HorizontalScrollBarVisibility="Disabled" controls:FollowTail.IsEnabled="True">
+                                                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" LineHeight="19"
+                                                                         Foreground="{DynamicResource TKCode.TextSecondary}" Margin="0,0,8,0" />
+                                                </ScrollViewer>
+                                            </Grid>
+                                            </motion:Reveal>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 活动组：› 思考 2 次 · 运行 4 条命令；展开后引导线串起每个步骤 -->
+                                    <DataTemplate DataType="vm:ActivityGroupViewModel">
+                                        <StackPanel motion:Entrance.Effect="SlideUp" motion:Entrance.Distance="6">
+                                            <StackPanel.Styles>
+                                                <Style Selector="SelectableTextBlock.output.failed">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TKCode.Danger}" />
+                                                </Style>
+                                            </StackPanel.Styles>
+                                            <Button Theme="{StaticResource TKCode.TextButton}" Padding="4,0,8,0" Command="{Binding ToggleCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                                                      motion:Turn.IsOn="{Binding IsExpanded}" />
+                                                    <TextBlock Text="{Binding Summary}" FontSize="13" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                            <Grid ColumnDefinitions="Auto,*" Margin="9,2,0,0">
+                                                <Border Width="1" Margin="0,0,0,15" Background="{DynamicResource TKCode.TreeLine}" />
+                                                <ItemsControl Grid.Column="1" ItemsSource="{Binding Steps}">
+                                                    <ItemsControl.DataTemplates>
+                                                        <!-- 工具步骤：⌘ 运行  git status …（单行），展开后显示完整参数与输出 -->
+                                                        <DataTemplate DataType="vm:ToolCallBlockViewModel">
+<views:ToolStepView />
+</DataTemplate>
+                                                        <!-- 工作空间里的正文（中间段落）：纯文本，最后一段正文在外面用 Markdown 渲染 -->
+                                                        <DataTemplate DataType="vm:TextBlockViewModel">
+                                                            <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13" LineHeight="21"
+                                                                                 Foreground="{DynamicResource TKCode.TextSecondary}" Margin="10,4,8,6" />
+                                                        </DataTemplate>
+                                                        <!-- 查阅组：› 查阅 · 1 搜索, 4 文件；默认收起，执行中展开，完成后收起 -->
+                                                        <DataTemplate DataType="vm:ExploreStepViewModel">
+                                                            <StackPanel>
+                                                                <Button Theme="{StaticResource TKCode.TextButton}" HorizontalAlignment="Stretch" MinHeight="30" Padding="0,0,6,0" Command="{Binding ToggleCommand}">
+                                                                    <Grid ColumnDefinitions="10,Auto,*,Auto">
+                                                                        <Border Height="1" Background="{DynamicResource TKCode.TreeLine}" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Search" Width="14" Height="14" Margin="6,0,8,0"
+                                                                                          VerticalAlignment="Center" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                        <TextBlock Grid.Column="2" Text="{Binding Summary}" FontSize="13" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="3" Kind="ChevronDown" Width="12" Height="12" Margin="8,0,0,0"
+                                                                                          motion:Turn.IsOn="{Binding IsExpanded}" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                    </Grid>
+                                                                </Button>
+                                                                <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                                                <!-- 组内步骤限高，超出在框内滚动 -->
+                                                                <ScrollViewer MaxHeight="320" Margin="9,2,0,4" atom:ScrollViewer.IsLiteMode="True"
+                                                                              HorizontalScrollBarVisibility="Disabled">
+                                                                    <ItemsControl ItemsSource="{Binding Calls}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:ToolCallBlockViewModel">
+                                                                                <views:ToolStepView />
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </ScrollViewer>
+                                                                </motion:Reveal>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                        <!-- 思考步骤：💬 思考过程，展开后就地显示思考内容 -->
+                                                        <DataTemplate DataType="vm:ThinkingBlockViewModel">
+                                                            <StackPanel>
+                                                                <Button Theme="{StaticResource TKCode.TextButton}" HorizontalAlignment="Stretch" MinHeight="30" Padding="0,0,6,0" Command="{Binding ToggleCommand}">
+                                                                    <Grid ColumnDefinitions="10,Auto,*,Auto,Auto">
+                                                                        <Border Height="1" Background="{DynamicResource TKCode.TreeLine}" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Brain" Width="14" Height="14" Margin="6,0,8,0"
+                                                                                          VerticalAlignment="Center" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                        <TextBlock Grid.Column="2" Text="{Binding Header}" FontSize="13" VerticalAlignment="Center" />
+                                                                        <!-- 右侧：耗时 · 估算 token 数 -->
+                                                                        <TextBlock Grid.Column="3" Classes="tertiary" Text="{Binding Stats}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="4" Kind="ChevronDown" Width="12" Height="12" Margin="8,0,0,0"
+                                                                                          motion:Presence.IsPresent="{Binding IsExpanded}" motion:Presence.Effect="Pop" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                                                                    </Grid>
+                                                                </Button>
+                                                                <motion:Reveal IsOpen="{Binding IsExpanded}">
+                                                                <ScrollViewer MaxHeight="240" Margin="38,2,8,10"
+                                                                              atom:ScrollViewer.IsLiteMode="True" HorizontalScrollBarVisibility="Disabled"
+                                                                              controls:FollowTail.IsEnabled="True">
+                                                                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13" LineHeight="21"
+                                                                                         Foreground="{DynamicResource TKCode.TextSecondary}" Margin="0,0,8,0" />
+                                                                </ScrollViewer>
+                                                                </motion:Reveal>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.DataTemplates>
+                                                </ItemsControl>
+                                            </Grid>
+                                            </motion:Reveal>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <DataTemplate DataType="vm:AssistantMessageItemViewModel">
+                                        <StackPanel Spacing="8" motion:Entrance.Effect="Fade">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasError}">
+                                                <icons:LucideIcon Kind="CircleAlert" Width="14" Height="14" StrokeBrush="{DynamicResource TKCode.Danger}" />
+                                                <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource TKCode.Danger}" FontSize="12" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowFooter}">
+                                                <TextBlock Classes="tertiary" Text="{Binding TimestampText}" VerticalAlignment="Center" />
+                                                <Button Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                                                        HorizontalContentAlignment="Center" Foreground="{DynamicResource TKCode.TextTertiary}"
+                                                        ToolTip.Tip="{loc:TKCodeLangResource CopyMessage}" Click="OnCopyMessageClick">
+                                                    <icons:LucideIcon Kind="Copy" Width="12" Height="12" />
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                    <!-- 等待输出：彩色点阵 + 随机动词 + 计时（琢磨中… 6s） -->
+                                    <DataTemplate DataType="vm:SessionViewModel">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4" motion:Entrance.Effect="SlideRight" motion:Entrance.Distance="8">
+                                            <controls:DotSpinner Width="12" Height="12" VerticalAlignment="Center" />
+                                            <TextBlock Classes="secondary" Text="{Binding PonderVerb}" FontSize="13" VerticalAlignment="Center" />
+                                            <TextBlock Classes="tertiary" Text="{Binding PonderText}" FontSize="12" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </sm:TranscriptView.DataTemplates>
+                            </sm:TranscriptView>
+                            <!-- 任务球（右上角）：收起是一个球，展开是 Agent / Shell / 任务清单 / 更改 -->
+                            <views:TaskOrbView x:Name="TaskOrb" DataContext="{Binding Conversation.Active, FallbackValue={x:Null}}"
+                                               HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,20,0" />
+                            <!-- 向上滚动离开底部后浮出：↓ 回到底部 -->
+                            <Button x:Name="ScrollToBottomButton" Theme="{StaticResource TKCode.PillButton}" motion:Presence.IsPresent="False"
+                                    motion:Presence.Effect="SlideUp" motion:Presence.Distance="14"
+                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,10" Padding="12,0" MinHeight="30"
+                                    Background="{DynamicResource TKCode.PopupBg}" BorderBrush="{DynamicResource TKCode.PillBorder}" BorderThickness="1"
+                                    CornerRadius="15" Click="OnScrollToBottomClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <icons:LucideIcon Kind="ArrowDown" Width="13" Height="13" VerticalAlignment="Center" />
+                                    <TextBlock Text="{loc:TKCodeLangResource ScrollToBottom}" FontSize="13" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            </Panel>
+                        </DockPanel>
+                    </Panel>
+                </DockPanel>
+
+                <GridSplitter x:Name="WorkbenchSplitter" Grid.Column="1" Theme="{StaticResource TKCode.Splitter}"
+                              ResizeDirection="Columns" IsVisible="False" />
+
+                <!-- ============ 编辑区：标签页（文件 / 工具面板） ============ -->
+                <!-- 显示与列宽由 MainWindow.UpdateColumns 控制（开合有宽度动画） -->
+                <DockPanel x:Name="EditorColumn" Grid.Column="2" IsVisible="False" ClipToBounds="True">
+                    <Grid x:Name="EditorHeader" DockPanel.Dock="Top" Height="44" Background="Transparent" ColumnDefinitions="*,Auto"
+                          WindowDecorationProperties.ElementRole="TitleBar">
+                        <!-- 标签栏占满剩余宽度：溢出时截断（可横向滚动），“+”紧跟在最后一个标签后 -->
+                        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" Margin="8,0,4,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                            <ItemsControl ItemsSource="{Binding Workbench.Tabs}" motion:ItemsMotion.Enter="Pop">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:WorkbenchTabViewModel">
+                                        <Button Theme="{StaticResource TKCode.TabButton}" Classes.active="{Binding IsActive}"
+                                                WindowDecorationProperties.ElementRole="User"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Workbench.ActivateCommand}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <icons:FileTypeIcon Kind="{Binding Icon}" ColorKey="{Binding IconColor}" Width="13" Height="13" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Title}" FontSize="12" VerticalAlignment="Center" />
+                                                <Button Theme="{StaticResource TKCode.RowButton}" MinHeight="18" Width="18" Padding="0"
+                                                        HorizontalContentAlignment="Center"
+                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Workbench.CloseCommand}"
+                                                        CommandParameter="{Binding}">
+                                                    <icons:LucideIcon Kind="X" Width="11" Height="11" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        <!-- “+”：添加工具面板 -->
+                        <Panel VerticalAlignment="Center" Margin="2,0,0,0">
+                            <Button x:Name="AddPanelButton" Theme="{StaticResource TKCode.RowButton}" Width="26" MinHeight="26" Padding="0"
+                                    HorizontalContentAlignment="Center" Classes.selected="{Binding #AddPanelPopup.IsOpen}"
+                                    WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource AddPanel}" Click="OnAddPanelClick">
+                                <icons:LucideIcon Kind="Plus" Width="13" Height="13" />
+                            </Button>
+                            <motion:Popover x:Name="AddPanelPopup" PlacementTarget="{Binding #AddPanelButton}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
+                                   IsLightDismissEnabled="True">
+                                <Border Classes="menu" Width="180" Margin="0,0,16,16">
+                                    <ItemsControl ItemsSource="{Binding Workbench.Tools}" Margin="4">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:WorkbenchToolViewModel">
+                                                <Button Theme="{StaticResource TKCode.MenuItem}" MinHeight="32" Click="OnAddPanelChosen"
+                                                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Workbench.AddToolCommand}"
+                                                        CommandParameter="{Binding}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <icons:LucideIcon Kind="{Binding Icon}" Width="14" Height="14" StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                                                        <TextBlock Classes="strong" Text="{Binding Title}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+                            </motion:Popover>
+                        </Panel>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <!-- 最大化 / 还原（右侧为面板开关预留位置，见 MainWindow.UpdateHeaderInsets） -->
+                        <Panel x:Name="EditorHeaderRight" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Width="26" MinHeight="26" Padding="0" HorizontalContentAlignment="Center"
+                                    Classes.selected="{Binding Workbench.IsMaximized}" IsVisible="{Binding Workbench.HasTabs}"
+                                    WindowDecorationProperties.ElementRole="User" Command="{Binding Workbench.ToggleMaximizeCommand}"
+                                    ToolTip.Tip="{loc:TKCodeLangResource MaximizeEditor}">
+                                <Panel>
+                                    <icons:LucideIcon Kind="Maximize2" Width="13" Height="13" IsVisible="{Binding !Workbench.IsMaximized}" />
+                                    <icons:LucideIcon Kind="Minimize2" Width="13" Height="13" IsVisible="{Binding Workbench.IsMaximized}" />
+                                </Panel>
+                            </Button>
+                        </Panel>
+                    </Grid>
+
+                    <Panel>
+                        <!-- 没有标签页：提示 + 工具面板入口 -->
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" MaxWidth="280"
+                                    IsVisible="{Binding !Workbench.HasTabs}">
+                            <icons:LucideIcon Kind="FolderTree" Width="26" Height="26" HorizontalAlignment="Center"
+                                              StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                            <TextBlock Classes="secondary" Text="{loc:TKCodeLangResource WorkbenchEmpty}" TextWrapping="Wrap" TextAlignment="Center" />
+                            <ItemsControl ItemsSource="{Binding Workbench.Tools}" HorizontalAlignment="Center">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:WorkbenchToolViewModel">
+                                        <Button Theme="{StaticResource TKCode.TileButton}" Width="120" Height="72" Margin="4"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Workbench.AddToolCommand}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel Spacing="8" HorizontalAlignment="Center">
+                                                <icons:LucideIcon Kind="{Binding Icon}" Width="16" Height="16" HorizontalAlignment="Center" />
+                                                <TextBlock Text="{Binding Title}" FontSize="12" HorizontalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <ContentControl x:Name="ActiveTabContent" Content="{Binding Workbench.ActiveTab}" IsVisible="{Binding Workbench.HasTabs}">
+                            <ContentControl.DataTemplates>
+                                <!-- 文件：面包屑 + 查看方式切换 + 预览器内容 -->
+                                <DataTemplate DataType="vm:FileTabViewModel">
+                                    <views:FileTabView />
+                                </DataTemplate>
+                                <!-- 终端：pty host 中的会话（06 §2） -->
+                                <DataTemplate DataType="vm:TerminalTabViewModel">
+                                    <views:TerminalTabView />
+                                </DataTemplate>
+                                <!-- 变更：当前会话的文件改动（左列表，右 diff） -->
+                                <DataTemplate DataType="vm:ChangesTabViewModel">
+                                    <views:ChangesTabView />
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:PlaceholderTabViewModel">
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="320" Spacing="10">
+                                        <icons:LucideIcon Kind="{Binding Icon}" Width="28" Height="28" HorizontalAlignment="Center" />
+                                        <TextBlock Classes="title" Text="{Binding Title}" HorizontalAlignment="Center" />
+                                        <TextBlock Classes="secondary" Text="{Binding Description}" TextWrapping="Wrap" TextAlignment="Center" />
+                                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource ComingSoon}" HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ContentControl.DataTemplates>
+                        </ContentControl>
+                    </Panel>
+                </DockPanel>
+
+                <controls:PanelSplitter x:Name="ExplorerSplitter" Grid.Column="3" Theme="{StaticResource TKCode.Splitter}"
+                              ResizeDirection="Columns" IsVisible="False" />
+
+                <!-- ============ 文件树 ============ -->
+                <DockPanel x:Name="ExplorerColumn" Grid.Column="4" IsVisible="False" ClipToBounds="True" Background="{DynamicResource TKCode.SidebarBg}">
+                    <Panel DockPanel.Dock="Top" Height="44" Background="Transparent" WindowDecorationProperties.ElementRole="TitleBar" />
+                    <Border DockPanel.Dock="Top" Classes="inputBox" Margin="8,0,8,6">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0,2,0">
+                            <icons:LucideIcon Kind="Search" Width="13" Height="13" StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                            <atom:LineEdit Grid.Column="1" StyleVariant="Borderless" Background="Transparent" SizeType="Small"
+                                           PlaceholderText="{loc:TKCodeLangResource SearchFiles}" Text="{Binding Explorer.Search, Mode=TwoWay}" />
+                            <Button Grid.Column="2" Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                                    HorizontalContentAlignment="Center" Classes.selected="{Binding Explorer.ShowHidden}"
+                                    Command="{Binding Explorer.ToggleHiddenCommand}" ToolTip.Tip="{loc:TKCodeLangResource ShowHiddenFiles}">
+                                <Panel>
+                                    <icons:LucideIcon Kind="EyeOff" Width="13" Height="13" IsVisible="{Binding !Explorer.ShowHidden}" />
+                                    <icons:LucideIcon Kind="Eye" Width="13" Height="13" IsVisible="{Binding Explorer.ShowHidden}" />
+                                </Panel>
+                            </Button>
+                        </Grid>
+                    </Border>
+                    <Panel>
+                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource NoWorkspaceFiles}" Margin="16,8" TextWrapping="Wrap"
+                                   IsVisible="{Binding !Explorer.HasRoot}" />
+                        <ScrollViewer atom:ScrollViewer.IsLiteMode="True" IsVisible="{Binding Explorer.HasRoot}">
+                            <ItemsControl x:Name="ExplorerList" ItemsSource="{Binding Explorer.VisibleNodes}" Margin="4,0,4,8" motion:ItemsMotion.Enter="SlideDown">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:FileNodeViewModel">
+                                        <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsSelected}" MinHeight="26" Padding="0,0,8,0"
+                                                ToolTip.Tip="{Binding FullPath}"
+                                                Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Explorer.ActivateCommand}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="{Binding Indent, Converter={x:Static views:Converters.LeftIndent}}">
+                                                <Panel Width="12" VerticalAlignment="Center">
+                                                    <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" IsVisible="{Binding IsDirectory}"
+                                                                      motion:Turn.IsOn="{Binding IsExpanded}"
+                                                                      StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                                                </Panel>
+                                                <icons:FileTypeIcon Kind="{Binding Icon}" ColorKey="{Binding IconColor}" Width="14" Height="14" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                                                <TextBlock Classes="tertiary" Text="{Binding Hint}" FontSize="11" VerticalAlignment="Center"
+                                                           IsVisible="{Binding Hint, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Panel>
+                </DockPanel>
+
+                <!-- ============ 右上角：文件树 / 编辑区开关（始终位于最右一栏顶部） ============ -->
+                <StackPanel x:Name="PanelToggles" Grid.Column="0" Grid.ColumnSpan="5" Orientation="Horizontal" Spacing="2"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Height="44" Margin="0,0,8,0">
+                    <Button Theme="{StaticResource TKCode.RowButton}" Width="28" MinHeight="28" Padding="0" HorizontalContentAlignment="Center"
+                            VerticalAlignment="Center" Classes.selected="{Binding IsExplorerOpen}" Command="{Binding ToggleExplorerCommand}"
+                            WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource ToggleExplorer}">
+                        <icons:LucideIcon Kind="FolderTree" Width="15" Height="15" />
+                    </Button>
+                    <Button Theme="{StaticResource TKCode.RowButton}" Width="28" MinHeight="28" Padding="0" HorizontalContentAlignment="Center"
+                            VerticalAlignment="Center" Classes.selected="{Binding IsWorkbenchOpen}" Command="{Binding ToggleWorkbenchCommand}"
+                            WindowDecorationProperties.ElementRole="User" ToolTip.Tip="{loc:TKCodeLangResource ToggleWorkbench}">
+                        <icons:LucideIcon Kind="PanelRight" Width="15" Height="15" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- ============ 设置页 ============ -->
+        <!-- 设置页与主界面：设置页从略大处缩回并淡入，主界面淡出 -->
+        <views:SettingsView x:Name="SettingsPage" motion:Presence.IsPresent="{Binding IsSettingsOpen}" motion:Presence.Effect="Zoom" motion:Presence.Distance="0" />
+
+        <!-- ============ 更新提醒（右下角，主界面与设置页上都显示） ============ -->
+        <views:UpdateCardView DataContext="{Binding Updates}" x:DataType="vm:UpdatesViewModel" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16"
+                              motion:Presence.IsPresent="{Binding IsCardVisible}" motion:Presence.Effect="SlideUp" />
+
+        <!-- ============ ⌘K 命令面板 ============ -->
+        <!-- 遮罩淡入，卡片从上方轻微缩放落下 -->
+        <Grid x:Name="PaletteOverlay" RowDefinitions="1*,Auto,2*" motion:Presence.IsPresent="{Binding Palette.IsOpen}">
+            <Border Grid.RowSpan="3" Background="#40000000" PointerPressed="OnPaletteBackdropPressed" />
+            <Border Grid.Row="1" Classes="menu" Width="580" HorizontalAlignment="Center"
+                    motion:Presence.IsPresent="{Binding Palette.IsOpen}" motion:Presence.Effect="Zoom" motion:Presence.Distance="12">
+                <StackPanel>
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,6,12,6">
+                        <icons:LucideIcon Kind="Search" Width="15" Height="15" StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                        <atom:LineEdit x:Name="PaletteSearch" Grid.Column="1" StyleVariant="Borderless" Background="Transparent" Margin="4,0"
+                                       PlaceholderText="{Binding Palette.Placeholder}" Text="{Binding Palette.Search, Mode=TwoWay}" />
+                        <Border Grid.Column="2" Classes="kbd">
+                            <TextBlock Text="{Binding Palette.HotkeyHint}" />
+                        </Border>
+                    </Grid>
+                    <Border Classes="menuDivider" />
+                    <!-- 子页面包屑：← | 新建项目 -->
+                    <motion:Reveal IsOpen="{Binding Palette.HasBreadcrumb}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="10,8,10,0">
+                        <Button Theme="{StaticResource TKCode.RowButton}" Width="26" MinHeight="26" Padding="0" HorizontalContentAlignment="Center"
+                                Command="{Binding Palette.BackCommand}" ToolTip.Tip="{loc:TKCodeLangResource Back}">
+                            <icons:LucideIcon Kind="ArrowLeft" Width="13" Height="13" />
+                        </Button>
+                        <Border Width="1" Height="14" Background="{DynamicResource TKCode.MenuBorder}" VerticalAlignment="Center" />
+                        <Border Background="{DynamicResource TKCode.KbdBg}" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
+                            <TextBlock Classes="strong" Text="{Binding Palette.Breadcrumb}" FontSize="12" />
+                        </Border>
+                    </StackPanel>
+                    </motion:Reveal>
+                    <!-- 结果数量变化时高度平滑过渡；进入 / 返回子页时列表横向滑入 -->
+                    <motion:SmoothSize>
+                    <ScrollViewer x:Name="PaletteList" MaxHeight="340" atom:ScrollViewer.IsLiteMode="True">
+                        <motion:IndicatorPanel IndicatorBrush="{DynamicResource TKCode.MenuItemHoverBg}" IndicatorRadius="6">
+                        <ItemsControl ItemsSource="{Binding Palette.Items}" Margin="6">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PaletteItemViewModel">
+                                    <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsHighlighted}" MinHeight="32" Margin="0,1"
+                                            motion:IndicatorPanel.IsCurrent="{Binding IsHighlighted}"
+                                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Palette.ExecuteCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                                            <Panel Width="16" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                <icons:LucideIcon Kind="{Binding Icon}" Width="14" Height="14" IsVisible="{Binding !HasLogo}"
+                                                                  StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                                                <icons:ProviderLogo Key="{Binding LogoKey}" Width="14" Height="14" IsVisible="{Binding HasLogo}" />
+                                            </Panel>
+                                            <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Title}" VerticalAlignment="Center"
+                                                       MaxWidth="380" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="2" Classes="tertiary" Text="{Binding Subtitle}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Ellipse Grid.Column="3" Width="6" Height="6" Fill="{DynamicResource TKCode.Success}" Margin="8,0"
+                                                     IsVisible="{Binding IsOnline}" VerticalAlignment="Center" />
+                                            <Border Grid.Column="4" Classes="kbd" IsVisible="{Binding Shortcut, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                                <TextBlock Text="{Binding Shortcut}" />
+                                            </Border>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </motion:IndicatorPanel>
+                    </ScrollViewer>
+                    </motion:SmoothSize>
+                    <motion:Reveal IsOpen="{Binding Palette.IsEmpty}">
+                        <TextBlock Classes="secondary" Text="{loc:TKCodeLangResource NoResults}" FontSize="12" Margin="18,4,0,12" />
+                    </motion:Reveal>
+                    <Border Classes="menuDivider" />
+                    <!-- 键位提示 -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="14,8">
+                        <Border Classes="kbd"><TextBlock Text="↑" /></Border>
+                        <Border Classes="kbd"><TextBlock Text="↓" /></Border>
+                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource HintNavigate}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <Border Classes="kbd"><TextBlock Text="↵" /></Border>
+                        <Panel VerticalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource HintSelect}" IsVisible="{Binding !Palette.OpenHint}" />
+                            <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource HintOpen}" IsVisible="{Binding Palette.OpenHint}" />
+                        </Panel>
+                        <Border Classes="kbd"><TextBlock Text="esc" /></Border>
+                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource HintClose}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ 启动加载页（后台初始化完成后退场） ============ -->
+        <views:SplashView x:Name="Splash" />
+
+        <!-- Windows / Linux 自绘窗口按钮（macOS 使用原生红绿灯） -->
+        <StackPanel x:Name="CaptionButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Height="44" IsVisible="False">
+            <atom:Button Color="Default" Variant="Text" Width="46" Height="44" WindowDecorationProperties.ElementRole="MinimizeButton" ToolTip.Tip="{loc:TKCodeLangResource Minimize}"
+                         Click="OnMinimizeClick">
+                <atom:Button.Icon><icons:LucideIcon Kind="ChevronDown" /></atom:Button.Icon>
+            </atom:Button>
+            <atom:Button Color="Default" Variant="Text" Width="46" Height="44" WindowDecorationProperties.ElementRole="MaximizeButton" ToolTip.Tip="{loc:TKCodeLangResource Maximize}"
+                         Click="OnMaximizeClick">
+                <atom:Button.Icon><icons:LucideIcon Kind="Maximize" /></atom:Button.Icon>
+            </atom:Button>
+            <atom:Button Color="Default" Variant="Text" Width="46" Height="44" WindowDecorationProperties.ElementRole="CloseButton" ToolTip.Tip="{loc:TKCodeLangResource Close}"
+                         Click="OnCloseClick">
+                <atom:Button.Icon><icons:LucideIcon Kind="X" /></atom:Button.Icon>
+            </atom:Button>
+        </StackPanel>
+    </Grid>
+</atom:Window>

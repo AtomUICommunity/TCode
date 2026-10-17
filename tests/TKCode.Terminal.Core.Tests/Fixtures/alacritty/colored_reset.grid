@@ -1,0 +1,73 @@
+tkcode-grid 1
+size 116x63 cell 8x16
+cursor 39,1 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+  s1 bg=1
+rows
+   0 |[undeadleech@archhq colored_reset]$ printf "\e[0m"                                                                  | s1
+   1 |[undeadleech@archhq colored_reset]$ ls                                                                              | s0
+   2 |                                                                                                                    | s1
+   3 |                                                                                                                    | s1
+   4 |                                                                                                                    | s1
+   5 |                                                                                                                    | s1
+   6 |                                                                                                                    | s1
+   7 |                                                                                                                    | s1
+   8 |                                                                                                                    | s1
+   9 |                                                                                                                    | s1
+  10 |                                                                                                                    | s1
+  11 |                                                                                                                    | s1
+  12 |                                                                                                                    | s1
+  13 |                                                                                                                    | s1
+  14 |                                                                                                                    | s1
+  15 |                                                                                                                    | s1
+  16 |                                                                                                                    | s1
+  17 |                                                                                                                    | s1
+  18 |                                                                                                                    | s1
+  19 |                                                                                                                    | s1
+  20 |                                                                                                                    | s1
+  21 |                                                                                                                    | s1
+  22 |                                                                                                                    | s1
+  23 |                                                                                                                    | s1
+  24 |                                                                                                                    | s1
+  25 |                                                                                                                    | s1
+  26 |                                                                                                                    | s1
+  27 |                                                                                                                    | s1
+  28 |                                                                                                                    | s1
+  29 |                                                                                                                    | s1
+  30 |                                                                                                                    | s1
+  31 |                                                                                                                    | s1
+  32 |                                                                                                                    | s1
+  33 |                                                                                                                    | s1
+  34 |                                                                                                                    | s1
+  35 |                                                                                                                    | s1
+  36 |                                                                                                                    | s1
+  37 |                                                                                                                    | s1
+  38 |                                                                                                                    | s1
+  39 |                                                                                                                    | s1
+  40 |                                                                                                                    | s1
+  41 |                                                                                                                    | s1
+  42 |                                                                                                                    | s1
+  43 |                                                                                                                    | s1
+  44 |                                                                                                                    | s1
+  45 |                                                                                                                    | s1
+  46 |                                                                                                                    | s1
+  47 |                                                                                                                    | s1
+  48 |                                                                                                                    | s1
+  49 |                                                                                                                    | s1
+  50 |                                                                                                                    | s1
+  51 |                                                                                                                    | s1
+  52 |                                                                                                                    | s1
+  53 |                                                                                                                    | s1
+  54 |                                                                                                                    | s1
+  55 |                                                                                                                    | s1
+  56 |                                                                                                                    | s1
+  57 |                                                                                                                    | s1
+  58 |                                                                                                                    | s1
+  59 |                                                                                                                    | s1
+  60 |                                                                                                                    | s1
+  61 |                                                                                                                    | s1
+  62 |                                                                                                                    | s1

@@ -1,8 +1,8 @@
-# TCode 终端核心：libghostty-vt 绑定与 TCode.Terminal.Core 设计
+# TKCode 终端核心：libghostty-vt 绑定与 TKCode.Terminal.Core 设计
 
 > 状态：设计稿 v1（2026-10-16）。上位文档：[01-architecture.md](01-architecture.md)（决策 D1–D9、§3 进程划分与一致性规则、§6.1 接口）。协议范围与应答字符串见 [10-protocol-compat.md](10-protocol-compat.md)。
-> 范围：`src/TCode.Terminal.Core`（门面 + Interop）、`native/ghostty`（上游 pin 与构建输入）、`tests/TCode.Terminal.Core.Tests`（差分测试）。渲染、PTY、IPC 只在接口处涉及。
-> 读者：实现 `TCode.Terminal.Core` 的工程师。本文所有 API 名、枚举名保留原文。
+> 范围：`src/TKCode.Terminal.Core`（门面 + Interop）、`native/ghostty`（上游 pin 与构建输入）、`tests/TKCode.Terminal.Core.Tests`（差分测试）。渲染、PTY、IPC 只在接口处涉及。
+> 读者：实现 `TKCode.Terminal.Core` 的工程师。本文所有 API 名、枚举名保留原文。
 
 ## 0. 标注约定与来源
 
@@ -97,11 +97,11 @@
 | 4 | 重新生成绑定 | `tools/GhosttyBindgen generate`（§4.1） | 生成文件与提交的文件逐字一致，或差异已被审阅 |
 | 5 | 布局自检 | `GhosttyLayoutTests`（§4.2）在 6 个 RID 上运行 | 全部结构体、枚举、`GhosttyCell` 位布局与清单一致 |
 | 6 | overlay 复核 | 每个 overlay：上游是否已修？`originalSha256` 是否仍匹配？ | 已修复的删除；不匹配的重新审阅后更新 |
-| 7 | 单元 + 回放测试 | `TCode.Terminal.Core.Tests` | 全绿 |
+| 7 | 单元 + 回放测试 | `TKCode.Terminal.Core.Tests` | 全绿 |
 | 8 | **差分测试**（§15） | 增量 vs 全量、镜像 vs UI、快照往返 | 0 差异；新增差异需定位到上游提交，并决定 overlay 还是等待上游 |
 | 9 | esctest2 / ucs-detect 回归 | CI job | 通过数不低于上一版本；新失败项进 known-bugs 并说明原因 |
-| 10 | 吞吐基准 | `TCode.Terminal.Benchmarks` | 解析吞吐、帧捕获耗时回退不超过 10% |
-| 11 | AOT 发布 + 运行二进制 | `dotnet publish -p:PublishAot=true` × 6 RID；运行 `tcode-ptyhost --selftest` | 0 个 IL 警告；自检通过 |
+| 10 | 吞吐基准 | `TKCode.Terminal.Benchmarks` | 解析吞吐、帧捕获耗时回退不超过 10% |
+| 11 | AOT 发布 + 运行二进制 | `dotnet publish -p:PublishAot=true` × 6 RID；运行 `tkcode-ptyhost --selftest` | 0 个 IL 警告；自检通过 |
 | 12 | 更新 `ghostty-upstream.json` | 新 commit、哈希、`reviewedBy` | — |
 
 快照兼容：升级后 pty host 和 Desktop 一起发布；`ghosttyBuildId` 不同的旧 host（keepAlive 会话）改用 VT 格式 attach（[04 §1.5、§8.5]）。revive 文件的 `snapshot.bin` 在构建不同时不用，改用 `tail.vt`（§9.4、[04 §10.5]）。
@@ -111,7 +111,7 @@
 - 默认**不打补丁**，问题先报上游。
 - 只在满足以下全部条件时加 overlay：差分测试能稳定复现；影响用户可见的正确性或安全；上游 30 天内没有修复。
 - overlay 以 patch 文件形式放在 `native/ghostty/overlays/`，构建时应用到源码副本，不修改 submodule / 下载的源码目录（[RT] 的做法）。
-- 新增**导出函数**（§8.9 的功能缺口）放在独立的 `native/ghostty/ext/` Zig 包里，以 `tcode_ghostty_*` 前缀导出，与上游符号隔离。构建方式沿用 [RT]：生成上游 Zig 根文件的副本，在末尾追加 `ext/*.zig` 的导出；不改上游目录。
+- 新增**导出函数**（§8.9 的功能缺口）放在独立的 `native/ghostty/ext/` Zig 包里，以 `tkcode_ghostty_*` 前缀导出，与上游符号隔离。构建方式沿用 [RT]：生成上游 Zig 根文件的副本，在末尾追加 `ext/*.zig` 的导出；不改上游目录。
 
 ### 2.4 v1 overlay 补丁计划（O1–O4）
 
@@ -121,8 +121,8 @@
 |---|---|---|---|---|
 | **O1** | `src/terminal/modes.zig` | 在 `entries` **末尾**追加 `.{ .name = "win32_input", .value = 9001, .default_configurable = false }`。`setMode` 的 `else => {}` 分支已覆盖，无副作用；RIS 复位为 false；DECRQM 自动应答 1/2 | ① `CSI ? 9001 h` 后 `DATA_MODE(9001)` 为 true；② `CSI ? 9001 $ p` → `CSI ? 9001 ; 1 $ y`；③ RIS 后为 false；④ 快照往返保持 | 视图 actor 与会话 actor 在 `vt_write` 前运行托管扫描器 `DecPrivateModeScanner`（§13.5）；DECRQM 9001 只能答 0 |
 | **O2** | `src/terminal/modes.zig` | `kitty_paste_events`（5522）条目加 `.disabled = true`（字段语义："Ghostty will not allow it to be set or queried" [S:modes.zig:332-335]）| DECRQM 5522 → 0；`CSI ? 5522 h` 后粘贴仍是 2004 包裹的文本 | 两份核心都不改：镜像核心对 DECRQM 5522 答"已识别"，程序可能以为有粘贴事件。UI 侧核心不装 `clipboard_read`，粘贴仍按文本发出 —— 字节层面一致，只是声明不准确 |
-| **O3** | `src/terminal/stream_terminal.zig` `clipboardRead` | 新增终端级开关 `clipboard_read_deferred`（由 ext 导出 `tcode_ghostty_set_clipboard_read_deferred(t, bool)` 设置）。开关打开时，回调返回而未调用 `reply` 的情况**不再**发送空剪贴板（跳过 [S:stream_terminal.zig:1096-1100] 的兜底应答）；并在 `GhosttyClipboardRead` 末尾追加 `terminator` 字段（sized struct 允许追加），供 host 稍后用同一终止符应答| 镜像核心回调不应答 → PTY 无输出；host 稍后写入的 `ESC ] 52 ; c ; <base64> <原终止符>` 被程序正确接收 | 回调内**同步**阻塞：IPC 询问 UI，最多等 30 s，超时回 `DENIED`（库随之发空剪贴板）。阻塞期间该会话暂停解析 |
-| **O4** | ext（追加导出）| `bool tcode_ghostty_modify_other_keys_2(GhosttyTerminal)`：读 `terminal.flags.modify_other_keys_2`（[S:Terminal.zig:114]；RoyalTerminal 有同名扩展 [RT]）| `CSI > 4 ; 2 m` 后为 true，`CSI > 4 ; 0 m`、RIS 后为 false | 按键改在视图 actor 上用 `setopt_from_terminal` 编码（多一次线程跳转，约 10–50 µs [R04 §5.1]）|
+| **O3** | `src/terminal/stream_terminal.zig` `clipboardRead` | 新增终端级开关 `clipboard_read_deferred`（由 ext 导出 `tkcode_ghostty_set_clipboard_read_deferred(t, bool)` 设置）。开关打开时，回调返回而未调用 `reply` 的情况**不再**发送空剪贴板（跳过 [S:stream_terminal.zig:1096-1100] 的兜底应答）；并在 `GhosttyClipboardRead` 末尾追加 `terminator` 字段（sized struct 允许追加），供 host 稍后用同一终止符应答| 镜像核心回调不应答 → PTY 无输出；host 稍后写入的 `ESC ] 52 ; c ; <base64> <原终止符>` 被程序正确接收 | 回调内**同步**阻塞：IPC 询问 UI，最多等 30 s，超时回 `DENIED`（库随之发空剪贴板）。阻塞期间该会话暂停解析 |
+| **O4** | ext（追加导出）| `bool tkcode_ghostty_modify_other_keys_2(GhosttyTerminal)`：读 `terminal.flags.modify_other_keys_2`（[S:Terminal.zig:114]；RoyalTerminal 有同名扩展 [RT]）| `CSI > 4 ; 2 m` 后为 true，`CSI > 4 ; 0 m`、RIS 后为 false | 按键改在视图 actor 上用 `setopt_from_terminal` 编码（多一次线程跳转，约 10–50 µs [R04 §5.1]）|
 
 O1 的快照影响：快照把三套模式按 `ModePacked` 的位序写入 8 字节槽，当前占 43 位、43–63 位保留且"解码器忽略保留位"[S:snapshot/terminal.zig:164-215,474-476]。9001 追加在末尾占第 43 位：同一构建的两个进程之间往返正确；被未打补丁的解码器读取时只是丢掉该位。上游注释说"新增模式需要提升快照版本"，我们不改版本号，因为快照只在同一构建之间使用（[04 §8.5] 的跨构建 attach 走 VT 格式）**[待 spike：确认没有 comptime 断言限定 43 位]**。
 
@@ -136,7 +136,7 @@ dirty 漏标（§15.5 的 1、2、6、7）若上游 30 天内未修，再按同�
 |---|---|
 | 主仓库地址变更 | 构建只认 `commit`，不认 URL。`repo` + `mirrors` 按序尝试；任何一个源拿到该 commit 且 `sourceSha256` 匹配即可 |
 | 只读副本停止同步 | 升级时脚本比较各源的 `main` 头；发现主源变化时更新 `repo` 字段（单独的 PR） |
-| 源码不可获取（离线、全部源失效） | CI 缓存：每次升级时把 `git archive` 结果上传到 TCode 自己的 release 资产 `ghostty-src-<commit>.tar.gz`，作为最后一个 mirror |
+| 源码不可获取（离线、全部源失效） | CI 缓存：每次升级时把 `git archive` 结果上传到 TKCode 自己的 release 资产 `ghostty-src-<commit>.tar.gz`，作为最后一个 mirror |
 | issue 跟踪迁移 | `overlays[].upstreamIssue` 存完整 URL，不存 `#1234` 这样的短号 |
 | 依赖（Zig 包）托管变化 | `build.zig.zon` 的依赖由 Zig 按哈希获取；CI 设置 `ZIG_GLOBAL_CACHE_DIR` 并缓存，升级时预热 **[推断]** |
 | 上游 CI 不再在 GitHub Actions 上运行 | 不影响我们：我们自己跑 6 RID 构建、测试和 esctest；上游 CI 只作参考 |
@@ -160,7 +160,7 @@ dirty 漏标（§15.5 的 1、2、6、7）若上游 30 天内未修，再按同�
 
 ---
 
-## 4. 绑定层（`TCode.Terminal.Core.Interop.Ghostty`）
+## 4. 绑定层（`TKCode.Terminal.Core.Interop.Ghostty`）
 
 ### 4.1 生成方法
 
@@ -392,7 +392,7 @@ static class Callbacks
 
 ---
 
-## 6. 门面 API（`TCode.Terminal.Core`）
+## 6. 门面 API（`TKCode.Terminal.Core`）
 
 ### 6.1 类型总览
 
@@ -413,7 +413,7 @@ GhosttyRuntime            进程级初始化：加载库、校验清单、安装
 在 [A01 §6.1] 的基础上细化（标 ★ 的是相对 01 的修改，理由见 §17）：
 
 ```csharp
-namespace TCode.Terminal.Core;
+namespace TKCode.Terminal.Core;
 
 public enum TerminalCoreRole { Mirror, View }
 
@@ -762,17 +762,17 @@ render state 只告诉我们"这格有超链接"（cell 的 hyperlink 位、行�
 
 ### 8.9 什么时候需要 Zig shim
 
-**性能触发条件**（满足任一）：基准 S4（全屏 truecolor 动画）上 `CaptureFrame` p99 > 0.5 ms；或者 Windows / Linux arm64 上实测的单次调用开销 > 50 ns。shim 做法：导出 `tcode_ghostty_row_export(iterator, out_cells, out_style_ids, out_styles, style_cap, out_graphemes, …)`，一次调用把整行（含去重样式表、字形簇）拷进调用方提供的平面数组（RoyalTerminal 的思路 [R01 §4.1.3]）。
+**性能触发条件**（满足任一）：基准 S4（全屏 truecolor 动画）上 `CaptureFrame` p99 > 0.5 ms；或者 Windows / Linux arm64 上实测的单次调用开销 > 50 ns。shim 做法：导出 `tkcode_ghostty_row_export(iterator, out_cells, out_style_ids, out_styles, style_cap, out_graphemes, …)`，一次调用把整行（含去重样式表、字形簇）拷进调用方提供的平面数组（RoyalTerminal 的思路 [R01 §4.1.3]）。
 
 **功能缺口**（与性能无关）。前两项已经由 §2.4 的 O1、O4 在 v1 解决；其余是 v1 接受的限制，以后集中放进 `native/ghostty/ext`：
 
 | 缺口 | 影响 | shim 导出 |
 |---|---|---|
-| modifyOtherKeys 状态无 getter | `InputModes` 缺字段 | **v1：O4** `tcode_ghostty_modify_other_keys_2`（RoyalTerminal 有同名扩展 [RT]）|
+| modifyOtherKeys 状态无 getter | `InputModes` 缺字段 | **v1：O4** `tkcode_ghostty_modify_other_keys_2`（RoyalTerminal 有同名扩展 [RT]）|
 | mode 9001（win32-input-mode）未实现 | 无法跟踪 ConPTY 的 `CSI ? 9001 h` | **v1：O1** 登记进模式表 |
 | Kitty 图像不进快照 | 重连后 UI 侧没有图像 | 图像导出 / 导入函数 |
-| Kitty 动画无 tick API | 自动播放动画不动（`animationTick` 只被 Ghostty 自己的渲染器调用 [S:kitty/graphics_storage.zig:1057]）| `tcode_ghostty_kitty_animation_tick(t, now_ms)` |
-| 可见性（2033）无 setter | `CSI ? 998 n` 永远回答"可见"（`flags.visible` 默认 true [S:Terminal.zig:136]）| `tcode_ghostty_visibility_set` |
+| Kitty 动画无 tick API | 自动播放动画不动（`animationTick` 只被 Ghostty 自己的渲染器调用 [S:kitty/graphics_storage.zig:1057]）| `tkcode_ghostty_kitty_animation_tick(t, now_ms)` |
+| 可见性（2033）无 setter | `CSI ? 998 n` 永远回答"可见"（`flags.visible` 默认 true [S:Terminal.zig:136]）| `tkcode_ghostty_visibility_set` |
 | OSC 99 已解析但不交给 C API | kitty 通知协议不可用 | 回调桥（RoyalTerminal 做过 [RT]）|
 
 v1 决策：M0 起带 O1–O4（§2.4）；性能 shim 不做，等基准结果；上表其余项 v1 不做。
@@ -860,7 +860,7 @@ libghostty 收到 PNG 格式（`f=100`）的图像时调用进程级的 `GHOSTTY
 | C SkiaSharp（RoyalTerminal 的做法）| 现成 | pty host 不应依赖 Skia 原生库（体积、AOT）；两个进程的解码器不同会破坏一致性 | 不采用 |
 | D 第三方托管库（StbImageSharp、BigGustave 等）| 现成 | 引入依赖，需要逐个做 AOT 实测和安全审计 | 不采用 |
 
-方案 A 的实现规格（`TCode.Terminal.Core.Imaging.PngDecoder`，`static`、无状态、线程安全）：
+方案 A 的实现规格（`TKCode.Terminal.Core.Imaging.PngDecoder`，`static`、无状态、线程安全）：
 
 1. 校验签名；逐块解析（长度 ≤ 剩余字节、CRC32 用 `System.IO.Hashing.Crc32` 校验）。支持 IHDR、PLTE、tRNS、IDAT、IEND；忽略其他辅助块（含 gAMA、iCCP，不做色彩管理，与终端常见实现一致 **[推断]**）。
 2. 尺寸检查：宽、高 ≥ 1 且 ≤ 10 000；`width × height × 4` ≤ 单图上限（= `KittyGraphicsLimits.MaxImageBytes`，默认 64 MiB）。**解压前**按 IHDR 算出期望的解压长度，`ZLibStream` 读取时一旦超过就失败（防压缩炸弹）。
@@ -954,7 +954,7 @@ public sealed class CommandRecord
 libghostty 不实现 633，会通过 `UNKNOWN_SEQUENCE` 回调以 OSC 原文交给我们（需同时设置 `UNKNOWN_MAX_BYTES`）[H:terminal.h:131-197]。
 
 - 镜像核心解析 `633;A/B/C/D[;exit]` 映射为同样的 CommandTracker 事件；`633;E;<cmdline>;<nonce>` 只在 nonce 等于本会话注入脚本时生成的 nonce 时采用 [R03 §2.4]；`633;P;Cwd=…` 作为 cwd 提示。
-- **限制**：633 不会在网格上打语义标记，所以 `select_output`、按 prompt 滚动对只发 633 的 shell 无效。TCode 自己的 shell 集成脚本（[A01] D7）**只发 OSC 133**（含 kitty 的 `cmdline=` 扩展），633 只用于兼容别人的脚本。
+- **限制**：633 不会在网格上打语义标记，所以 `select_output`、按 prompt 滚动对只发 633 的 shell 无效。TKCode 自己的 shell 集成脚本（[A01] D7）**只发 OSC 133**（含 kitty 的 `cmdline=` 扩展），633 只用于兼容别人的脚本。
 
 ### 12.4 读取命令输出（Agent）
 
@@ -979,7 +979,7 @@ libghostty 不实现 633，会通过 `UNKNOWN_SEQUENCE` 回调以 OSC 原文交�
 | IgnoreKeypadWithNumLock（?1035）| `DATA_MODE` | `IGNORE_KEYPAD_WITH_NUMLOCK` |
 | AltEscPrefix（?1036）| `DATA_MODE` | `ALT_ESC_PREFIX` |
 | BackarrowKeyMode（DECBKM ?67）| `DATA_MODE` | `BACKARROW_KEY_MODE` |
-| ModifyOtherKeys2 | **O4** `tcode_ghostty_modify_other_keys_2` | `MODIFY_OTHER_KEYS_STATE_2` |
+| ModifyOtherKeys2 | **O4** `tkcode_ghostty_modify_other_keys_2` | `MODIFY_OTHER_KEYS_STATE_2` |
 | KittyFlags | `DATA_KITTY_KEYBOARD_FLAGS` | `KITTY_FLAGS` |
 | MouseTracking（9/1000/1002/1003）、MouseFormat（1005/1006/1015/1016）| `DATA_MODE` × 8 | 鼠标编码器 `EVENT` / `FORMAT` |
 | AlternateScroll（?1007）、AltScreen（`DATA_ACTIVE_SCREEN`）、BracketedPaste（?2004）、FocusEvent（?1004）、GraphemeCluster（?2027）| `DATA_MODE` / `DATA_ACTIVE_SCREEN` | UI 侧逻辑（滚轮、IME 列宽、焦点上报）|

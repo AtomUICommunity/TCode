@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 把（已签名的）TCode.app 公证并 staple，再打成 zip（应用内更新）和 dmg（首次安装）（docs/design/auto-update.md §4、§11）。
-# 用法: tools/release/package-macos.sh <TCode.app> <版本> <rid> <输出目录>
+# 把（已签名的）TKCode.app 公证并 staple，再打成 zip（应用内更新）和 dmg（首次安装）（docs/design/auto-update.md §4、§11）。
+# 用法: tools/release/package-macos.sh <TKCode.app> <版本> <rid> <输出目录>
 # 环境变量（都可省略；省略时生成未签名 / 未公证的包，只用于本地测试）：
 #   MACOS_SIGN_IDENTITY  Developer ID Application（签 dmg）
 #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID  notarytool 的 Apple ID 凭据
@@ -13,8 +13,8 @@ mkdir -p "$OUT"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-ZIP="$OUT/TCode-$VERSION-$RID.zip"
-DMG="$OUT/TCode-$VERSION-$RID.dmg"
+ZIP="$OUT/TKCode-$VERSION-$RID.zip"
+DMG="$OUT/TKCode-$VERSION-$RID.dmg"
 NOTARIZE=false
 if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
     NOTARIZE=true
@@ -33,14 +33,14 @@ if $NOTARIZE; then
     spctl -a -t exec -vv "$APP"
 fi
 
-# ---- zip：顶层是 TCode.app；ditto 保留符号链接与扩展属性，客户端也用 ditto 解压 ----
+# ---- zip：顶层是 TKCode.app；ditto 保留符号链接与扩展属性，客户端也用 ditto 解压 ----
 ditto -c -k --keepParent "$APP" "$ZIP"
 
-# ---- dmg：TCode.app + 指向 /Applications 的快捷方式 ----
+# ---- dmg：TKCode.app + 指向 /Applications 的快捷方式 ----
 mkdir -p "$WORK/dmg"
-ditto "$APP" "$WORK/dmg/TCode.app"
+ditto "$APP" "$WORK/dmg/TKCode.app"
 ln -s /Applications "$WORK/dmg/Applications"
-hdiutil create -volname TCode -srcfolder "$WORK/dmg" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname TKCode -srcfolder "$WORK/dmg" -ov -format UDZO "$DMG" >/dev/null
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$DMG"
 fi

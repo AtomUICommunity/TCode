@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="logo.png" alt="TCode" width="128" />
+<img src="logo.png" alt="TKCode" width="128" />
 
-# TCode
+# TKCode
 
 **A desktop AI agent client built with Avalonia and AtomUI.**
 
@@ -15,11 +15,11 @@
 
 <br />
 
-<img src="docs/images/conversation-en.png" alt="TCode conversation view" width="900" />
+<img src="docs/images/conversation-en.png" alt="TKCode conversation view" width="900" />
 
 </div>
 
-TCode is a native desktop client for working with AI coding agents. It runs its agent loop in a separate Agent Host process, talks to models through three wire protocols, and keeps every session as a local, append-only JSONL file. The whole client is designed to publish as a NativeAOT binary.
+TKCode is a native desktop client for working with AI coding agents. It runs its agent loop in a separate Agent Host process, talks to models through three wire protocols, and keeps every session as a local, append-only JSONL file. The whole client is designed to publish as a NativeAOT binary.
 
 > **Status:** early development. The core pieces (protocol adapters, agent loop, session store, Host process, desktop UI) exist, but the app is not yet a finished product, and APIs and file formats may change.
 
@@ -29,12 +29,12 @@ TCode is a native desktop client for working with AI coding agents. It runs its 
 - **Multiple providers and models.** Built-in provider catalog with one API key per provider, custom OpenAI-compatible and local endpoints, and hot-reloaded settings.
 - **Three protocol adapters:** OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, with thinking / reasoning replay and fast mode where the provider supports it.
 - **Coding tools for the built-in agent:** `read`, `write`, `edit`, `ls`, `glob`, `grep`, `bash` (with background tasks), task lists, `web_fetch`, `web_search`, and sub-agents.
-- **External agent runtimes.** Claude Code, Codex, and ACP agents found on the machine run inside TCode and share its approval flow.
+- **External agent runtimes.** Claude Code, Codex, and ACP agents found on the machine run inside TKCode and share its approval flow.
 - **Approvals and permission modes.** Read-only actions inside the workspace pass; everything else can ask the UI first, once or for the whole session.
-- **Composer.** `@` file mentions, `/` commands and skills, Agent / Plan roles, and image attachments. Global assets live in `~/.tcode`, project assets in `.agents/`.
+- **Composer.** `@` file mentions, `/` commands and skills, Agent / Plan roles, and image attachments. Global assets live in `~/.tkcode`, project assets in `.agents/`.
 - **MCP.** stdio and HTTP servers from `settings.json` or `.mcp.json`, with tools, resources, prompts, elicitation, and import / export.
 - **Workbench.** File tree, code and Markdown previews, and an integrated terminal (libghostty-vt, separate pty host that keeps sessions alive, search).
-- **Resumable sessions.** Sessions are stored as JSONL trees under `~/.tcode/sessions/` and can be listed, renamed, pinned, reopened, and continued.
+- **Resumable sessions.** Sessions are stored as JSONL trees under `~/.tkcode/sessions/` and can be listed, renamed, pinned, reopened, and continued.
 - **Streaming Markdown** via [StreamMark](https://github.com/AtomUICommunity/StreamMark) (code highlighting, Mermaid, LaTeX).
 - **In-app updates** from GitHub Releases, plus a system tray icon.
 
@@ -56,31 +56,31 @@ The screenshots are rendered headlessly from a sample project. Regenerate them w
 ## Architecture
 
 ```
-TCode.Desktop ──(JSON-RPC 2.0 over stdio)──▶ TCode.AgentHost
+TKCode.Desktop ──(JSON-RPC 2.0 over stdio)──▶ TKCode.AgentHost
      │                                            │
-     └──▶ TCode.Rpc.Contracts ◀───────────────────┤
+     └──▶ TKCode.Rpc.Contracts ◀───────────────────┤
                                                   ▼
-                                        TCode.Agent.Coding   sessions, tools, system prompt, AGENTS.md
+                                        TKCode.Agent.Coding   sessions, tools, system prompt, AGENTS.md
                                                   ▼
-                                           TCode.Agent       agent loop, tool contract, events
+                                           TKCode.Agent       agent loop, tool contract, events
                                                   ▼
-                                            TCode.Ai         message model, streaming events, wire adapters
+                                            TKCode.Ai         message model, streaming events, wire adapters
 ```
 
 | Project | Responsibility |
 |---|---|
-| `src/TCode.Ai` | Unified message model, streaming events, OpenAI / Anthropic adapters |
-| `src/TCode.Agent` | Agent loop, tool abstraction, approval hook, steer / follow-up queues |
-| `src/TCode.Agent.Coding` | Coding session, JSONL session store, system prompt builder, built-in tools |
-| `src/TCode.Rpc.Contracts` | Host ↔ UI interfaces and DTOs, minimal JSON-RPC 2.0 implementation |
-| `src/TCode.AgentHost` | Standalone process that hosts sessions and translates agent events into RPC notifications |
-| `src/TCode.Config` | Settings types and parsing, shared by Host and Desktop |
-| `src/TCode.Runtimes` | External agent runtimes: Claude Code, Codex, ACP |
-| `src/TCode.Mcp` | MCP client: server configuration, connection pool, tool / resource / prompt bridging |
-| `src/TCode.Terminal.*` | Terminal: libghostty-vt core, PTY, pty host process and protocol, Avalonia view |
-| `src/TCode.Desktop` | Avalonia application: window, theme, views, view models, Host connection |
+| `src/TKCode.Ai` | Unified message model, streaming events, OpenAI / Anthropic adapters |
+| `src/TKCode.Agent` | Agent loop, tool abstraction, approval hook, steer / follow-up queues |
+| `src/TKCode.Agent.Coding` | Coding session, JSONL session store, system prompt builder, built-in tools |
+| `src/TKCode.Rpc.Contracts` | Host ↔ UI interfaces and DTOs, minimal JSON-RPC 2.0 implementation |
+| `src/TKCode.AgentHost` | Standalone process that hosts sessions and translates agent events into RPC notifications |
+| `src/TKCode.Config` | Settings types and parsing, shared by Host and Desktop |
+| `src/TKCode.Runtimes` | External agent runtimes: Claude Code, Codex, ACP |
+| `src/TKCode.Mcp` | MCP client: server configuration, connection pool, tool / resource / prompt bridging |
+| `src/TKCode.Terminal.*` | Terminal: libghostty-vt core, PTY, pty host process and protocol, Avalonia view |
+| `src/TKCode.Desktop` | Avalonia application: window, theme, views, view models, Host connection |
 
-Dependencies point one way. `TCode.Ai`, `TCode.Agent`, and `TCode.Agent.Coding` have no UI dependency and are marked `IsAotCompatible`.
+Dependencies point one way. `TKCode.Ai`, `TKCode.Agent`, and `TKCode.Agent.Coding` have no UI dependency and are marked `IsAotCompatible`.
 
 ## Getting started
 
@@ -100,8 +100,8 @@ Dependencies point one way. `TCode.Ai`, `TCode.Agent`, and `TCode.Agent.Coding` 
 ### Build and run
 
 ```bash
-dotnet build TCode.slnx
-dotnet run --project src/TCode.Desktop
+dotnet build TKCode.slnx
+dotnet run --project src/TKCode.Desktop
 ```
 
 The desktop build copies the Agent Host into the output directory's `agenthost/` folder, and the app starts it on demand.
@@ -109,34 +109,34 @@ The desktop build copies the Agent Host into the output directory's `agenthost/`
 ### Run the tests
 
 ```bash
-dotnet test TCode.slnx
+dotnet test TKCode.slnx
 ```
 
-The Desktop tests render real components headlessly (Avalonia.Headless + Skia) and write PNG snapshots to the test output's `snapshots/` directory, or to `TCODE_SNAPSHOT_DIR` if set. `tools/readme-screenshots.sh` renders the README screenshots into `docs/images/` the same way.
+The Desktop tests render real components headlessly (Avalonia.Headless + Skia) and write PNG snapshots to the test output's `snapshots/` directory, or to `TKCODE_SNAPSHOT_DIR` if set. `tools/readme-screenshots.sh` renders the README screenshots into `docs/images/` the same way.
 
 ### Publish (NativeAOT)
 
 Both the desktop app and the Agent Host are published with `PublishAot=true`. On macOS you can build an app bundle:
 
 ```bash
-tools/package_macos_app.sh osx-arm64        # outputs artifacts/TCode.app
+tools/package_macos_app.sh osx-arm64        # outputs artifacts/TKCode.app
 ```
 
 Or publish directly:
 
 ```bash
-dotnet publish src/TCode.Desktop -c Release -r osx-arm64
+dotnet publish src/TKCode.Desktop -c Release -r osx-arm64
 ```
 
 Smoke test a published build (runs the real app headlessly against the Fake provider):
 
 ```bash
-artifacts/publish/osx-arm64/TCode --smoke --out=frame.png
+artifacts/publish/osx-arm64/TKCode --smoke --out=frame.png
 ```
 
 ## Configuration
 
-Settings live in `~/.tcode/settings.json` (JSONC, with a generated JSON Schema for editor completion). Set `TCODE_HOME` to use a different directory. The file is hot-reloaded; invalid edits keep the last good configuration and show the error in the settings view.
+Settings live in `~/.tkcode/settings.json` (JSONC, with a generated JSON Schema for editor completion). Set `TKCODE_HOME` to use a different directory. The file is hot-reloaded; invalid edits keep the last good configuration and show the error in the settings view.
 
 ```jsonc
 {
@@ -189,10 +189,10 @@ API keys can be plain text, `{env:VAR}`, or `$VAR`. Saving from the UI sets the 
 
 Issues and pull requests are welcome once the project settles. Please keep these rules in mind:
 
-- **NativeAOT.** `TCode.Ai`, `TCode.Agent`, `TCode.Agent.Coding`, `TCode.Desktop`, and `TCode.AgentHost` must stay AOT-safe. Use source-generated JSON contexts and no reflection or runtime code generation. Check that an AOT publish produces zero IL/AOT warnings.
+- **NativeAOT.** `TKCode.Ai`, `TKCode.Agent`, `TKCode.Agent.Coding`, `TKCode.Desktop`, and `TKCode.AgentHost` must stay AOT-safe. Use source-generated JSON contexts and no reflection or runtime code generation. Check that an AOT publish produces zero IL/AOT warnings.
 - **UI components.** Use AtomUI through NuGet and its public theme tokens. Do not copy or modify AtomUI source.
-- **Strings.** UI text comes from `src/TCode.Desktop/Localization/strings.tsv`. Regenerate the catalogs with `tools/gen_strings.py`; do not hand-edit the generated files.
+- **Strings.** UI text comes from `src/TKCode.Desktop/Localization/strings.tsv`. Regenerate the catalogs with `tools/gen_strings.py`; do not hand-edit the generated files.
 
 ## License
 
-TCode is licensed under the [Apache License 2.0](LICENSE).
+TKCode is licensed under the [Apache License 2.0](LICENSE).

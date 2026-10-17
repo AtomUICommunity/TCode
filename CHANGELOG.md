@@ -6,7 +6,7 @@ Largest update since 0.1.0. Adds conversation compaction, an interactive questio
 
 ### Added
 
-- **Conversation compaction.** When a session approaches the model's context limit, TCode summarizes the history and continues the session from the summary. Compaction runs proactively before a request and reactively when the provider reports a context overflow. The summary replaces the earlier history as a whole; the rest of the session continues unchanged.
+- **Conversation compaction.** When a session approaches the model's context limit, TKCode summarizes the history and continues the session from the summary. Compaction runs proactively before a request and reactively when the provider reports a context overflow. The summary replaces the earlier history as a whole; the rest of the session continues unchanged.
 - **Agent questions (`ask_user`).** The agent can ask the user a structured question. The question appears in a panel that replaces the composer while it is pending; sending is blocked until the question is answered. External runtimes' own question tools (Claude Code, Codex, ACP) use the same panel.
 - **Change tracking and diff view.** A new Changes tab lists files the agent modified, with a per-turn changes view and a diff view for each file.
 - **Revert file changes.** Files changed by the agent can be reverted from the change views.
@@ -22,7 +22,7 @@ Largest update since 0.1.0. Adds conversation compaction, an interactive questio
 - Tool calls are rendered as step views with a dedicated task orb, replacing the old task list.
 - Terminal tabs use the updated terminal theme and the refreshed tab view.
 - Settings schema and localization strings (English and Simplified Chinese) were updated for the new features.
-- Shared line-diff logic moved from the coding tools into the core `TCode.Agent` library so both the agent and the UI can use it.
+- Shared line-diff logic moved from the coding tools into the core `TKCode.Agent` library so both the agent and the UI can use it.
 
 ### Removed
 
@@ -34,4 +34,4 @@ Largest update since 0.1.0. Adds conversation compaction, an interactive questio
 - Release versions come from the git tag only. Tagging `v0.1.1` builds `0.1.1`; the local build stays `0.0.0-dev`.
 - The release CI creates a draft release for stable tags. Tags containing `-` are published as pre-releases.
 
-**Full Changelog**: https://github.com/AtomUICommunity/TCode/compare/v0.1.0...v0.1.1
+**Full Changelog**: https://github.com/AtomUICommunity/TKCode/compare/v0.1.0...v0.1.1

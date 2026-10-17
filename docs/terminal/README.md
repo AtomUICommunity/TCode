@@ -1,4 +1,4 @@
-# TCode 终端组件
+# TKCode 终端组件
 
 > 状态：设计文档 v1 完成；**M0 实施基本完成**（2026-10-17，见 [13-roadmap.md](13-roadmap.md) 的 M0 实施状态）。决策见 [01-architecture.md](01-architecture.md) §2；待你拍板的问题汇总在 [13-roadmap.md](13-roadmap.md) §5。
 
@@ -9,7 +9,7 @@
 | [00-current-state.md](00-current-state.md) | 仓库现状：只有占位标签页；现有 shell 代码与终端的关系；缺口 |
 | [01-architecture.md](01-architecture.md) | **总体架构**：决策、进程划分（UI / pty host / AgentHost）、双核心一致性、项目划分、线程模型、层间接口 |
 | [02-core-ghostty.md](02-core-ghostty.md) | 核心：libghostty-vt 的 pin、绑定、门面 API、快照、差分测试 |
-| [03-pty.md](03-pty.md) | PTY：libtcodepty + spawn helper、ConPTY、退出监视、关闭语义 |
+| [03-pty.md](03-pty.md) | PTY：libtkcodepty + spawn helper、ConPTY、退出监视、关闭语义 |
 | [04-pty-host.md](04-pty-host.md) | pty host 进程与 IPC 协议：帧、控制消息、流控、重连、持久化 |
 | [05-rendering.md](05-rendering.md) | 渲染：Painter、行缓存、字体与 sprite、R3 → R1 |
 | [06-input.md](06-input.md) | 输入：按键路由、IME、鼠标、选区、剪贴板、粘贴、链接、搜索、可访问性 |
@@ -34,7 +34,7 @@
 无论最终怎么选，组件都分成以下五层，层与层之间只通过接口交互：
 
 ```
-┌──────────────────────── 宿主（TCode.Desktop） ────────────────────────┐
+┌──────────────────────── 宿主（TKCode.Desktop） ────────────────────────┐
 │ 工作台标签 / 分屏 · profile 与 settings.json · 快捷键路由 · 链接打开      │
 └──────────────────────────────────┬────────────────────────────────────┘
 ┌──────────────── 视图层（Avalonia，自绘） ───────────────────────────────┐
@@ -56,7 +56,7 @@
 | 子进程回收 | 只能用 `waitpid(pid)` 回收自己的子进程，不能 `waitpid(-1)`；退出通知 Linux 用 pidfd，macOS 用 kqueue；子进程启动前把所有信号恢复为默认（.NET 会让子进程继承 `SIGPIPE=SIG_IGN`） | 02 §2.5 |
 | Windows | ConPTY；新版会原样透传程序输出；关闭时必须继续读输出管道并在另一个线程关闭，否则旧系统上会死锁；ConPTY 启动时会发 DA1，我们必须回应 | 02 §3 |
 | 默认 shell | 用 `getpwuid` 取账户登记的 shell，`$SHELL` 只作后备；macOS 起 login shell，Linux 起非 login shell；Windows 和 Windows Terminal 一样优先 pwsh。Agent 的 `ShellResolver` 不复用 | 05 §1 |
-| TERM | `xterm-256color` + `COLORTERM=truecolor` + `TERM_PROGRAM=TCode`；v1 不发布自定义 terminfo，靠 XTVERSION / XTGETTCAP 等查询应答补充能力 | 03 §7、05 §2 |
+| TERM | `xterm-256color` + `COLORTERM=truecolor` + `TERM_PROGRAM=TKCode`；v1 不发布自定义 terminfo，靠 XTVERSION / XTGETTCAP 等查询应答补充能力 | 03 §7、05 §2 |
 | 解析器 | 以 Williams 的 DEC 状态机为骨架，加冒号子参数；UTF-8 下不执行 C1；参数和字符串长度设上限 | 03 §1 |
 | 线程 | 每个终端一个读线程 + 一个核心线程；读缓冲满了就阻塞读取（背压）；渲染只读快照，从不等锁 | 04 §0.3 |
 | 交互延迟 | 输入回显路径上不加任何合并延迟；大量输出时才合并到每帧一次 | 04 §0.3 |
@@ -69,11 +69,11 @@
 | # | 问题 | 选项 | 调研推荐 → **结果** |
 |---|---|---|---|
 | 1 | 终端核心 | A 纯 C# 自研（约 5–7 人月）；A′ 基于 XTerm.NET（纯 C#，单人维护，无逐行脏标记）；B libghostty-vt + 自维护绑定（API 未冻结、Zig 工具链、要 pin commit）；E 以 B 为主，托管核心保底 | B → **libghostty-vt（用户选择）** |
-| 2 | 组织方式 | 独立仓库（像 StreamMark：核心 + 视图 + PTY + 主题包，经 NuGet 引用）；或者 TCode 仓库内的独立项目 | 独立库 → **TCode 仓库内独立项目（用户选择）** |
+| 2 | 组织方式 | 独立仓库（像 StreamMark：核心 + 视图 + PTY + 主题包，经 NuGet 引用）；或者 TKCode 仓库内的独立项目 | 独立库 → **TKCode 仓库内独立项目（用户选择）** |
 | 3 | 终端会话所在进程 | v1 在 UI 进程（UI 退出 shell 就结束）；一开始就做独立的 pty host（可重连、可保活，工作量大一档）；AgentHost（不推荐：它会崩溃重启） | v1 在 UI 进程，核心不依赖 UI，以后可迁出 → **一开始就做独立 pty host（用户选择）** |
 | 4 | SSH | A 系统 ssh 跑在本地 PTY；B 托管库（Tmds.Ssh 最接近系统行为，AOT 0 警告）；C 混合：交互用系统 ssh，SFTP 等用 Tmds.Ssh | C → **混合（用户选择）** |
 | 5 | 渲染路径 | `Control.Render`（UI 线程，简单）；`CompositionCustomVisualHandler`（渲染线程，Agent 流式输出时不抢 UI 线程） | 先 Render 做 MVP，再迁到渲染线程 → **先 Render 再迁渲染线程（用户选择）** |
-| 6 | 终端获得焦点时的快捷键 | macOS 的 ⌘K 是清屏还是命令面板；Windows / Linux 上的 Ctrl+K/N/B 交给 shell 还是 TCode | ⌘K 清屏，命令面板另配 ⌘⇧P；Win/Linux 上 Ctrl+字母交给 shell → **按系统终端惯例（用户选择）** |
+| 6 | 终端获得焦点时的快捷键 | macOS 的 ⌘K 是清屏还是命令面板；Windows / Linux 上的 Ctrl+K/N/B 交给 shell 还是 TKCode | ⌘K 清屏，命令面板另配 ⌘⇧P；Win/Linux 上 Ctrl+字母交给 shell → **按系统终端惯例（用户选择）** |
 | 7 | shell 集成 | 默认自动注入（VS Code、Ghostty）或默认关闭（Windows Terminal、iTerm2） | 默认开，可关，失败时显示原因 → **默认开（用户选择）** |
 | 8 | macOS 启动方式 | 通过 `/usr/bin/login -flp` 启动（和 Terminal.app 完全一致）；或者只把 argv0 改成 `-zsh` | login → **argv0 `-zsh`，不经 login（2026-10-17 用户决定：login 会吞掉 shell 退出码）** |
 | 9 | Unicode 宽度 | 默认兼容（按码点）+ 程序开启 2027 后按字形簇；或者默认按字形簇 | 默认兼容 → 默认兼容（采纳推荐） |

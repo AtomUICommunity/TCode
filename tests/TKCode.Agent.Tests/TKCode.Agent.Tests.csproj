@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\TKCode.Agent.Coding\TKCode.Agent.Coding.csproj" />
+        <ProjectReference Include="..\..\src\TKCode.Rpc.Contracts\TKCode.Rpc.Contracts.csproj" />
+        <!-- 只为保证 Host 先构建；测试通过子进程启动它 -->
+        <ProjectReference Include="..\..\src\TKCode.AgentHost\TKCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+</Project>

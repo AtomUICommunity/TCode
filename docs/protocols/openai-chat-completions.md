@@ -1,7 +1,7 @@
-# OpenAI Chat Completions 协议规格（TCode 实现用）
+# OpenAI Chat Completions 协议规格（TKCode 实现用）
 
 > 版本基线：2026-10-16 抓取的官方文档（`.md` 版本）+ openai-python v3.31.0（commit `9998c1a`，2026-10-15）。
-> 用途：TCode（C#/.NET 10）以**流式**方式调用 `POST /v1/chat/completions`，并兼容 DeepSeek、Kimi、智谱 GLM、阿里云百炼（DashScope）、OpenRouter、Ollama、LM Studio 等 OpenAI 兼容端点。
+> 用途：TKCode（C#/.NET 10）以**流式**方式调用 `POST /v1/chat/completions`，并兼容 DeepSeek、Kimi、智谱 GLM、阿里云百炼（DashScope）、OpenRouter、Ollama、LM Studio 等 OpenAI 兼容端点。
 > 所有结论都标了出处。标为「未证实」的条目是官方文档没有写明、只来自经验或推断的说法，实现时要做容错，不要硬依赖。
 
 ## 0. 来源
@@ -35,7 +35,7 @@
 
 - **Endpoint**：`POST https://api.openai.com/v1/chat/completions` [Ref-Chat]。SDK 默认 base URL 为 `https://api.openai.com/v1`，也可以用环境变量 `OPENAI_BASE_URL` 覆盖 [SDK `_client.py`]。
 - **官方定位**：新项目推荐使用 Responses API。Chat Completions 仍受支持，但新能力（推理条目回传、`reasoning.mode`、加密推理等）只在 Responses 提供 [Ref-Chat；G-Reasoning]。
-- **硬限制**：**GPT-6 Astra 和 GPT-6.1 Sol 在 Chat Completions 上不支持 function calling**，需要用 Responses API [G-FC 开头；G-Reasoning「Reasoning effort」节]。TCode 选择这两个模型时，应路由到 Responses 适配器，或者禁止在 Chat 中带 `tools`。
+- **硬限制**：**GPT-6 Astra 和 GPT-6.1 Sol 在 Chat Completions 上不支持 function calling**，需要用 Responses API [G-FC 开头；G-Reasoning「Reasoning effort」节]。TKCode 选择这两个模型时，应路由到 Responses 适配器，或者禁止在 Chat 中带 `tools`。
 - **请求头**
   - `Authorization: Bearer <API_KEY>`：必填 [Ref-Chat 示例；SDK `auth_headers`]。
   - `Content-Type: application/json` [Ref-Chat 示例]。
@@ -55,7 +55,7 @@
 
 类型与描述取自 [SDK `completion_create_params.py`] 和 [Ref-Chat Body Parameters]。两处一致。
 
-| 字段 | 类型 | 取值、默认值与约束 | TCode 建议 |
+| 字段 | 类型 | 取值、默认值与约束 | TKCode 建议 |
 |---|---|---|---|
 | `model` | string | 必填，例如 `gpt-6-astra`、`gpt-5.6-terra`、`o3` | 必发 |
 | `messages` | array | 必填，见 §3 | 必发 |
@@ -95,9 +95,9 @@
   "store": false,
   "max_completion_tokens": 32000,
   "reasoning_effort": "medium",
-  "prompt_cache_key": "tcode-session-7f3a",
+  "prompt_cache_key": "tkcode-session-7f3a",
   "messages": [
-    { "role": "developer", "content": "You are TCode, a coding agent." },
+    { "role": "developer", "content": "You are TKCode, a coding agent." },
     { "role": "user", "content": "列出 src 目录" }
   ],
   "tools": [
@@ -181,7 +181,7 @@
 1. 带 `tool_calls` 的 assistant 消息之后，必须**紧跟**若干条 `tool` 消息，**每个 `tool_call_id` 恰好对应一条**。中间不能插入 user、system、assistant 消息。（官方文档对这一点写得分散：[G-FC]「Handle zero, one, or multiple calls per response」「append one result per call」；违反时的 400 错误措辞在本次抓取的文档中没有逐字出现，**未证实**，但这是公认的硬约束。）
 2. `tool` 消息的前面必须有声明了对应 id 的 assistant `tool_calls`。孤立的 tool 消息会被拒绝（**未证实**，同上）。
 3. 多个 tool 结果之间的顺序不限，但它们必须连续。工具产生的图片放在**整组 tool 消息之后**的一条 user 消息里。
-4. `tool_call_id` 必须与模型返回的 `id` 完全一致。官方文档**没有规定 id 的长度或字符集**。业界实践把它截到 40 字符以内，TCode 的 `ChatToolCallId` 也这样做，这条限制**未证实**。
+4. `tool_call_id` 必须与模型返回的 `id` 完全一致。官方文档**没有规定 id 的长度或字符集**。业界实践把它截到 40 字符以内，TKCode 的 `ChatToolCallId` 也这样做，这条限制**未证实**。
 5. 历史中出现过工具调用、但本轮不再提供 `tools` 时：官方文档没有说明是否必须仍然提供 tools。部分代理（如 LiteLLM）要求 `tools` 至少存在。对 OpenAI 官方发 `tools: []` 是否会因为数组为空被拒，**未证实**，见 §11 的检查清单。
 6. 推理模型 + 工具：Chat Completions 无法回传推理条目，每一轮推理都从头开始。这是 Chat 与 Responses 的本质差别 [G-Reasoning「function calling」一节只描述了 Responses 的做法]。
 
@@ -218,14 +218,14 @@
 - 不支持的关键字：`allOf`、`not`、`dependentRequired`、`dependentSchemas`、`if`、`then`、`else`。
 - 规模限制：最多 5000 个属性、最多 10 层嵌套；属性名、定义名、enum 值和 const 值的字符串总长不超过 120,000；enum 值总数不超过 1000。
 - 带 `strict:true` 但 schema 不合规时，请求会**被拒绝**，并返回缺失约束的细节 [G-FC]。
-- **TCode 建议**：MCP 或第三方工具的 schema 常常不满足这些规则，所以**默认不发 `strict`**，保持非 strict，并在本地对参数做校验。
+- **TKCode 建议**：MCP 或第三方工具的 schema 常常不满足这些规则，所以**默认不发 `strict`**，保持非 strict，并在本地对参数做校验。
 
 ### 4.3 custom tool
 
 ```json
 { "type": "custom", "custom": { "name": "code_exec", "description": "...", "format": { "type": "text" } } }
 ```
-`format` 可以是 `{type:"text"}`，也可以是 `{type:"grammar", grammar:{syntax:"lark"|"regex", definition}}`。模型调用时，assistant 的 `tool_calls[i]` 为 `{type:"custom", custom:{name, input}}` [SDK]。注意：流式 chunk 的 `ChoiceDeltaToolCall.type` 只声明了 `"function"` [SDK `chat_completion_chunk.py`]，**custom tool 的流式增量格式没有文档**。TCode 不应该在 Chat 中使用 custom tool。
+`format` 可以是 `{type:"text"}`，也可以是 `{type:"grammar", grammar:{syntax:"lark"|"regex", definition}}`。模型调用时，assistant 的 `tool_calls[i]` 为 `{type:"custom", custom:{name, input}}` [SDK]。注意：流式 chunk 的 `ChoiceDeltaToolCall.type` 只声明了 `"function"` [SDK `chat_completion_chunk.py`]，**custom tool 的流式增量格式没有文档**。TKCode 不应该在 Chat 中使用 custom tool。
 
 ### 4.4 tool_choice [SDK `chat_completion_tool_choice_option_param.py`]
 
@@ -329,7 +329,7 @@ data: [DONE]
 
 ### 5.5 `finish_reason` 语义与处理
 
-| 值 | 含义 [SDK/Ref-Chunk] | TCode 处理 |
+| 值 | 含义 [SDK/Ref-Chunk] | TKCode 处理 |
 |---|---|---|
 | `stop` | 自然结束或命中 stop 序列 | Stop（如果累加出了工具调用，则为 ToolUse） |
 | `tool_calls` | 模型调用了工具 | ToolUse |
@@ -448,7 +448,7 @@ SDK 从 `body.code`、`body.param`、`body.type` 读取这些字段 [SDK `_excep
 | 思考开关 | `"thinking": {"type": "enabled"\|"disabled"}`，**默认 enabled** |
 | 思考强度 | OpenAI 格式下 `reasoning_effort` 只有 `low`/`high`/`max`，默认 `high`；服务端映射：`minimal`→low，`medium`/`xhigh`→high，`ultra`→max。关闭思考用 `thinking.type:"disabled"`（`none` 只出现在 Anthropic 格式中）[DeepSeek thinking_mode，2026-10-16 复核] |
 | 推理输出 | `delta.reasoning_content`（与 `content` 同级） |
-| **推理回传** | **不带 tools 时**：不需要回传，回传了也会被忽略。**带 tools 时**：后续所有请求都必须完整回传每条 assistant 消息的 `reasoning_content`，**包括没有调用工具的那几轮**，否则返回 **400**。TCode 实现：同一 Provider 内跨模型（如 flash ↔ v4-pro）也原样回传明文 `reasoning_content`（`ReplayReasoningAcrossProviderModels`）；来自其它厂商的 assistant 轮次补空串 `""` |
+| **推理回传** | **不带 tools 时**：不需要回传，回传了也会被忽略。**带 tools 时**：后续所有请求都必须完整回传每条 assistant 消息的 `reasoning_content`，**包括没有调用工具的那几轮**，否则返回 **400**。TKCode 实现：同一 Provider 内跨模型（如 flash ↔ v4-pro）也原样回传明文 `reasoning_content`（`ReplayReasoningAcrossProviderModels`）；来自其它厂商的 assistant 轮次补空串 `""` |
 | max_tokens | 字段名为 `max_tokens`，取值 1 到 393216；默认值：非思考模式 8K、思考模式 64K、`max` 强度 128K |
 | tool_choice | 思考模式下，`required` 和指定函数**都会返回 400** |
 | 无效参数 | 思考模式下 `temperature`、`presence_penalty`、`frequency_penalty` 不生效（不报错）；`top_p` 下限被抬到 0.95 |

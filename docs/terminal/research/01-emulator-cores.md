@@ -31,7 +31,7 @@
    - **wezterm-term**：功能全，但没有发布到 crates.io，WezTerm 正式版停在 2024-02 [CRATES][GH-API]。
    - **libvterm**：上游停在 0.3.3（2023-08）。不支持 Kitty 键盘、2026、2027、OSC 133，回滚由宿主自己存 [LV]。
    - **Windows Terminal TerminalCore**：依赖 WinRT 和 HRESULT，不能单独复用 [MSWT]。
-5. **xterm.js + WebView 不适合 TCode。**
+5. **xterm.js + WebView 不适合 TKCode。**
    - Avalonia.Controls.WebView 12.1.1 是 MIT 许可，并声明 AOT 兼容。但它在 Windows / macOS 上嵌入的是原生子窗口，窗口内的覆盖层会被遮挡；Linux 默认需要 WPE 运行库 [WV]。
    - xterm.js 稳定版 6.0.0 还没有 Kitty 键盘（2026-01 才进 master），ucs-detect 只有 26 分；仓库有 26 个未关闭的 IME issue，其中包括中文输入法丢字 [XJ][UCS][GH-API]。
    - 这与"自绘、与原生 UI 融合、中文输入"的目标冲突。
@@ -97,7 +97,7 @@
 - libvterm：[LV:vterm.h:24,541-571][LV:state.c:828-908,1777-1803]。
 - xterm.js：[XJ:InputHandler.ts:298,2036][XJ:addons/*]；Kitty 键盘于 2026-01-09 合入 master（2265fa2ad）。
 
-### 3.3 集成维度（与自绘渲染器和 TCode 硬约束相关）
+### 3.3 集成维度（与自绘渲染器和 TKCode 硬约束相关）
 
 | 候选 | cell 级 API | dirty / 行身份 | 线程模型 | NativeAOT | 6 RID 构建 | 原生产物 | 每 cell 内存 | 一致性测试 / Unicode |
 |---|---|---|---|---|---|---|---|---|
@@ -336,7 +336,7 @@ RoyalTerminal 在 pin 住的 `b40acce5` 上通过构建时生成 overlay 的方�
 | Windows Terminal TerminalCore | `Terminal.hpp` 依赖 `winrt::Microsoft::Terminal::Core`、`HRESULT`、`til/winrt.h` 以及控制台的 buffer / renderer / adapter，只能在 Windows 上构建，**不能单独跨平台复用** [MSWT]。Windows 上值得复用的是 ConPTY（`Microsoft.Windows.Console.ConPTY` NuGet），属于 PTY 调研 |
 | contour vtbackend | C++20，Apache-2.0；ucs-detect 99 分（最高）；但没有 C API，依赖 GSL、boxed-cpp、libunicode 等，用 CMake 构建 6 RID 并自写 C 包装的成本高；主要由一人维护 [CT][UCS] |
 | foot | 只支持 Wayland 的 C 应用，没有可嵌入的库 |
-| kitty | GPL-3.0，C + Python，没有可嵌入的核心，许可证也不适合 Apache-2.0 的 TCode |
+| kitty | GPL-3.0，C + Python，没有可嵌入的核心，许可证也不适合 Apache-2.0 的 TKCode |
 
 ### 4.7 xterm.js + WebView（VS Code / Tabby / Hyper 方案）
 
@@ -375,7 +375,7 @@ RoyalTerminal 在 pin 住的 `b40acce5` 上通过构建时生成 overlay 的方�
 | libvterm 0.3.3 | C | 5.8K | 45 个脚本 | 无回滚存储 |
 | Ghostty `src/terminal` | Zig | 184K，含内联测试、C API 25.5K、kitty 18.9K、snapshot 14.4K、formatter 7.6K；核心部分：Terminal 17.3K、Screen 12.8K、PageList 20.8K、page 4.5K、Parser 1.1K、stream 5.7K | 内联 | 全功能 |
 
-TCode 自研的模块拆分与估算 **[推断]**，按 1 名熟练开发者计：
+TKCode 自研的模块拆分与估算 **[推断]**，按 1 名熟练开发者计：
 
 | 模块 | 内容 | 行数 | 人周 |
 |---|---|---|---|
@@ -452,7 +452,7 @@ TCode 自研的模块拆分与估算 **[推断]**，按 1 名熟练开发者计�
 
 ## 6. 推荐及理由
 
-**选择路线 B**。理由按 TCode 的硬约束逐条对应：
+**选择路线 B**。理由按 TKCode 的硬约束逐条对应：
 
 | 约束 | B 的满足情况 |
 |---|---|

@@ -1,0 +1,38 @@
+tkcode-grid 1
+size 80x29 cell 8x16
+cursor 13,0 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=1 autowrap=1 insert=0 9001=0
+title "vttest"
+styles
+  s0 default
+rows
+   0 |Push <RETURN>                                                                   | s0
+   1 |Jump scroll down region [1..24] size 24 Line 29                                 | s0
+   2 |Jump scroll down region [1..24] size 24 Line 28                                 | s0
+   3 |Jump scroll down region [1..24] size 24 Line 27                                 | s0
+   4 |Jump scroll down region [1..24] size 24 Line 26                                 | s0
+   5 |Jump scroll down region [1..24] size 24 Line 25                                 | s0
+   6 |Jump scroll down region [1..24] size 24 Line 24                                 | s0
+   7 |Jump scroll down region [1..24] size 24 Line 23                                 | s0
+   8 |Jump scroll down region [1..24] size 24 Line 22                                 | s0
+   9 |Jump scroll down region [1..24] size 24 Line 21                                 | s0
+  10 |Jump scroll down region [1..24] size 24 Line 20                                 | s0
+  11 |Jump scroll down region [1..24] size 24 Line 19                                 | s0
+  12 |Jump scroll down region [1..24] size 24 Line 18                                 | s0
+  13 |Jump scroll down region [1..24] size 24 Line 17                                 | s0
+  14 |Jump scroll down region [1..24] size 24 Line 16                                 | s0
+  15 |Jump scroll down region [1..24] size 24 Line 15                                 | s0
+  16 |Jump scroll down region [1..24] size 24 Line 14                                 | s0
+  17 |Jump scroll down region [1..24] size 24 Line 13                                 | s0
+  18 |Jump scroll down region [1..24] size 24 Line 12                                 | s0
+  19 |Jump scroll down region [1..24] size 24 Line 11                                 | s0
+  20 |Jump scroll down region [1..24] size 24 Line 10                                 | s0
+  21 |Jump scroll down region [1..24] size 24 Line 9                                  | s0
+  22 |Jump scroll down region [1..24] size 24 Line 8                                  | s0
+  23 |Jump scroll down region [1..24] size 24 Line 7                                  | s0
+  24 |                                                                                | s0
+  25 |                                                                                | s0
+  26 |                                                                                | s0
+  27 |                                                                                | s0
+  28 |                                                                                | s0

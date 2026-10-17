@@ -1,4 +1,4 @@
-# TCode 终端 03：PTY 层（TCode.Terminal.Pty + native/tcodepty）
+# TKCode 终端 03：PTY 层（TKCode.Terminal.Pty + native/tkcodepty）
 
 > 状态：详细设计 v1（2026-10-16）。上游：[01-architecture.md](01-architecture.md)（D1–D9、§5 线程模型、§6.2 接口）、[research/02-pty.md](research/02-pty.md)、[research/05](research/05-platform-behavior-config.md) §1/§2/§8、[research/06](research/06-ssh-transport.md) §6。
 > 本文写到"照着就能实现"的粒度：C 头文件、helper 源码、C# 互操作声明、线程与关闭状态机、构建命令、测试与 spike 清单。
@@ -40,18 +40,18 @@
 ## 1. 项目结构与文件清单
 
 ```
-native/tcodepty/
-  include/tcodepty.h            C API（§2），C# 侧逐字镜像
+native/tkcodepty/
+  include/tkcodepty.h            C API（§2），C# 侧逐字镜像
   src/tcpty_spawn.c             init、spawn、termios、winsize、状态管道协议          ~220 行
   src/tcpty_io.c                read_gather、read、write、wait、wake、set_nonblock、close、QoS   ~150 行
   src/tcpty_exit.c              exitwatch（epoll+pidfd / kqueue）、reap、信号映射   ~170 行
   src/tcpty_proc.c              前台进程组、进程名/路径、cwd、子进程、termios 状态   ~150 行
   src/tcpty_internal.h          错误码映射、fd 提升（F_DUPFD_CLOEXEC ≥ 10）
-  helper/tcode-pty-spawn.c      helper 可执行文件（§3）：PTY / --exec / --detach 三种模式   ~85 行
+  helper/tkcode-pty-spawn.c      helper 可执行文件（§3）：PTY / --exec / --detach 三种模式   ~85 行
   build.sh                      ./build.sh <rid> [--static]（§11）
   check-glibc.sh                检查 .so 依赖的最高 GLIBC_ 符号版本 ≤ 2.28
-src/TCode.Terminal.Pty/
-  TCode.Terminal.Pty.csproj     IsAotCompatible、AllowUnsafeBlocks、DisableRuntimeMarshalling
+src/TKCode.Terminal.Pty/
+  TKCode.Terminal.Pty.csproj     IsAotCompatible、AllowUnsafeBlocks、DisableRuntimeMarshalling
   ITerminalConnection.cs        接口与值类型（§4.1）
   PtyLaunch.cs                  PtyLaunch、PtyWidthMode、PtyLaunchHints
   LocalPty.cs                   工厂：LocalPty.Start(PtyLaunch, LocalPtyOptions)
@@ -71,15 +71,15 @@ src/TCode.Terminal.Pty/
   Windows/ConPtyBackend.cs      调用序列（§7.3）
   Windows/WindowsJob.cs、Windows/EnvironmentBlock.cs、Windows/CommandLine.cs
   Windows/ProcessTree.cs        Toolhelp32（§8.2）
-tests/TCode.Terminal.Pty.Tests/ §14
+tests/TKCode.Terminal.Pty.Tests/ §14
 ```
 
-- libtcodepty 实际约 690 行，比 01 估计的约 300 行多。多出来的是 exitwatch、proc 查询和错误映射，所有平台差异都集中在这里。
+- libtkcodepty 实际约 690 行，比 01 估计的约 300 行多。多出来的是 exitwatch、proc 查询和错误映射，所有平台差异都集中在这里。
 - Windows 没有我们自己的原生代码 [实 research/02 §5.4]。
 
 ---
 
-## 2. libtcodepty C API（头文件草案）
+## 2. libtkcodepty C API（头文件草案）
 
 约定（对所有函数都成立）：
 
@@ -95,10 +95,10 @@ tests/TCode.Terminal.Pty.Tests/ §14
 | ABI 版本 | `tcpty_version()` 返回 `major << 16 \| minor`。动态加载时 C# 检查 major 是否相等；静态链接（DirectPInvoke）时不会不一致 |
 
 ```c
-/* tcodepty.h — libtcodepty C API v1.0
+/* tkcodepty.h — libtkcodepty C API v1.0
  * 只在 linux-{x64,arm64}、osx-{x64,arm64} 上构建；Windows 不使用。 */
-#ifndef TCODEPTY_H
-#define TCODEPTY_H
+#ifndef TKCODEPTY_H
+#define TKCODEPTY_H
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
@@ -157,7 +157,7 @@ enum { TCPTY_WARN_CWD_FALLBACK = 1u << 0 };            /* cwd 不可用，已回
 typedef struct tcpty_spawn_options {
   uint32_t size;
   uint32_t flags;
-  const char *helper_path;      /* 必填，tcode-pty-spawn 的绝对路径 */
+  const char *helper_path;      /* 必填，tkcode-pty-spawn 的绝对路径 */
   const char *file;             /* 目标程序；含 '/' 时直接 exec，否则按 envp 中的 PATH 查找（execvp 规则） */
   const char *const *argv;      /* 以 NULL 结尾；argv[0] 就是 argv0（例如 "-zsh"） */
   const char *const *envp;      /* 以 NULL 结尾的 "K=V" 数组，作为子进程的完整环境 */
@@ -299,12 +299,12 @@ int32_t tcpty_spawn(const tcpty_spawn_options *o, tcpty_spawn_result *r) {
 
 ### 2.3 管道模式启动：`tcpty_spawn_pipe`（Unix）
 
-pty host 在 Unix 上不能用 `Process`（§10），但 profile 探测和 SSH 需要运行一些短命令（`ssh -G <host>`、读取 shell 版本等），并收集它们的输出。为此 libtcodepty 提供一个不分配 PTY 的启动接口，子进程的退出同样由 §6 的退出监视处理（只 `waitpid(pid)`）：
+pty host 在 Unix 上不能用 `Process`（§10），但 profile 探测和 SSH 需要运行一些短命令（`ssh -G <host>`、读取 shell 版本等），并收集它们的输出。为此 libtkcodepty 提供一个不分配 PTY 的启动接口，子进程的退出同样由 §6 的退出监视处理（只 `waitpid(pid)`）：
 
 ```c
 typedef struct tcpty_pipe_options {
     uint32_t size;                 /* sized-struct */
-    const char *helper_path;       /* tcode-pty-spawn，以 --exec 模式启动：复位全部信号后 execvp */
+    const char *helper_path;       /* tkcode-pty-spawn，以 --exec 模式启动：复位全部信号后 execvp */
     const char *file;              /* 按 PATH 查找规则解析 */
     const char *const *argv;       /* argv[0] 是 argv0 */
     const char *const *envp;
@@ -323,7 +323,7 @@ TCPTY_API int32_t tcpty_spawn_pipe(const tcpty_pipe_options *opt, tcpty_pipe_res
 
 C# 侧包装为 `PipeProcess.RunAsync(file, args, env, cwd, timeout, maxOutput)`，超时后 `killpg`。Windows 没有这个限制，直接使用 `System.Diagnostics.Process`。
 
-## 3. tcode-pty-spawn helper（完整草案）
+## 3. tkcode-pty-spawn helper（完整草案）
 
 三种模式：
 
@@ -333,20 +333,20 @@ C# 侧包装为 `PipeProcess.RunAsync(file, args, env, cwd, timeout, maxOutput)`
 | **`--exec`** | BashTool（AgentHost，经 `Process.Start`） | 把全部信号恢复为默认、清空掩码 → execvp（§12） |
 | **`--detach`** | Desktop 启动 pty host（[04-pty-host.md](04-pty-host.md) §1） | `setsid` → 恢复信号、清空掩码 → 可选地把就绪管道 dup 到 fd 1 → 关闭 fd ≥ 3 → `execv(host)` |
 
-`--detach` 的参数格式按 04 §1：`tcode-pty-spawn --detach [--stdout-fd N] -- <host 绝对路径> [args...]`。
+`--detach` 的参数格式按 04 §1：`tkcode-pty-spawn --detach [--stdout-fd N] -- <host 绝对路径> [args...]`。
 
 - `--stdout-fd N`：就绪管道所在的 fd。N ≠ 1 时先 `dup2(N, 1)`，这样它才能在"关闭 fd ≥ 3"之后保留下来。Desktop 用 `Process.Start` 重定向 stdout 时传 1 即可。
 - 用 `execv`，不做 PATH 查找，host 路径必须是绝对路径。
-- 失败时没有状态管道，helper 向 stderr 写一行 `tcode-pty-spawn: <stage>: <strerror>`，并以 **126**（setsid / 参数错误）或 **127**（exec 失败）退出。这两个码与 04 §1 中 host 自身的退出码 0/2/3/4 不冲突，Desktop 据此区分"helper 失败"与"host 失败"。
+- 失败时没有状态管道，helper 向 stderr 写一行 `tkcode-pty-spawn: <stage>: <strerror>`，并以 **126**（setsid / 参数错误）或 **127**（exec 失败）退出。这两个码与 04 §1 中 host 自身的退出码 0/2/3/4 不冲突，Desktop 据此区分"helper 失败"与"host 失败"。
 - 由 `Process.Start` 启动的 helper 不是进程组组长（.NET 不会 setpgid），所以 `setsid()` 必定成功。失败（EPERM）也按 126 退出，不重试 fork [推]。
 
 ```c
-/* tcode-pty-spawn：posix_spawn / Process.Start 之后、目标程序之前的一跳，exec 之后不运行任何托管代码。
+/* tkcode-pty-spawn：posix_spawn / Process.Start 之后、目标程序之前的一跳，exec 之后不运行任何托管代码。
  * PTY 模式：argv = [self, cwd, file, argv0, args...]；fd 0-2 = slave；fd 3 = 状态管道写端。
  * exec 模式：argv = [self, "--exec", file, argv0, args...]；复位全部信号后 execvp。
  * detach 模式：argv = [self, "--detach", ["--stdout-fd", N], "--", host, args...]；setsid、复位信号、关闭 fd≥3 后 execv。
  * 状态记录 {int32 stage, int32 err}：stage > 0 致命（随后 _exit(127)）；stage < 0 是警告，继续执行。
- * stage 编号与 tcodepty.h 的 TCPTY_STAGE_HELPER_* 一致：101 参数，102 控制终端，103 exec；-1 表示 cwd 回退。 */
+ * stage 编号与 tkcodepty.h 的 TCPTY_STAGE_HELPER_* 一致：101 参数，102 控制终端，103 exec；-1 表示 cwd 回退。 */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -391,7 +391,7 @@ static void reset_signals(void) {
 }
 
 static void die(int code, const char *stage) {                          /* exec / detach 模式：没有状态管道 */
-    dprintf(2, "tcode-pty-spawn: %s: %s\n", stage, strerror(errno));
+    dprintf(2, "tkcode-pty-spawn: %s: %s\n", stage, strerror(errno));
     _exit(code);
 }
 
@@ -449,7 +449,7 @@ int main(int argc, char **argv) {
 ### 4.1 接口（对齐 01 §6.2，加粗的是本文提议的补充）
 
 ```csharp
-namespace TCode.Terminal.Pty;
+namespace TKCode.Terminal.Pty;
 
 public readonly record struct TerminalSize(int Columns, int Rows, int CellWidth, int CellHeight);
 // 与 01 §6.1 一致：CellWidth/CellHeight 是单个 cell 的像素；PTY 层计算 ws_xpixel = Columns × CellWidth、
@@ -501,11 +501,11 @@ ConPTY 的 resize 只接受 COORD，**没有像素尺寸**；`CSI 14 t` 这类�
 [assembly: System.Runtime.CompilerServices.DisableRuntimeMarshalling]
 [assembly: DefaultDllImportSearchPaths(DllImportSearchPath.AssemblyDirectory)]
 
-namespace TCode.Terminal.Pty.Unix;
+namespace TKCode.Terminal.Pty.Unix;
 
 internal static unsafe partial class TcPtyNative
 {
-    private const string Lib = "libtcodepty";   // 与 <DirectPInvoke Include="libtcodepty" /> 同名
+    private const string Lib = "libtkcodepty";   // 与 <DirectPInvoke Include="libtkcodepty" /> 同名
 
     [LibraryImport(Lib, EntryPoint = "tcpty_version")]      internal static partial int Version();
     [LibraryImport(Lib, EntryPoint = "tcpty_last_errno")]   internal static partial int LastErrno();
@@ -844,7 +844,7 @@ internal static unsafe class ConPtyApi
 |---|---|---|
 | `ESC[c`（DA1） | 镜像核心（libghostty-vt）的 write_pty → `TryWriteReply` | 1.24 及更早版本、inbox：应答之前 conhost 最多阻塞 3 s；1.25：只在使用 INHERIT_CURSOR 时等待 [实 research/02 W3]。读线程在 CreateProcess 之前启动，并且 actor 立即开始消费 |
 | `ESC[?1004h` | 两份核心都记录焦点模式 | UI 发送焦点事件 |
-| `ESC[?9001h` | **libghostty-vt 的模式表里没有 9001** [实 GH modes.zig：有 1004 和 2027，没有 9001] | 需要在 TCode 一侧额外跟踪：两份核心前面各加一个轻量的 9001 序列识别器，写进 `FrameSnapshot.Modes`，并负责 DECRQM 9001 的应答。属于 02-core / 06-input 的工作，见 §16-5 |
+| `ESC[?9001h` | **libghostty-vt 的模式表里没有 9001** [实 GH modes.zig：有 1004 和 2027，没有 9001] | 需要在 TKCode 一侧额外跟踪：两份核心前面各加一个轻量的 9001 序列识别器，写进 `FrameSnapshot.Modes`，并负责 DECRQM 9001 的应答。属于 02-core / 06-input 的工作，见 §16-5 |
 | resize 之后的 `ESC[6n` | 镜像核心应答 CPR | [实 research/02 W7] |
 
 ### 7.8 W1–W12 对策
@@ -854,7 +854,7 @@ internal static unsafe class ConPtyApi
 | W1 | Close 死锁 | 在关闭线程上调用 Close；读线程进入丢弃模式继续读到 BROKEN_PIPE；`CancelPendingFlush`；优先使用随包 dll（其 Close 不等待） | §5.2、§6.2 |
 | W2 | 启动中 Close 弹出 0xc0000142 | 距启动不足 500 ms 的关闭请求先等待 | §6.2 步骤 2 |
 | W3 | DA1 阻塞 | 读线程在 CreateProcess 之前启动；镜像核心应答；**不做** DA1 过滤 hack | §7.3、§7.7 |
-| W4 | 9001 | 在 TCode 一侧跟踪 9001，06-input 负责编码 | §7.7 |
+| W4 | 9001 | 在 TKCode 一侧跟踪 9001，06-input 负责编码 | §7.7 |
 | W5 | 字宽不一致 | flags 与核心一致；Windows 锁定宽度模式 | §7.4 |
 | W6 | 旧版"重新渲染"与清屏 | 随包 dll；`ClearBufferAsync` | §7.3 |
 | W7 | resize 后的 CPR | 镜像核心任何时候都应答 | §7.7 |
@@ -916,7 +916,7 @@ GetForegroundAsync：
 
 | 平台 | 格式 | 规则 |
 |---|---|---|
-| Unix | `char *const envp[]`，元素为 UTF-8 的 `"KEY=VALUE"`，以 NULL 结尾，通过 `posix_spawn` 原样传给 helper，helper 用它 `execvp`（PATH 查找也使用这份环境） | 由 C# 构造：key 去重（后者覆盖前者）；key 为空或含 `=`、值含 NUL 时直接拒绝（抛 `ArgumentException`）。PTY 层**不增删任何变量**，策略在 TCode.Terminal.Shell（research/05 §2.3）。不在子进程里 setenv |
+| Unix | `char *const envp[]`，元素为 UTF-8 的 `"KEY=VALUE"`，以 NULL 结尾，通过 `posix_spawn` 原样传给 helper，helper 用它 `execvp`（PATH 查找也使用这份环境） | 由 C# 构造：key 去重（后者覆盖前者）；key 为空或含 `=`、值含 NUL 时直接拒绝（抛 `ArgumentException`）。PTY 层**不增删任何变量**，策略在 TKCode.Terminal.Shell（research/05 §2.3）。不在子进程里 setenv |
 | Windows | UTF-16 环境块：`K=V\0K=V\0\0`（为空时是 `\0\0`），配合 `CREATE_UNICODE_ENVIRONMENT` | 按名称做大小写不敏感的排序（Win32 文档要求按 Unicode 序，与区域无关；用 `OrdinalIgnoreCase` 近似）；以 `=` 开头的驱动器 cwd 项（`=C:=C:\…`）保留在最前面；key 去重时不区分大小写 |
 
 `.NET` 读取环境时按 UTF-8 解码，原来不是 UTF-8 的字节会丢失 [推]。v1 接受这个限制，S11 实测其影响。
@@ -954,24 +954,24 @@ argv 与命令行：
 
 ```bash
 # 公共选项
-CFLAGS="-O2 -fPIC -fvisibility=hidden -D_GNU_SOURCE -Wall -Wextra -Werror -Inative/tcodepty/include"
-SRC="native/tcodepty/src/tcpty_spawn.c native/tcodepty/src/tcpty_io.c native/tcodepty/src/tcpty_exit.c native/tcodepty/src/tcpty_proc.c"
+CFLAGS="-O2 -fPIC -fvisibility=hidden -D_GNU_SOURCE -Wall -Wextra -Werror -Inative/tkcodepty/include"
+SRC="native/tkcodepty/src/tcpty_spawn.c native/tkcodepty/src/tcpty_io.c native/tkcodepty/src/tcpty_exit.c native/tkcodepty/src/tcpty_proc.c"
 
 # linux-x64 / linux-arm64：glibc 基线 2.28（RHEL 8），任何 Linux 主机都能交叉编译
 for T in x86_64 aarch64; do
-  zig cc -target $T-linux-gnu.2.28 $CFLAGS -shared -Wl,-soname,libtcodepty.so -o out/$T/libtcodepty.so $SRC
+  zig cc -target $T-linux-gnu.2.28 $CFLAGS -shared -Wl,-soname,libtkcodepty.so -o out/$T/libtkcodepty.so $SRC
   for f in $SRC; do zig cc -target $T-linux-gnu.2.28 $CFLAGS -c $f -o out/$T/$(basename $f .c).o; done
-  zig ar rcs out/$T/libtcodepty.a out/$T/*.o                                             # 供 DirectPInvoke 使用
-  zig cc -target $T-linux-musl -O2 -static -o out/$T/tcode-pty-spawn native/tcodepty/helper/tcode-pty-spawn.c   # 完全静态
+  zig ar rcs out/$T/libtkcodepty.a out/$T/*.o                                             # 供 DirectPInvoke 使用
+  zig cc -target $T-linux-musl -O2 -static -o out/$T/tkcode-pty-spawn native/tkcodepty/helper/tkcode-pty-spawn.c   # 完全静态
 done
-native/tcodepty/check-glibc.sh out/*/libtcodepty.so    # objdump -T | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 ≤ 2.28
+native/tkcodepty/check-glibc.sh out/*/libtkcodepty.so    # objdump -T | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 ≤ 2.28
 
 # osx-arm64 / osx-x64：Apple clang，在 arm64 runner 上可以同时产出两个架构
 for A in arm64 x86_64; do
-  clang -arch $A -mmacosx-version-min=11.0 $CFLAGS -dynamiclib -install_name @rpath/libtcodepty.dylib -o out/$A/libtcodepty.dylib $SRC
+  clang -arch $A -mmacosx-version-min=11.0 $CFLAGS -dynamiclib -install_name @rpath/libtkcodepty.dylib -o out/$A/libtkcodepty.dylib $SRC
   clang -arch $A -mmacosx-version-min=11.0 $CFLAGS -c $SRC   # 生成 .o，然后：
-  libtool -static -o out/$A/libtcodepty.a *.o
-  clang -arch $A -mmacosx-version-min=11.0 -O2 -o out/$A/tcode-pty-spawn native/tcodepty/helper/tcode-pty-spawn.c
+  libtool -static -o out/$A/libtkcodepty.a *.o
+  clang -arch $A -mmacosx-version-min=11.0 -O2 -o out/$A/tkcode-pty-spawn native/tkcodepty/helper/tkcode-pty-spawn.c
 done
 ```
 
@@ -986,11 +986,11 @@ done
 ### 11.2 签名与公证（macOS）
 
 ```bash
-# 由内向外签名：先签 helper 和 dylib，再签 tcode-ptyhost，最后签 .app
-codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/Contents/MacOS/ptyhost/tcode-pty-spawn
-codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/Contents/MacOS/ptyhost/libtcodepty.dylib   # 仅动态模式
-codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/Contents/MacOS/ptyhost/tcode-ptyhost
-# …最后签 TCode.app，然后 notarytool submit --wait，stapler staple
+# 由内向外签名：先签 helper 和 dylib，再签 tkcode-ptyhost，最后签 .app
+codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TKCode.app/Contents/MacOS/ptyhost/tkcode-pty-spawn
+codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TKCode.app/Contents/MacOS/ptyhost/libtkcodepty.dylib   # 仅动态模式
+codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TKCode.app/Contents/MacOS/ptyhost/tkcode-ptyhost
+# …最后签 TKCode.app，然后 notarytool submit --wait，stapler staple
 ```
 
 - helper **不需要任何 entitlement**。hardened runtime 只约束 helper 自己的映像，exec 之后由新映像（shell）自己的签名决定 [推，S13]。
@@ -999,29 +999,29 @@ codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/
 
 ### 11.3 发布目录布局
 
-沿用 AgentHost 发布到 `agenthost/` 子目录的做法 [实 src/TCode.Desktop/TCode.Desktop.csproj:50-53]。pty host 发布到 `ptyhost/`。
+沿用 AgentHost 发布到 `agenthost/` 子目录的做法 [实 src/TKCode.Desktop/TKCode.Desktop.csproj:50-53]。pty host 发布到 `ptyhost/`。
 
 ```
-<publish>/                        （macOS：TCode.app/Contents/MacOS/）
-  TCode[.exe]
+<publish>/                        （macOS：TKCode.app/Contents/MacOS/）
+  TKCode[.exe]
   libghostty-vt.{dylib,so,dll}     UI 侧核心使用
   agenthost/…
   ptyhost/
-    tcode-ptyhost[.exe]            AOT
+    tkcode-ptyhost[.exe]            AOT
     libghostty-vt.*                镜像核心使用（与 UI 侧是同一个构建，01 §3.2 规则 3）
-    tcode-pty-spawn                Unix
-    libtcodepty.{so,dylib}         Unix，只在动态模式下存在
+    tkcode-pty-spawn                Unix
+    libtkcodepty.{so,dylib}         Unix，只在动态模式下存在
     conpty.dll                     Windows（来自 runtimes/win-<arch>/native）
     x64/OpenConsole.exe            Windows x64 包同时带 x64 和 arm64 两份；arm64 包只带 arm64
     arm64/OpenConsole.exe
 ```
 
-`HelperLocator` 默认使用 `Path.Combine(AppContext.BaseDirectory, "tcode-pty-spawn")`；可以用 `LocalPtyOptions.HelperPath` 覆盖（测试用）。
+`HelperLocator` 默认使用 `Path.Combine(AppContext.BaseDirectory, "tkcode-pty-spawn")`；可以用 `LocalPtyOptions.HelperPath` 覆盖（测试用）。
 
 ### 11.4 ConPTY NuGet 引用
 
 ```xml
-<!-- src/TCode.Terminal.Host/TCode.Terminal.Host.csproj：必须是可执行项目自己的直接引用 -->
+<!-- src/TKCode.Terminal.Host/TKCode.Terminal.Host.csproj：必须是可执行项目自己的直接引用 -->
 <PropertyGroup>
   <ConptyRequiresx64Host>true</ConptyRequiresx64Host>
   <ConptyRequiresARM64Host>true</ConptyRequiresARM64Host>
@@ -1031,33 +1031,33 @@ codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/
 </ItemGroup>
 ```
 
-- 包里的 `build/` targets **只对直接引用生效**，通过 ProjectReference 传递时只会带上 conpty.dll，OpenConsole 会丢失，而 conpty.dll 找不到它时会静默回退到 conhost [实 PP Porta.Pty.targets:3-23]。所以要在 Host 项目里直接引用，`TCode.Terminal.Pty` 本身不引用这个包。
+- 包里的 `build/` targets **只对直接引用生效**，通过 ProjectReference 传递时只会带上 conpty.dll，OpenConsole 会丢失，而 conpty.dll 找不到它时会静默回退到 conhost [实 PP Porta.Pty.targets:3-23]。所以要在 Host 项目里直接引用，`TKCode.Terminal.Pty` 本身不引用这个包。
 - 属性名 `ConptyRequires*Host` 取自 Porta.Pty 的用法 [实 PP Porta.Pty.csproj:35-36]。它在 AOT 发布中是否把文件放进 `x64\` 和 `arm64\`，需要 S8 实测；如果不行，就用 `GeneratePathProperty` 加显式的 `<None Link="x64\OpenConsole.exe">` 兜底。
 - **CI 断言**：Windows 发布目录必须包含 `conpty.dll`、`x64\OpenConsole.exe` 和 `arm64\OpenConsole.exe`（x64 包）。启动日志必须报告 `ConPty=Bundled`。
 - 升级规则：conpty.dll 与 OpenConsole.exe **必须成对升级**（wezterm#7774 [实 research/02 §3.4]）。
 
-### 11.5 AOT 下静态链接 libtcodepty（DirectPInvoke）
+### 11.5 AOT 下静态链接 libtkcodepty（DirectPInvoke）
 
 | 方案 | 优点 | 缺点 | 决定 |
 |---|---|---|---|
 | 动态 `.so` / `.dylib` | Debug/JIT、单元测试直接可用；替换方便 | 多一个需要签名的文件；需要处理加载路径（已用 `AssemblyDirectory` 限定） | **测试和 Debug 构建使用** |
-| 静态 `.a` + `<DirectPInvoke Include="libtcodepty" />` + `<NativeLibrary Include="…/libtcodepty.a" />` | 少一个文件；符号缺失时在链接期报错；调用没有懒绑定开销 [实 research/02 §5.3] | 每个 RID 都要有 `.a`；它与宿主的 libc 一起链接（这正是我们想要的） | **tcode-ptyhost 的 Release AOT 发布使用** |
+| 静态 `.a` + `<DirectPInvoke Include="libtkcodepty" />` + `<NativeLibrary Include="…/libtkcodepty.a" />` | 少一个文件；符号缺失时在链接期报错；调用没有懒绑定开销 [实 research/02 §5.3] | 每个 RID 都要有 `.a`；它与宿主的 libc 一起链接（这正是我们想要的） | **tkcode-ptyhost 的 Release AOT 发布使用** |
 
 ```xml
-<!-- TCode.Terminal.Host.csproj（Unix RID 且 PublishAot 时） -->
+<!-- TKCode.Terminal.Host.csproj（Unix RID 且 PublishAot 时） -->
 <ItemGroup Condition="'$(PublishAot)' == 'true' And !$(RuntimeIdentifier.StartsWith('win'))">
-  <DirectPInvoke Include="libtcodepty" />
-  <NativeLibrary Include="$(RepoRoot)artifacts/native/tcodepty/$(RuntimeIdentifier)/libtcodepty.a" />
+  <DirectPInvoke Include="libtkcodepty" />
+  <NativeLibrary Include="$(RepoRoot)artifacts/native/tkcodepty/$(RuntimeIdentifier)/libtkcodepty.a" />
 </ItemGroup>
 ```
 
-注意：AOT 二进制本身链接的是**构建机**的 glibc。要支持 RHEL 8，tcode-ptyhost 必须在 glibc ≤ 2.28 的 sysroot 上发布，由 12-build 文档负责。
+注意：AOT 二进制本身链接的是**构建机**的 glibc。要支持 RHEL 8，tkcode-ptyhost 必须在 glibc ≤ 2.28 的 sysroot 上发布，由 12-build 文档负责。
 
 ---
 
 ## 12. 独立修复：BashTool 的 SIGPIPE 问题（只给出改法，本次不改代码）
 
-**问题**：`BashTool.Start` 通过 `Process.Start` 启动 `$SHELL -c`（src/TCode.Agent.Coding/Tools/Shell/BashTool.cs:184-211）。.NET 把 SIGPIPE 设为 SIG_IGN，它的 spawn 路径又只复位自定义处理器（RT pal_process.c:584-604），所以 bash 进程继承了 SIGPIPE 忽略状态。结果 `yes | head -1` 中的 `yes` 不会被 SIGPIPE 结束，而是报 `yes: stdout: Broken pipe` 并以 1 退出；Python 会打印 BrokenPipeError 栈。
+**问题**：`BashTool.Start` 通过 `Process.Start` 启动 `$SHELL -c`（src/TKCode.Agent.Coding/Tools/Shell/BashTool.cs:184-211）。.NET 把 SIGPIPE 设为 SIG_IGN，它的 spawn 路径又只复位自定义处理器（RT pal_process.c:584-604），所以 bash 进程继承了 SIGPIPE 忽略状态。结果 `yes | head -1` 中的 `yes` 不会被 SIGPIPE 结束，而是报 `yes: stdout: Broken pipe` 并以 1 退出；Python 会打印 BrokenPipeError 栈。
 
 **本机实测**（父进程 SIGPIPE=IGNORE）[实 local]：
 
@@ -1074,8 +1074,8 @@ codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" TCode.app/
 ```csharp
 // BashTool.Start（只在 Unix 上，并且找到 helper 时）
 var shell = ShellResolver.Current;
-var helper = PtyHelperPath.TryResolve();   // 1) 环境变量 TCODE_PTY_HELPER（Desktop 启动 AgentHost 时注入）
-                                          // 2) Path.Combine(AppContext.BaseDirectory, "..", "ptyhost", "tcode-pty-spawn")
+var helper = PtyHelperPath.TryResolve();   // 1) 环境变量 TKCODE_PTY_HELPER（Desktop 启动 AgentHost 时注入）
+                                          // 2) Path.Combine(AppContext.BaseDirectory, "..", "ptyhost", "tkcode-pty-spawn")
 var info = helper is null || OperatingSystem.IsWindows()
     ? new ProcessStartInfo(shell.Executable)
     : new ProcessStartInfo(helper) { ArgumentList = { "--exec", shell.Executable, shell.Executable } };  // file, argv0
@@ -1088,7 +1088,7 @@ info.ArgumentList.Add(command);
 |---|---|
 | 进程树与 Kill | helper 是 exec 进 shell 的，pid 不变，`Process.Kill(entireProcessTree)` 的行为不变 |
 | 找不到 helper 时 | 保持现状并记录一次警告；zsh 可以在命令前加 `trap - PIPE;` 作为局部缓解（已实测有效），bash 没有纯 shell 层面的修复 |
-| 依赖方向 | AgentHost 不需要引用 TCode.Terminal.\*，只需要知道 helper 的路径 |
+| 依赖方向 | AgentHost 不需要引用 TKCode.Terminal.\*，只需要知道 helper 的路径 |
 | 测试 | 新增 `BashToolTests.SigpipeIsDefault`：`yes \| head -1; echo ${PIPESTATUS[0]}` 期望输出 141 |
 | `ProcessRunner`（rg、git） | 这些程序自己处理 EPIPE，可以不改；需要时用同样的方式包装 |
 
@@ -1107,7 +1107,7 @@ info.ArgumentList.Add(command);
 
 ---
 
-## 14. 测试计划（tests/TCode.Terminal.Pty.Tests）
+## 14. 测试计划（tests/TKCode.Terminal.Pty.Tests）
 
 所有测试都通过真实的 PTY 进行，不使用模拟。断言针对输出字节（带超时的 `ReadUntil(pattern, 5s)`）、`Exited` 和 fd/线程计数。
 
@@ -1128,7 +1128,7 @@ info.ArgumentList.Add(command);
 | T13 | 快速开关：500 次 Start → 立即 Close | 全部 | 没有异常、没有泄漏；macOS 不出现 ENXIO（锁 + 重试）；Windows 不出现 0xC0000142 |
 | T14 | TUI resize 风暴：测试程序在 SIGWINCH 时打印尺寸；1 s 内 resize 1000 次（随机尺寸），最后一次固定 | 全部 | 最后一次打印的尺寸等于最终尺寸；不崩溃、不挂起；`vim -u NONE` 能正常退出 |
 | T15 | 与 SIGCHLD 共存：后台循环 `Process.Start("true")` 1000 次，同时 20 个 PTY 会话各自退出 | Unix | 每个 `Process.WaitForExit` 都返回；每个 PTY 的退出码正确 |
-| T16 | pidfd 回退：设置 `TCODE_PTY_FORCE_WAITPID_THREAD=1` 后重跑 T5、T12 | Linux | 结果相同 |
+| T16 | pidfd 回退：设置 `TKCODE_PTY_FORCE_WAITPID_THREAD=1` 后重跑 T5、T12 | Linux | 结果相同 |
 | T17 | macOS argv0 login shell：argv0 `-zsh` 启动 `/bin/zsh`，执行 `exit 3` | macOS | `ps -o args= -p $$` 为 `-zsh`；PATH 含 `/etc/paths.d` 中的路径；`TerminalExit.ExitCode == 3` |
 | T18 | helper `--detach`：从 .NET `Process.Start` 启动 `--detach --stdout-fd 1 -- /bin/sh -c 'ps -o pgid= -p $$; tty; ls /dev/fd; echo READY'`（Linux 另查 `ps -o sid=`，macOS 用 `ps -o sess=`），并额外打开一个不带 CLOEXEC 的 fd | Unix | sid = pgid = pid（新会话），没有控制终端（`tty` 输出 "not a tty"）；`/dev/fd` 只有 0–2（以及 ls 自己打开的 fd）；SIGPIPE 为默认；参数错误时退出码为 126，exec 失败时为 127 |
 | T19 | helper `--exec`：`--exec bash bash -c 'yes \| head -1; echo ${PIPESTATUS[0]}'` | Unix | `141` |
@@ -1136,7 +1136,7 @@ info.ArgumentList.Add(command);
 | W-T2 | 9001/1004：输出中包含 `ESC[?9001h`、`ESC[?1004h`；以 9001 编码发送 `a` 的按下和抬起，`cmd` 收到 `a` | Windows | — |
 | W-T3 | 关闭不死锁：`cmd /c type 大文件` 持续输出，消费方停止读取后调用 Close | Windows（Bundled 和强制 InboxNoRelease 各跑一遍） | Close 在 grace + 1 s 内完成 |
 | W-T4 | Release 模式的 EOF：`cmd /c exit 5` | Windows | ExitCode = 5；Output 完成 |
-| W-T5 | Unicode 环境变量：`TCODE_T=中文🙂`，执行 `cmd /c echo %TCODE_T%` | Windows | UTF-8 字节一致 |
+| W-T5 | Unicode 环境变量：`TKCODE_T=中文🙂`，执行 `cmd /c echo %TKCODE_T%` | Windows | UTF-8 字节一致 |
 | W-T6 | 发布布局：conpty.dll + `x64\` + `arm64\` 下的 OpenConsole.exe，`Implementation == Bundled` | Windows | — |
 | AOT | `tests/aot-smoke`：AOT 发布一个控制台程序，跑 T1 + T5 + 关闭 | 6 个 RID | 0 个 IL 警告；退出码 0 |
 
@@ -1168,7 +1168,7 @@ GitHub runner 提供 `/dev/ptmx`；Docker 默认挂载 `/dev/pts`。
 | S6 | W2 的 0xc0000142 窗口实际有多长 | T13 在 Windows 上统计 | 调整 500 ms |
 | S7 | 1809 是否支持 `PROC_THREAD_ATTRIBUTE_JOB_LIST`；运行时能否清除 `KILL_ON_JOB_CLOSE` | 单元测试 + 1809 虚拟机 | CREATE_SUSPENDED → AssignProcessToJobObject → ResumeThread |
 | S8 | `ConptyRequires*Host` 在 net10.0 AOT 发布中是否把 OpenConsole 放进两个架构子目录 | W-T6 | `GeneratePathProperty` + 显式 `<None Link>` |
-| S9 | 用 DirectPInvoke 把 libtcodepty.a 静态链接进 4 个 RID 的 AOT 二进制，与 libghostty-vt 没有符号冲突 | AOT smoke | 改用动态库 |
+| S9 | 用 DirectPInvoke 把 libtkcodepty.a 静态链接进 4 个 RID 的 AOT 二进制，与 libghostty-vt 没有符号冲突 | AOT smoke | 改用动态库 |
 | S10 | pidfd 在 Docker 默认 seccomp 和 Flatpak 中是否可用 | T16 + `tcpty_init_info.pidfd_supported` | waitpid 线程回退（已实现） |
 | S11 | 环境变量中有非 UTF-8 字节时的影响 | 构造 `LANG=` 和 GBK 值进行测试 | C shim 直接读取 host 原始的 `environ` |
 | S12 | canonical 模式下长行粘贴被截断（macOS 1024、Linux 4095） | 往 `cat` 粘贴 8 KiB 单行 | 写进文档；多行粘贴警告已经覆盖大部分场景 |
@@ -1182,7 +1182,7 @@ GitHub runner 提供 `/dev/ptmx`；Docker 默认挂载 `/dev/pts`。
 | 两份核心的 9001 跟踪逻辑不在 libghostty 中 | Windows 上按键编码错误 | §7.7，在 02-core / 06-input 中落实 |
 | macOS 上 openpt 到 fcntl 之间的 CLOEXEC 竞争 | 极少数情况下 fd 泄漏给并发 fork 的子进程 | 直接用 `open(O_CLOEXEC)`；host 内不用 Process |
 | OpenConsole 缺失时静默回退 | 功能悄悄降级 | 加载前检查 + CI 断言 + 诊断日志 |
-| libtcodepty 体积超过 01 的估计 | 维护成本 | 按功能拆成四个源文件，每个都有单元测试 |
+| libtkcodepty 体积超过 01 的估计 | 维护成本 | 按功能拆成四个源文件，每个都有单元测试 |
 
 ---
 
@@ -1195,10 +1195,10 @@ GitHub runner 提供 `/dev/ptmx`；Docker 默认挂载 `/dev/pts`。
 | 2a | 04 §1 的 `--detach` 模式由本文 §3 的 helper 实现。04 §4.4 `session/signal` 在 Windows 上把 KILL 写成"终止进程树"，本文 §6.3 只 `TerminateProcess(shell)`（与 Unix 只杀进程组对等） | 二选一后统一。建议用 `TerminateJobObject(会话 Job)`：只限于这个会话的树，符合"终止进程树"的说法 |
 | 3 | ~~macOS login 包装吞掉退出码~~ | 已解决：不经 login（§8.3） |
 | 4 | D9 "默认兼容宽度，收到 2027 再切换"与 ConPTY 不兼容：宽度在创建时固定，2027 是永久模式 [实] | Windows 默认 Grapheme 并锁定；Unix 保持 D9 不变 |
-| 5 | 01 §6.1 的 `FrameSnapshot.Modes` 包含 9001，但 libghostty-vt 没有这个模式 [实] | 由 02-core 设计 TCode 侧的模式跟踪器 |
+| 5 | 01 §6.1 的 `FrameSnapshot.Modes` 包含 9001，但 libghostty-vt 没有这个模式 [实] | 由 02-core 设计 TKCode 侧的模式跟踪器 |
 | 6 | research/06 §6 "Output 在 Exited 之前读到 EOF"在后台进程持有 slave 时做不到 | 采用 §6.1 的"EOF 或静默超时"语义 |
 | 7 | research/02 §9.3 / U3 的 `trap - PIPE` 修复对 bash 无效 [实 local] | 采用 §12 的 helper `--exec` 方案 |
 | 8 | research/02 §2.4 建议的 `PR_SET_PDEATHSIG` 跟随的是父**线程** | 不采用；由 master 关闭后的内核挂断兜底 |
-| 9 | 01 估计 libtcodepty 约 300 行，本设计约 690 行 | 修改 01 §4 中的估计 |
+| 9 | 01 估计 libtkcodepty 约 300 行，本设计约 690 行 | 修改 01 §4 中的估计 |
 | 10 | `tools/package_macos_app.sh` 的最低系统版本是 11.0，而 .NET 10 只支持 macOS 15 及以上 | 由 12-build 决定是否提高 |
 | 11 | pty host 不应使用 `Process` / `Console`（R5），stdio 必须补齐（R8） | 写进 04-pty-host 的启动规范 |

@@ -1,13 +1,13 @@
-# 终端组件（docs/terminal）的 CI：原生库（libghostty-vt、libtcodepty）→ 三平台测试 → AOT 发布与自检。
+# 终端组件（docs/terminal）的 CI：原生库（libghostty-vt、libtkcodepty）→ 三平台测试 → AOT 发布与自检。
 # 原生库在 Linux 上用 zig 交叉编译 linux / windows 目标；macOS 目标需要 Apple SDK，在 macOS runner 上构建。
 name: terminal
 
 on:
   push:
     branches: [main]
-    paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
   pull_request:
-    paths: [ "src/TCode.Terminal.**", "tests/TCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
   workflow_dispatch:
   # 每晚：PTY 压力测试按文档规模（03 §14 T10–T14），差分测试扫 200 个种子，结构化 fuzz 跑 20 分钟
   schedule:
@@ -47,13 +47,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/tcode/zig
+            ~/.cache/tkcode/zig
             ${{ github.workspace }}/.zig-cache-global
           key: zig-${{ matrix.host }}-${{ hashFiles('native/toolchain.json', 'native/ghostty/ghostty-upstream.json') }}
       - name: Build libghostty-vt
         run: for rid in ${{ matrix.rids }}; do tools/terminal/build-ghostty.sh "$rid"; done
-      - name: Build libtcodepty and spawn helper
-        run: for rid in ${{ matrix.pty_rids }}; do native/tcodepty/build.sh "$rid"; done
+      - name: Build libtkcodepty and spawn helper
+        run: for rid in ${{ matrix.pty_rids }}; do native/tkcodepty/build.sh "$rid"; done
       - name: Check Linux glibc floor (2.28)
         if: matrix.host == 'linux'
         run: |
@@ -67,8 +67,8 @@ jobs:
           name: native-${{ matrix.host }}
           path: |
             artifacts/native/*/*ghostty-vt.*
-            artifacts/native/*/*tcodepty.*
-            artifacts/native/*/tcode-pty-spawn
+            artifacts/native/*/*tkcodepty.*
+            artifacts/native/*/tkcode-pty-spawn
             artifacts/native/*/ghostty-commit.txt
           if-no-files-found: error
 
@@ -98,25 +98,25 @@ jobs:
           merge-multiple: true
       - name: Restore executable bits
         if: runner.os != 'Windows'
-        run: chmod +x artifacts/native/*/tcode-pty-spawn
+        run: chmod +x artifacts/native/*/tkcode-pty-spawn
       - name: Install vim (self-test exercises a full-screen program)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y -q vim
       - name: Test core
-        run: dotnet test tests/TCode.Terminal.Core.Tests
+        run: dotnet test tests/TKCode.Terminal.Core.Tests
         env:
-          TCODE_DIFF_SEEDS: ${{ github.event_name == 'schedule' && '200' || '' }}
-          TCODE_FUZZ_MINUTES: ${{ github.event_name == 'schedule' && '20' || '' }}
+          TKCODE_DIFF_SEEDS: ${{ github.event_name == 'schedule' && '200' || '' }}
+          TKCODE_FUZZ_MINUTES: ${{ github.event_name == 'schedule' && '20' || '' }}
       - name: Test PTY
-        run: dotnet test tests/TCode.Terminal.Pty.Tests --logger "console;verbosity=normal"
+        run: dotnet test tests/TKCode.Terminal.Pty.Tests --logger "console;verbosity=normal"
         env:
-          TCODE_PTY_STRESS: ${{ github.event_name == 'schedule' && '1' || '' }}
+          TKCODE_PTY_STRESS: ${{ github.event_name == 'schedule' && '1' || '' }}
       - name: Test protocol
-        run: dotnet test tests/TCode.Terminal.Protocol.Tests
+        run: dotnet test tests/TKCode.Terminal.Protocol.Tests
       - name: Test pty host (end to end)
-        run: dotnet test tests/TCode.Terminal.Host.Tests
+        run: dotnet test tests/TKCode.Terminal.Host.Tests
       - name: Test view (headless snapshots)
-        run: dotnet test tests/TCode.Terminal.Avalonia.Tests
+        run: dotnet test tests/TKCode.Terminal.Avalonia.Tests
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -127,12 +127,12 @@ jobs:
         if: always()
         with:
           name: snapshots-${{ matrix.rid }}
-          path: tests/TCode.Terminal.Avalonia.Tests/bin/Debug/net10.0/snapshots/
+          path: tests/TKCode.Terminal.Avalonia.Tests/bin/Debug/net10.0/snapshots/
           if-no-files-found: ignore
-      - name: AOT publish tcode-ptyhost (0 IL warnings)
+      - name: AOT publish tkcode-ptyhost (0 IL warnings)
         shell: bash
         run: |
-          dotnet publish src/TCode.Terminal.Host -c Release -r ${{ matrix.rid }} -o artifacts/publish/ptyhost 2>&1 | tee publish.log
+          dotnet publish src/TKCode.Terminal.Host -c Release -r ${{ matrix.rid }} -o artifacts/publish/ptyhost 2>&1 | tee publish.log
           if grep -E 'warning IL[0-9]{4}' publish.log; then echo "::error::AOT/trim warnings"; exit 1; fi
       - name: Check ConPTY publish layout (03 §14 W-T6)
         if: runner.os == 'Windows'
@@ -144,12 +144,12 @@ jobs:
           for f in $need; do [ -f "$d/$f" ] || { echo "::error::missing $f"; exit 1; }; done
       - name: Discovery tests against the AOT host (04 §15)
         shell: bash
-        run: dotnet test tests/TCode.Terminal.Host.Tests --filter "FullyQualifiedName~DiscoveryTests"
+        run: dotnet test tests/TKCode.Terminal.Host.Tests --filter "FullyQualifiedName~DiscoveryTests"
         env:
-          TCODE_PTYHOST_DIR: ${{ github.workspace }}/artifacts/publish/ptyhost
+          TKCODE_PTYHOST_DIR: ${{ github.workspace }}/artifacts/publish/ptyhost
       - name: Run AOT self-test
         shell: bash
-        run: artifacts/publish/ptyhost/tcode-ptyhost --self-test
+        run: artifacts/publish/ptyhost/tkcode-ptyhost --self-test
 
   # esctest2（11 §1.1.4）：真实 PTY + 一致性测试模式的核心。新增失败（单独重跑仍失败）阻断；已知失败见 known-failures.txt
   esctest:
@@ -167,7 +167,7 @@ jobs:
           path: artifacts/native
           merge-multiple: true
       - name: Restore executable bits
-        run: chmod +x artifacts/native/*/tcode-pty-spawn
+        run: chmod +x artifacts/native/*/tkcode-pty-spawn
       - name: Fetch esctest2 (pinned, sha256 checked)
         id: fetch
         run: echo "dir=$(tools/terminal/fetch-esctest.sh)" >> "$GITHUB_OUTPUT"
@@ -175,7 +175,7 @@ jobs:
         run: |
           dotnet run --project tools/terminal/EscTestRunner -c Release -- \
             --esctest "${{ steps.fetch.outputs.dir }}" \
-            --known tests/TCode.Terminal.Core.Tests/EscTest/known-failures.txt \
+            --known tests/TKCode.Terminal.Core.Tests/EscTest/known-failures.txt \
             --log artifacts/esctest.log
       - uses: actions/upload-artifact@v4
         if: always()

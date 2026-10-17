@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TKCode.Agent.Coding</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TKCode.Agent\TKCode.Agent.csproj" />
+        <ProjectReference Include="..\TKCode.Config\TKCode.Config.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="AngleSharp" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- 内置提示词型 command（/init、/commit）的正文，见 BuiltinPromptCommands -->
+        <EmbeddedResource Include="Assets\BuiltinPrompts\*.md" LogicalName="TKCode.Agent.Coding.Assets.BuiltinPrompts.%(Filename)%(Extension)" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TKCode.Agent.Tests" />
+    </ItemGroup>
+</Project>

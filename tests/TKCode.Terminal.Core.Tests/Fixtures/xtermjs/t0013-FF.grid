@@ -1,0 +1,34 @@
+tkcode-grid 1
+size 80x25 cell 8x16
+cursor 0,24 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+rows
+   0 |                                                            8                   | s0
+   1 |                                                             9                  | s0
+   2 |                                                              0                 | s0
+   3 |                                                               a                | s0
+   4 |                                                                b               | s0
+   5 |                                                                 c              | s0
+   6 |                                                                  d             | s0
+   7 |                                                                   e            | s0
+   8 |                                                                    f           | s0
+   9 |                                                                     g          | s0
+  10 |                                                                      h         | s0
+  11 |                                                                       i        | s0
+  12 |                                                                        j       | s0
+  13 |                                                                         k      | s0
+  14 |                                                                          l     | s0
+  15 |                                                                           m    | s0
+  16 |                                                                            n   | s0
+  17 |                                                                             o  | s0
+  18 |                                                                              p | s0
+  19 |                                                                               q| s0
+  20 |                                                                               r| s0
+  21 |                                                                               s| s0
+  22 |                                                                               t| s0
+  23 |                                                                                | s0
+  24 |                                                                                | s0

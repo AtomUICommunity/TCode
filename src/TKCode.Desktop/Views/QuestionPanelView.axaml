@@ -1,0 +1,201 @@
+<!--
+  问答面板（docs/design/ask-user.md §7）：Agent 提问时替换输入框，外观沿用输入框的卡片。
+  一次一个问题；多个问题时顶部是标签页，最后一页“提交”汇总回答。键盘操作见代码隐藏。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:views="using:TKCode.Desktop.Views"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.QuestionPanelView"
+             x:DataType="vm:QuestionRequestViewModel"
+             Focusable="True">
+    <UserControl.Styles>
+        <!-- 标签页：已回答的问题带一个小圆点 -->
+        <Style Selector="Button.qtab">
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextSecondary}" />
+        </Style>
+        <Style Selector="Button.qtab.selected">
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextPrimary}" />
+        </Style>
+        <!-- 选项行：序号 / 复选框 + 标签 + 说明 -->
+        <Style Selector="Border.qnum">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Background" Value="{DynamicResource TKCode.KbdBg}" />
+        </Style>
+        <Style Selector="Border.qcheck">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TKCode.InputBorder}" />
+        </Style>
+        <Style Selector="Border.qcheck.checked">
+            <Setter Property="Background" Value="{DynamicResource TKCode.Accent}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TKCode.Accent}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Frame" Background="{DynamicResource TKCode.ComposerBg}" BorderBrush="{DynamicResource TKCode.ComposerBorder}"
+            BorderThickness="1" CornerRadius="{StaticResource TKCode.RadiusLarge}" Padding="14,10,14,10">
+        <StackPanel Spacing="10">
+            <!-- 标题：来源 + 排队数；标签页；停止 -->
+            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+                <icons:LucideIcon Kind="MessageCircleQuestion" Width="15" Height="15" VerticalAlignment="Center"
+                                  StrokeBrush="{DynamicResource TKCode.Accent}" />
+                <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Title}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <Border Grid.Column="2" Classes="kbd" Margin="8,0,0,0" IsVisible="{Binding HasMore}" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding MoreText}" />
+                </Border>
+                <ItemsControl Grid.Column="3" ItemsSource="{Binding Tabs}" IsVisible="{Binding ShowTabs}" HorizontalAlignment="Right" Margin="12,0,4,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.DataTemplates>
+                        <DataTemplate DataType="vm:QuestionPageViewModel">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Classes="qtab" Classes.selected="{Binding IsCurrent}" Focusable="False"
+                                    Command="{Binding $parent[views:QuestionPanelView].((vm:QuestionRequestViewModel)DataContext).SelectTabCommand, FallbackValue={x:Null}}"
+                                    CommandParameter="{Binding}" ToolTip.Tip="{Binding Text}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource TKCode.Success}" VerticalAlignment="Center" IsVisible="{Binding HasAnswer}" />
+                                    <TextBlock Text="{Binding Header}" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                        <DataTemplate DataType="vm:ReviewTab">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Classes="qtab" Focusable="False"
+                                    Classes.selected="{Binding $parent[views:QuestionPanelView].((vm:QuestionRequestViewModel)DataContext).IsReview, FallbackValue=False}"
+                                    Command="{Binding $parent[views:QuestionPanelView].((vm:QuestionRequestViewModel)DataContext).SelectTabCommand, FallbackValue={x:Null}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <icons:LucideIcon Kind="Check" Width="11" Height="11" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Header}" FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.DataTemplates>
+                </ItemsControl>
+                <atom:Button Grid.Column="4" SizeType="Small" Variant="Text" Shape="Circle" Focusable="False"
+                             Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.StopCommand, FallbackValue={x:Null}}"
+                             ToolTip.Tip="{loc:TKCodeLangResource QuestionStopTip}">
+                    <atom:Button.Icon><icons:LucideIcon Kind="StopFilled" /></atom:Button.Icon>
+                </atom:Button>
+            </Grid>
+
+            <!-- 当前问题 -->
+            <!-- 自身的 DataContext 是当前问题；在提交页时为 null，整块隐藏 -->
+            <StackPanel Spacing="6" DataContext="{Binding Current}" x:DataType="vm:QuestionPageViewModel"
+                        IsVisible="{Binding ., Converter={x:Static ObjectConverters.IsNotNull}}">
+                <SelectableTextBlock Text="{Binding Text, FallbackValue=''}" FontSize="14" TextWrapping="Wrap" Margin="2,0,2,4" />
+                <ItemsControl ItemsSource="{Binding Options, FallbackValue={x:Null}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:QuestionOptionViewModel">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsHighlighted}" MinHeight="34" Padding="8,4"
+                                    Focusable="False" Margin="0,1"
+                                    Command="{Binding $parent[views:QuestionPanelView].((vm:QuestionRequestViewModel)DataContext).ChooseCommand, FallbackValue={x:Null}}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                    <Panel VerticalAlignment="Center">
+                                        <Border Classes="qnum" IsVisible="{Binding !Page.MultiSelect}">
+                                            <TextBlock Text="{Binding Number}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TKCode.KbdFg}" />
+                                        </Border>
+                                        <Border Classes="qcheck" Classes.checked="{Binding IsSelected}" IsVisible="{Binding Page.MultiSelect}">
+                                            <icons:LucideIcon Kind="Check" Width="11" Height="11" IsVisible="{Binding IsSelected}"
+                                                              StrokeBrush="{DynamicResource TKCode.AccentFg}" />
+                                        </Border>
+                                    </Panel>
+                                    <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Label}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Classes="secondary" Text="{Binding Description}" FontSize="12" Margin="12,0,0,0"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasDescription}"
+                                               ToolTip.Tip="{Binding Description}" />
+                                    <icons:LucideIcon Grid.Column="3" Kind="Check" Width="13" Height="13" Margin="8,0,2,0" VerticalAlignment="Center"
+                                                      StrokeBrush="{DynamicResource TKCode.AccentText}"
+                                                      IsVisible="{Binding IsSelected}" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <!-- 其他：自由输入；选中这一行就进入文本框 -->
+                <Border x:Name="OtherRow" CornerRadius="{StaticResource TKCode.RadiusSmall}" Padding="8,4" MinHeight="34" Margin="0,1"
+                        IsVisible="{Binding AllowOther, FallbackValue=False}" Background="Transparent"
+                        Classes.highlighted="{Binding IsOtherHighlighted, FallbackValue=False}">
+                    <Border.Styles>
+                        <Style Selector="Border#OtherRow.highlighted">
+                            <Setter Property="Background" Value="{DynamicResource TKCode.SelectedBg}" />
+                        </Style>
+                    </Border.Styles>
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                        <Panel VerticalAlignment="Center">
+                            <Border Classes="qnum" IsVisible="{Binding !MultiSelect, FallbackValue=True}">
+                                <TextBlock Text="{Binding OtherNumber, FallbackValue=''}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TKCode.KbdFg}" />
+                            </Border>
+                            <Border Classes="qcheck" Classes.checked="{Binding IsOtherSelected, FallbackValue=False}" IsVisible="{Binding MultiSelect, FallbackValue=False}">
+                                <icons:LucideIcon Kind="Check" Width="11" Height="11" IsVisible="{Binding IsOtherSelected, FallbackValue=False}"
+                                                  StrokeBrush="{DynamicResource TKCode.AccentFg}" />
+                            </Border>
+                        </Panel>
+                        <TextBlock Grid.Column="1" Classes="strong" Text="{loc:TKCodeLangResource QuestionOther}" Margin="10,0,12,0" VerticalAlignment="Center" />
+                        <atom:LineEdit x:Name="OtherInput" Grid.Column="2" SizeType="Small" StyleVariant="Borderless" Background="Transparent"
+                                       Text="{Binding OtherText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" PlaceholderText="{Binding OtherPlaceholder, FallbackValue=''}"
+                                       VerticalAlignment="Center" />
+                        <icons:LucideIcon Grid.Column="3" Kind="Check" Width="13" Height="13" Margin="8,0,2,0" VerticalAlignment="Center"
+                                          StrokeBrush="{DynamicResource TKCode.AccentText}"
+                                          IsVisible="{Binding IsOtherSelected, FallbackValue=False}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <!-- 提交页：汇总回答，未回答的用警示色 -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsReview}">
+                <TextBlock Classes="strong" Text="{loc:TKCodeLangResource QuestionReviewTitle}" Margin="2,0" />
+                <ItemsControl ItemsSource="{Binding Pages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:QuestionPageViewModel">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Padding="8,5" Focusable="False" Margin="0,1"
+                                    Command="{Binding $parent[views:QuestionPanelView].((vm:QuestionRequestViewModel)DataContext).SelectTabCommand, FallbackValue={x:Null}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="secondary" Text="{Binding Text}" FontSize="12" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding AnswerSummary}" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding HasAnswer}" />
+                                    <TextBlock Text="{Binding AnswerSummary}" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !HasAnswer}"
+                                               Foreground="{DynamicResource TKCode.GitModified}" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding UnansweredText}" FontSize="12" Margin="2,0" IsVisible="{Binding HasUnanswered}"
+                           Foreground="{DynamicResource TKCode.GitModified}" />
+            </StackPanel>
+
+            <!-- 底部：快捷键提示；拒绝回答（Esc）；下一题 / 提交（Enter） -->
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource QuestionHints}" FontSize="12" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="2,0" />
+                <atom:Button Grid.Column="1" SizeType="Small" Color="Default" Variant="Text" Focusable="False" Command="{Binding DeclineCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{loc:TKCodeLangResource QuestionDecline}" VerticalAlignment="Center" />
+                        <Border Classes="kbd"><TextBlock Text="Esc" /></Border>
+                    </StackPanel>
+                </atom:Button>
+                <atom:Button Grid.Column="2" SizeType="Small" Color="Default" Variant="Solid" Focusable="False" Margin="6,0,0,0"
+                             Command="{Binding PrimaryCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding PrimaryText}" VerticalAlignment="Center" />
+                        <icons:LucideIcon Kind="CornerDownLeft" Width="12" Height="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                </atom:Button>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

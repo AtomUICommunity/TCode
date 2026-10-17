@@ -15,13 +15,13 @@ import pathlib
 import subprocess
 import sys
 
-REPO = "AtomUICommunity/TCode"
+REPO = "AtomUICommunity/TKCode"
 # 每个运行时标识对应的安装程序文件名与最低系统版本
 ASSETS = {
-    "osx-arm64": ("TCode-{v}-osx-arm64.zip", "11.0"),
-    "osx-x64": ("TCode-{v}-osx-x64.zip", "11.0"),
-    "win-x64": ("TCode-{v}-win-x64-setup.exe", None),
-    "linux-x64": ("TCode-{v}-linux-x64.tar.gz", None),
+    "osx-arm64": ("TKCode-{v}-osx-arm64.zip", "11.0"),
+    "osx-x64": ("TKCode-{v}-osx-x64.zip", "11.0"),
+    "win-x64": ("TKCode-{v}-win-x64-setup.exe", None),
+    "linux-x64": ("TKCode-{v}-linux-x64.tar.gz", None),
 }
 
 

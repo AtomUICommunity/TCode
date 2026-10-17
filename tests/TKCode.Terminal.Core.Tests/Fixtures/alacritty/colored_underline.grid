@@ -1,0 +1,61 @@
+tkcode-grid 1
+size 157x40 cell 8x16
+cursor 0,4 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title "kchibisov@Zodiac:~/src/rust/alacritty-workspace/fork"
+styles
+  s0 default
+  s1 fg=4 bold
+  s2 fg=5 bold
+  s3 fg=1 bold
+  s4 fg=7 bold
+  s5 fg=10 bold
+  s6 fg=10
+  s7 underline=single ul-color=#ff00ff
+  s8 underline=double ul-color=#ff00ff
+  s9 underline=curly ul-color=196
+  s10 underline=dotted ul-color=196
+  s11 underline=dashed ul-color=196
+  s12 underline=dashed
+rows
+   0 |fork on  colored-underlines-v3 via 🦀⁣ v1.59.0 ➜ echo -e '\e[58;2;255;0;255m\e[4:1mUNDERLINE\e[4:2mDOUBLE\e[58:5:196m\e[4:3mUhERCURL\e[4:4mDOTTED\e[4:5mDASHE| s1:0-3 s0:4-7 s2:8-30 s0:31-35 s3:36-46 s4:47 s0:48 s5:49-52 s0:53-56 s6:57-156  w:36  g:125=U+0068,U+0337,U+0317  sem:p0-156  prompt  wrap
+   1 |D\e[59mNOT_COLORED_DASH\e[0m'                                                                                                                                | s6:0-28 s0:29-156  sem:p0-28  prompt
+   2 |UNDERLINEDOUBLEUhERCURLDOTTEDDASHEDNOT_COLORED_DASH                                                                                                          | s7:0-8 s8:9-14 s9:15-22 s10:23-28 s11:29-34 s12:35-50 s0:51-156  g:16=U+0068,U+0337,U+0317  sem:p0-50  prompt
+   3 |fork on  colored-underlines-v3 via 🦀⁣ v1.59.0 ➜                                                                                                             | s1:0-3 s0:4-7 s2:8-30 s0:31-35 s3:36-46 s4:47 s0:48-156  w:36  sem:p0-48  prompt
+   4 |                                                                                                                                                             | s0  prompt
+   5 |                                                                                                                                                             | s0
+   6 |                                                                                                                                                             | s0
+   7 |                                                                                                                                                             | s0
+   8 |                                                                                                                                                             | s0
+   9 |                                                                                                                                                             | s0
+  10 |                                                                                                                                                             | s0
+  11 |                                                                                                                                                             | s0
+  12 |                                                                                                                                                             | s0
+  13 |                                                                                                                                                             | s0
+  14 |                                                                                                                                                             | s0
+  15 |                                                                                                                                                             | s0
+  16 |                                                                                                                                                             | s0
+  17 |                                                                                                                                                             | s0
+  18 |                                                                                                                                                             | s0
+  19 |                                                                                                                                                             | s0
+  20 |                                                                                                                                                             | s0
+  21 |                                                                                                                                                             | s0
+  22 |                                                                                                                                                             | s0
+  23 |                                                                                                                                                             | s0
+  24 |                                                                                                                                                             | s0
+  25 |                                                                                                                                                             | s0
+  26 |                                                                                                                                                             | s0
+  27 |                                                                                                                                                             | s0
+  28 |                                                                                                                                                             | s0
+  29 |                                                                                                                                                             | s0
+  30 |                                                                                                                                                             | s0
+  31 |                                                                                                                                                             | s0
+  32 |                                                                                                                                                             | s0
+  33 |                                                                                                                                                             | s0
+  34 |                                                                                                                                                             | s0
+  35 |                                                                                                                                                             | s0
+  36 |                                                                                                                                                             | s0
+  37 |                                                                                                                                                             | s0
+  38 |                                                                                                                                                             | s0
+  39 |                                                                                                                                                             | s0

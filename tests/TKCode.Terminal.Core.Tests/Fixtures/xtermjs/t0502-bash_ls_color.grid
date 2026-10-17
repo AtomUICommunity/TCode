@@ -1,0 +1,37 @@
+tkcode-grid 1
+size 80x25 cell 8x16
+cursor 0,10 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title "mark@mark-desktop:~/vt100-to-html/scripts"
+styles
+  s0 default
+  s1 fg=4 bold
+  s2 fg=6 bold
+  s3 fg=0 bg=2
+rows
+   0 |Script started on Sun 17 May 2009 06:21:05 PM EDT                               | s0
+   1 |dircolors: /etc/DIR_COLORS: No such file or directory                           | s0
+   2 |mark@mark-desktop:~/vt100-to-html/scripts$ ls --color=auto /                    | s0
+   3 |bin    dev     initrd.img      lib64       opt   selinux  usr                   | s1:0-2 s0:3-6 s1:7-9 s0:10-14 s2:15-24 s0:25-30 s2:31-35 s0:36-42 s1:43-45 s0:46-48 s1:49-55 s0:56-57 s1:58-60 s0:61-79
+   4 |boot   etc     initrd.img.old  lost+found  proc  srv      var                   | s1:0-3 s0:4-6 s1:7-9 s0:10-14 s2:15-28 s0:29-30 s1:31-40 s0:41-42 s1:43-46 s0:47-48 s1:49-51 s0:52-57 s1:58-60 s0:61-79
+   5 |boot2  home    lib             media       root  sys      vmlinuz               | s1:0-4 s0:5-6 s1:7-10 s0:11-14 s1:15-17 s0:18-30 s1:31-35 s0:36-42 s1:43-46 s0:47-48 s1:49-51 s0:52-57 s2:58-64 s0:65-79
+   6 |cdrom  initrd  lib32           mnt         sbin  tmp      vmlinuz.old           | s2:0-4 s0:5-6 s1:7-12 s0:13-14 s1:15-19 s0:20-30 s1:31-33 s0:34-42 s1:43-46 s0:47-48 s3:49-51 s0:52-57 s2:58-68 s0:69-79
+   7 |mark@mark-desktop:~/vt100-to-html/scripts$ exit                                 | s0
+   8 |                                                                                | s0
+   9 |Script done on Sun 17 May 2009 06:21:11 PM EDT                                  | s0
+  10 |                                                                                | s0
+  11 |                                                                                | s0
+  12 |                                                                                | s0
+  13 |                                                                                | s0
+  14 |                                                                                | s0
+  15 |                                                                                | s0
+  16 |                                                                                | s0
+  17 |                                                                                | s0
+  18 |                                                                                | s0
+  19 |                                                                                | s0
+  20 |                                                                                | s0
+  21 |                                                                                | s0
+  22 |                                                                                | s0
+  23 |                                                                                | s0
+  24 |                                                                                | s0

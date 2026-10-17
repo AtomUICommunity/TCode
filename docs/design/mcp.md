@@ -7,8 +7,8 @@
 
 - 内置 Agent 可以使用 MCP 服务器提供的工具，并支持在对话中引用资源、使用提示词，以及处理服务器发起的 elicitation（表单 / URL）。
 - 客户端配置：设置页可以增删改服务器、查看状态和日志、登录 OAuth、逐个启用或停用工具。
-- MCP JSON：可以从剪贴板或文件导入其他客户端的配置，自动识别格式；可以扫描本机已有的配置一键导入；可以把 TCode 的配置导出为通用格式。
-- 外部运行时（Claude Agent / Codex / ACP）通过 TCode 桥接同样可以使用这些服务器。
+- MCP JSON：可以从剪贴板或文件导入其他客户端的配置，自动识别格式；可以扫描本机已有的配置一键导入；可以把 TKCode 的配置导出为通用格式。
+- 外部运行时（Claude Agent / Codex / ACP）通过 TKCode 桥接同样可以使用这些服务器。
 - 整个客户端保持 NativeAOT，发布时 0 个 IL/AOT 警告。
 
 ## 2. 已确认的决策（用户，2026-10-16）
@@ -16,30 +16,30 @@
 | 维度 | 决策 |
 |---|---|
 | 协议层 | 官方 `ModelContextProtocol.Core` 2.2.0（已用实测确认 AOT 0 警告，stdio、HTTP、SSE 回退和 OAuth 全部通过；见规格 §11） |
-| 配置位置 | 全局放在 `~/.tcode/settings.json` 的 `mcpServers`；项目级放在仓库内的 `.mcp.json`，首次使用前需要用户确认信任 |
+| 配置位置 | 全局放在 `~/.tkcode/settings.json` 的 `mcpServers`；项目级放在仓库内的 `.mcp.json`，首次使用前需要用户确认信任 |
 | 导入 | 粘贴 JSON 自动识别格式、扫描本机一键导入、从文件导入，另外支持导出 |
 | 首版范围 | 工具、stdio / HTTP、状态显示（以上是必做项），以及 OAuth 登录、外部运行时透传、Resources / Prompts、Elicitation 表单 |
 | 连接生命周期 | Host 内的共享连接池：首次被会话用到时连接，空闲后关闭，崩溃后按退避策略重连 |
 | 工具列表变化 | 同一轮内不变；在下一批用户输入之前，追加一段工具节补丁并替换工具定义 |
 | 审批 | Ask 档默认询问，`readOnlyHint` 不作为放行依据；可以选择“本会话允许”，也可以在设置中持久设为“始终允许”（按服务器或按工具） |
 | 设置页 | 新增“MCP”分区，采用主从双栏表单，风格与“模型与厂商”页一致 |
-| 外部运行时 | 走 TCode 桥接：只注入一个 stdio MCP 服务器（AgentHost 的 `--mcp-bridge` 模式），由它转发到 Host 的连接池 |
+| 外部运行时 | 走 TKCode 桥接：只注入一个 stdio MCP 服务器（AgentHost 的 `--mcp-bridge` 模式），由它转发到 Host 的连接池 |
 
 ## 3. 架构
 
 ```
-TCode.Desktop ──JSON-RPC──▶ TCode.AgentHost
+TKCode.Desktop ──JSON-RPC──▶ TKCode.AgentHost
    设置页 / 导入 / 资源与提示词选择器       ├─ McpManager（连接池，每项对应一个服务器连接）
    elicitation 与 OAuth 弹窗                  │    ├─ McpConnection ─ ModelContextProtocol.Core（stdio / HTTP / OAuth）
-                                              │    └─ McpAuthStore / McpTrustStore（~/.tcode/mcp/）
+                                              │    └─ McpAuthStore / McpTrustStore（~/.tkcode/mcp/）
                                               ├─ 内置会话：McpToolSet → McpTool : IAgentTool
-                                              └─ McpBridgeServer（UDS）◀── tcode-agenthost --mcp-bridge（stdio MCP 服务器）
+                                              └─ McpBridgeServer（UDS）◀── tkcode-agenthost --mcp-bridge（stdio MCP 服务器）
                                                                               ▲ 由 Claude Agent / Codex / ACP 启动
-TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（McpImport）—— Host 与 Desktop 共用，不依赖 SDK
+TKCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（McpImport）—— Host 与 Desktop 共用，不依赖 SDK
 ```
 
-- 新库 `src/TCode.Mcp`（`IsAotCompatible`）依赖 `TCode.Agent`、`TCode.Config` 和 `ModelContextProtocol.Core`，包含：连接、工具适配、结果转换、OAuth 存储、桥接协议的 DTO。Host 引用它；Desktop **不**引用 SDK。
-- 配置类型与导入解析放在 `TCode.Config`：纯 .NET，Desktop 预览导入时不需要调用 RPC。
+- 新库 `src/TKCode.Mcp`（`IsAotCompatible`）依赖 `TKCode.Agent`、`TKCode.Config` 和 `ModelContextProtocol.Core`，包含：连接、工具适配、结果转换、OAuth 存储、桥接协议的 DTO。Host 引用它；Desktop **不**引用 SDK。
+- 配置类型与导入解析放在 `TKCode.Config`：纯 .NET，Desktop 预览导入时不需要调用 RPC。
 - SDK 版本统一写在 `Directory.Packages.props` 中；升级时重跑 AOT 发布和自检。
 
 ## 4. 配置
@@ -91,7 +91,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 - 文件位于项目根（git 根，没有 git 时为 cwd），格式与 Claude Code 的 `.mcp.json` 相同（顶层 `mcpServers`，变量写法为 `${VAR}`），可以和团队共享。
 - **信任**：项目服务器在用户确认之前**不会启动**。
-  - 信任记录保存在 `~/.tcode/mcp/trust.json`，键为“项目路径 + 服务器名 + 配置指纹”；配置改变后需要重新确认。
+  - 信任记录保存在 `~/.tkcode/mcp/trust.json`，键为“项目路径 + 服务器名 + 配置指纹”；配置改变后需要重新确认。
   - 设置页和会话中的提示条都提供“信任 / 忽略”操作。
 - **同名冲突**：项目级配置覆盖全局配置，设置页会标出“已被项目配置覆盖”。
 
@@ -99,8 +99,8 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 | 文件 | 内容 | 权限 |
 |---|---|---|
-| `~/.tcode/mcp/auth.json` | OAuth：按服务器的规范 URL 分组保存 `TokenContainer`（access/refresh token、client_id/secret、issuer） | 0600 |
-| `~/.tcode/mcp/trust.json` | 项目服务器的信任记录 | 0600 |
+| `~/.tkcode/mcp/auth.json` | OAuth：按服务器的规范 URL 分组保存 `TokenContainer`（access/refresh token、client_id/secret、issuer） | 0600 |
+| `~/.tkcode/mcp/trust.json` | 项目服务器的信任记录 | 0600 |
 
 ## 5. 内置 Agent 的工具
 
@@ -136,7 +136,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 | `structuredContent` | 只有在没有 text 内容时，才把它序列化成 JSON 文本 |
 
 - `isError: true` 转为 `AgentToolResult.IsError`。JSON-RPC 错误转为 `Error("MCP error <code>: <message>")`。
-- **截断**：总文本超过 100 000 字符时，完整内容写入 `~/.tcode/tmp/<会话>/mcp-<调用 id>.txt`，结果中只保留开头部分，并提示用 `read` 读取全文（与 bash 的长输出处理方式一致）。
+- **截断**：总文本超过 100 000 字符时，完整内容写入 `~/.tkcode/tmp/<会话>/mcp-<调用 id>.txt`，结果中只保留开头部分，并提示用 `read` 读取全文（与 bash 的长输出处理方式一致）。
 - **Details**（只给 UI）：`{server, tool, title, arguments, isError, structured?, blocks:[{type, mimeType?, uri?, bytes?}]}`。
 - **进度**：`notifications/progress` 转为 `ToolExecutionUpdated`，显示为“message (progress/total)”。
 
@@ -166,7 +166,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 - **重连**：stdio 进程意外退出，或 HTTP 连接失败时，按 1s、2s、4s… 退避，最长 60s，连续失败 5 次后置为 `Failed`，等用户点击“重试”。会话不必等待重连：工具调用时连接不可用，就返回错误交给模型。
 - **stderr**：每个连接保留最近 1000 行的环形缓冲，可以在设置页查看。
 - **热重载**：`SettingsWatcher` 发现 `mcpServers` 有变化时，配置变了的连接关闭后重建，新增的服务器延迟到下次被用到时再连接，删除的服务器立即关闭。正在进行的工具调用不中断。项目 `.mcp.json` 由一个 FileSystemWatcher 按项目监听。
-- **初始化**：`McpClientOptions { ClientInfo = {name:"TCode", version}, Capabilities = { Elicitation = {Form, Url} }, InitializationTimeout = startupTimeout }`。连上之后取 `tools/list`；服务器声明了相应能力时，再取 `prompts/list` 和 `resources/list`。
+- **初始化**：`McpClientOptions { ClientInfo = {name:"TKCode", version}, Capabilities = { Elicitation = {Form, Url} }, InitializationTimeout = startupTimeout }`。连上之后取 `tools/list`；服务器声明了相应能力时，再取 `prompts/list` 和 `resources/list`。
 - **订阅变化**：服务器声明了 `listChanged` 时，modern 服务器发 `subscriptions/listen`（规格 §4.3，SDK 没有封装，用 `SendRequestAsync` 自己发），legacy 服务器直接注册通知处理器；不支持时只靠 TTL。
 
 ## 7. 审批
@@ -215,7 +215,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 - **触发**：建立连接时不弹出浏览器。服务器返回 401 时，连接状态置为 `NeedsAuth`。用户在设置页或会话提示条中点击“登录”后，再发起交互式授权。
 - **流程**：交给 SDK 的 `ClientOAuthOptions`（规格 §8）：
   - `RedirectUri = http://127.0.0.1:<端口>/callback`，端口取 `oauth.callbackPort`，没写时随机；
-  - `DynamicClientRegistration.ClientName = "TCode"`；
+  - `DynamicClientRegistration.ClientName = "TKCode"`；
   - `ClientId` / `ClientSecret` 来自配置；
   - `TokenCache` 由 `McpAuthStore` 实现，按服务器 URL 保存。
 - **AuthorizationCallbackHandler**：Host 启动回环 `HttpListener`，再通过 Host→UI 的新请求 `mcp/openUrl` 让 Desktop 用系统浏览器打开授权 URL。之后等待回调（最长 5 分钟，用户可以取消），回调页显示“已完成，可以关闭此页”。最后返回 `{Code, State, Iss}`，`iss` 和 `state` 的校验由 SDK 完成。
@@ -228,16 +228,16 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
   - `tools/list` 返回该会话可用的全部 MCP 工具，名字为 `<服务器键>__<工具名>`，按 §5.1 规整，上限 64；
   - `tools/call` 转发给对应的连接；
   - 进度、elicitation 和 list_changed 原样透传。
-- **身份**：Host 为每个外部会话生成一个随机令牌，放在环境变量 `TCODE_MCP_BRIDGE_TOKEN` 中，socket 路径放在 `TCODE_MCP_BRIDGE_SOCKET` 中（都不写进命令行参数）。桥接进程用令牌换取会话身份，未知令牌直接拒绝。
-- **注入方式**（服务器名统一为 `tcode`）：
-  - Claude Agent：`--mcp-config` 指向临时文件 `~/.tcode/tmp/<会话>/mcp.json`（0600，内容是 `{"mcpServers":{"tcode":{"command":"<agenthost>","args":["--mcp-bridge"],"env":{…}}}}`）；
-  - Codex：`thread/start` 的 `config` 中写 `mcp_servers.tcode`，值为 `{command, args, env}`；
-  - ACP：`session/new.mcpServers` 写成 `[{name:"tcode", command, args, env:[{name, value}]}]`。stdio 是 ACP 的基线能力，不依赖 `mcpCapabilities.http`。
+- **身份**：Host 为每个外部会话生成一个随机令牌，放在环境变量 `TKCODE_MCP_BRIDGE_TOKEN` 中，socket 路径放在 `TKCODE_MCP_BRIDGE_SOCKET` 中（都不写进命令行参数）。桥接进程用令牌换取会话身份，未知令牌直接拒绝。
+- **注入方式**（服务器名统一为 `tkcode`）：
+  - Claude Agent：`--mcp-config` 指向临时文件 `~/.tkcode/tmp/<会话>/mcp.json`（0600，内容是 `{"mcpServers":{"tkcode":{"command":"<agenthost>","args":["--mcp-bridge"],"env":{…}}}}`）；
+  - Codex：`thread/start` 的 `config` 中写 `mcp_servers.tkcode`，值为 `{command, args, env}`；
+  - ACP：`session/new.mcpServers` 写成 `[{name:"tkcode", command, args, env:[{name, value}]}]`。stdio 是 ACP 的基线能力，不依赖 `mcpCapabilities.http`。
 - **审批**：
   - 桥接转发前，在 Host 侧按 §7 的策略判定（当前权限档位取自该外部会话），需要时询问；
-  - 运行时自己的审批尽量放行 `tcode` 服务器，避免同一调用问两次：Claude 加 `--allowedTools mcp__tcode__*`；Codex 和 ACP 的做法待核实，查不到配置项时接受重复询问，并记录在案。
+  - 运行时自己的审批尽量放行 `tkcode` 服务器，避免同一调用问两次：Claude 加 `--allowedTools mcp__tkcode__*`；Codex 和 ACP 的做法待核实，查不到配置项时接受重复询问，并记录在案。
 - **没有配置任何 MCP 服务器时不注入**桥接，外部运行时的行为与现在完全一样。
-- `ToolPresentation`：把 `mcp__tcode__<服务器>__<工具>`（Claude）、Codex 的 `mcp__tcode__…` 和 ACP 的同类名字归为 MCP 类别，显示为“<服务器> · <工具>”。
+- `ToolPresentation`：把 `mcp__tkcode__<服务器>__<工具>`（Claude）、Codex 的 `mcp__tkcode__…` 和 ACP 的同类名字归为 MCP 类别，显示为“<服务器> · <工具>”。
 
 ## 11. 设置页“MCP”
 
@@ -258,7 +258,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 ## 12. 导入与导出
 
-### 12.1 识别（`McpImport.Parse(text, hint?)`，放在 TCode.Config 中）
+### 12.1 识别（`McpImport.Parse(text, hint?)`，放在 TKCode.Config 中）
 
 依次尝试以下格式：
 1. **TOML**：出现 `[mcp_servers.` 时，按 Codex 格式解析。只实现 TOML 子集：表、点号键、字符串、字面量字符串、多行字符串、数组、内联表、布尔、整数。
@@ -278,7 +278,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
   - `type: "local"` 映射为 stdio；
   - `serverUrl`（Windsurf）和 `httpUrl`（Gemini）映射为 `url` 加 `type: http`；Gemini 的 `url` 映射为 `type: sse`。
 - **变量**：
-  - `${env:X}`、`${X}`、`${X:-d}` 原样保留（TCode 能展开它们）；`{env:X}`（opencode）同样保留；
+  - `${env:X}`、`${X}`、`${X:-d}` 原样保留（TKCode 能展开它们）；`{env:X}`（opencode）同样保留；
   - `${input:id}`（VS Code）在导入预览中列为待填项，用户填写明文值或环境变量名；
   - `${file:path}`（Windsurf）和 `{file:path}`（opencode）在预览中提示，可以展开为文件内容，或者改为环境变量。
 - **Codex 专有字段**：
@@ -342,8 +342,8 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 | 阶段 | 内容 | 验证 |
 |---|---|---|
-| M1 配置 | `TCode.Config` 中的 `McpServerConfig`、宽松解析、变量展开、settings schema 和 settings.md | 单元测试 |
-| M2 连接与工具 | `TCode.Mcp`：McpManager、stdio 与 HTTP、状态、重连、stderr、`McpTool`、结果转换、截断、进度；`ToolAccess.External` 审批；`Agent.Tools` 可替换，以及 `mcp` 节补丁 | 测试用的 MCP 服务器（AOT，SDK 服务器端，放在 tests 中）跑端到端；**AOT 发布 0 警告，并在 AOT Host 中实际调用 MCP 工具** |
+| M1 配置 | `TKCode.Config` 中的 `McpServerConfig`、宽松解析、变量展开、settings schema 和 settings.md | 单元测试 |
+| M2 连接与工具 | `TKCode.Mcp`：McpManager、stdio 与 HTTP、状态、重连、stderr、`McpTool`、结果转换、截断、进度；`ToolAccess.External` 审批；`Agent.Tools` 可替换，以及 `mcp` 节补丁 | 测试用的 MCP 服务器（AOT，SDK 服务器端，放在 tests 中）跑端到端；**AOT 发布 0 警告，并在 AOT Host 中实际调用 MCP 工具** |
 | M3 设置页 | MCP 分区（列表、详情、测试连接、工具开关、日志）和 RPC | headless 截图测试 |
 | M4 导入导出 | `McpImport`：所有格式、TOML 子集、扫描、预览对话框、导出 | 每种格式一个夹具测试；截图测试 |
 | M5 OAuth | AuthStore、回环监听、`mcp/openUrl`、登录与登出、NeedsAuth 提示条 | 测试 AS / RS（参考规格 §11 中实测用的服务器）端到端 |
@@ -357,7 +357,7 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 | 风险 | 对策 |
 |---|---|
-| GUI 启动的应用拿不到 shell 的 PATH（macOS 从 Finder 启动），找不到 `npx` 或 `uvx` | 复用 `TCode.Runtimes` 的 `ExecutableLocator`（它已经处理了登录 shell 的 PATH）来解析 command；Windows 上的 `npx` / `.cmd` 用 `cmd /c` 启动 |
+| GUI 启动的应用拿不到 shell 的 PATH（macOS 从 Finder 启动），找不到 `npx` 或 `uvx` | 复用 `TKCode.Runtimes` 的 `ExecutableLocator`（它已经处理了登录 shell 的 PATH）来解析 command；Windows 上的 `npx` / `.cmd` 用 `cmd /c` 启动 |
 | SDK 2.x 还在快速迭代（2.0 有破坏性变更） | 固定版本号；升级前重跑 AOT 发布、自检和端到端测试 |
 | `subscriptions/listen` 要自己发，而且 HTTP 下的通知分发未经验证 | 失败时退回到 TTL 和每轮检查（§5.4），不影响正确性 |
 | 工具太多导致上下文膨胀 | 显示体积与警告，提供逐个工具的开关；以后再考虑延迟加载 |
@@ -368,11 +368,11 @@ TCode.Config：McpServerConfig、宽松解析、变量展开、导入导出（Mc
 
 | 阶段 | 实现位置 | 验证 |
 |---|---|---|
-| M1 配置 | `TCode.Config/McpServerConfig.cs`、`McpVariables.cs`（变量展开、dotenv、项目 `.mcp.json`）、`settings.schema.json` | `McpConfigTests` |
-| M2 连接与工具 | `TCode.Mcp/McpConnection.cs`、`McpManager.cs`（连接池与 `McpSessionTools`）、`McpTool.cs`、`McpResultConverter.cs`、`McpToolNames.cs`；`Agent.Tools` / `SystemPrompt` 可在 `ContextUpdates` 中替换；`ToolAccess.External` 审批 | `McpConnectionTests`、`McpSessionTests`；AOT Host `--self-test`（设置 `TCODE_SELFTEST_MCP`）中实际执行 tools/list 与 tools/call |
+| M1 配置 | `TKCode.Config/McpServerConfig.cs`、`McpVariables.cs`（变量展开、dotenv、项目 `.mcp.json`）、`settings.schema.json` | `McpConfigTests` |
+| M2 连接与工具 | `TKCode.Mcp/McpConnection.cs`、`McpManager.cs`（连接池与 `McpSessionTools`）、`McpTool.cs`、`McpResultConverter.cs`、`McpToolNames.cs`；`Agent.Tools` / `SystemPrompt` 可在 `ContextUpdates` 中替换；`ToolAccess.External` 审批 | `McpConnectionTests`、`McpSessionTests`；AOT Host `--self-test`（设置 `TKCODE_SELFTEST_MCP`）中实际执行 tools/list 与 tools/call |
 | M3 设置页 | `McpSettingsView`、`McpSettingsViewModel`；RPC `mcp/list\|tools\|log\|test\|restart\|logout\|trust`、`mcp/changed`（协议版本 14） | `McpSettingsSnapshotTests` |
-| M4 导入导出 | `TCode.Config/McpImport.cs`、`McpToml.cs`；导入、导出对话框 | `McpImportTests`（覆盖每种格式）、截图测试 |
-| M5 OAuth | `TCode.Mcp/McpOAuth.cs`（`McpAuthStore`、回环回调）；`mcp/openUrl` | `McpHttpOAuthTests`：用模拟授权服务器跑完 PRM、DCR、PKCE、iss、刷新、登出全流程；确认后台连接不做动态注册 |
+| M4 导入导出 | `TKCode.Config/McpImport.cs`、`McpToml.cs`；导入、导出对话框 | `McpImportTests`（覆盖每种格式）、截图测试 |
+| M5 OAuth | `TKCode.Mcp/McpOAuth.cs`（`McpAuthStore`、回环回调）；`mcp/openUrl` | `McpHttpOAuthTests`：用模拟授权服务器跑完 PRM、DCR、PKCE、iss、刷新、登出全流程；确认后台连接不做动态注册 |
 | M6 项目配置与信任 | `McpTrustStore`；设置页和 Composer 上方的“信任 / 忽略”提示 | `McpConnectionTests.ProjectServersRequireTrust`、`McpConversationSnapshotTests` |
 | M7 Elicitation、资源、提示词 | `McpElicitationView`；`McpComposerViewModel`（@ 与 /）；`McpContext`；`mcp/elicit`、`mcp/catalog`；`PromptRequest.McpResources\|McpPrompt` | `McpContextTests`、`McpConversationSnapshotTests`（审批、表单、资源、提示词端到端） |
 | M8 外部运行时桥接 | `AgentHost/McpBridge.cs`（`--mcp-bridge` 与 UDS 服务端）；`McpBridgeLaunch` 注入 Claude、Codex、ACP | `McpBridgeTests`（包括用 AOT Host 作为桥接进程）、`McpBridgeInjectionTests` |
@@ -382,7 +382,7 @@ AOT（osx-arm64）：Desktop 与 Host 发布均为 0 个 IL/AOT 警告。Host �
 **与设计的差异与待办**：
 - **审批选项**：沿用现有审批卡片，只有“允许一次 / 本会话允许此工具 / 拒绝”。“本会话允许此服务器”和卡片上的“始终允许”尚未加入；“始终允许”目前在设置页的工具列表中勾选。
 - **subscriptions/listen**：未实现。工具列表变化靠两种方式发现：legacy 服务器的 `list_changed` 通知，以及每轮开始前按 TTL 重新执行 tools/list（没有 TTL 的服务器每轮都会重新获取）。
-- **桥接**：不转发进度通知；tools/list_changed 也不转发，运行时下次执行 tools/list 时才看到新工具。Codex 和 ACP Agent 对 `tcode` 服务器的工具是否也会各自审批，尚未在真实 CLI 上核实，可能出现重复询问；Claude 已用 `--allowedTools=mcp__tcode` 放行。
+- **桥接**：不转发进度通知；tools/list_changed 也不转发，运行时下次执行 tools/list 时才看到新工具。Codex 和 ACP Agent 对 `tkcode` 服务器的工具是否也会各自审批，尚未在真实 CLI 上核实，可能出现重复询问；Claude 已用 `--allowedTools=mcp__tkcode` 放行。
 - **工具数量警告**：设置页显示每个工具的 schema 体积，没有“超过 80 个工具”的全局警告。
 - **资源模板**：@ 选择器只列出 `resources/list` 的结果，不支持带参数的资源模板。
 - **桌面端**的 Fake 模型在用户消息为 `mcp:<工具名> <JSON 参数>` 时直接调用该工具，仅供开发和测试。

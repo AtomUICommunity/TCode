@@ -1,7 +1,7 @@
-# TCode 动效设计（Motion）
+# TKCode 动效设计（Motion）
 
 > 目标：所有“出现 / 消失 / 展开 / 收起 / 开合 / 变形”都有连续的过渡，让界面看起来顺滑。
-> 已确定的方向：混合方案（弹层用 AtomUI，其余用 TCode 自己的一层薄 Motion 工具）、偏丰富灵动的风格、
+> 已确定的方向：混合方案（弹层用 AtomUI，其余用 TKCode 自己的一层薄 Motion 工具）、偏丰富灵动的风格、
 > 面板开合用宽度动画并在动画期间降载。
 
 ## 1. 现状
@@ -18,7 +18,7 @@
 | 面板 | 侧栏（`IsSidebarOpen`）、编辑区、文件树、编辑区最大化 | `MainWindow.UpdateColumns` 直接设 `GridLength` |
 | 输入框 | 紧凑单行胶囊 → `multiline` 两段布局；`TextArea.IsAutoSize` 逐行增高 | 样式类切换，Grid 行列重排，瞬间跳变 |
 | 出现消失 | 审批卡、排队卡、回到底部按钮、附件缩略图、状态提示、发送 ↔ 停止 | `IsVisible` 切换 |
-| 微交互 | `TCode.RowButton` 系列的悬停 / 按下 / 选中、`IconTab` 下划线、分段选择 | 样式 Setter 瞬间换色 |
+| 微交互 | `TKCode.RowButton` 系列的悬停 / 按下 / 选中、`IconTab` 下划线、分段选择 | 样式 Setter 瞬间换色 |
 | 会话内容 | 新的用户消息、流式追加的回复块、切换会话 | 直接出现 |
 
 ## 2. AtomUI 能直接用的部分（NuGet 公开 API）
@@ -49,7 +49,7 @@
 
 **可打断**：所有动画都从当前进度反向，不从头重播。连续快速点击展开 / 收起不会跳变。
 
-## 4. TCode Motion 工具层（`src/TCode.Desktop/Motion/`）
+## 4. TKCode Motion 工具层（`src/TKCode.Desktop/Motion/`）
 
 全部基于 Avalonia 的 `Transitions` / `Animation` 加自定义 `Easing`，不用反射，NativeAOT 安全。
 
@@ -145,7 +145,7 @@
 
 ## 6. 验证
 
-- 在 `tests/TCode.Desktop.Tests` 的 Headless 环境里默认关闭动效，保证现有快照稳定。
+- 在 `tests/TKCode.Desktop.Tests` 的 Headless 环境里默认关闭动效，保证现有快照稳定。
 - 新增动效测试：手动推进渲染计时器，截取 0% / 50% / 100% 三帧 PNG 检查，覆盖 Reveal、Presence、弹层、输入框变形、面板。还要断言“动画结束后 `IsVisible` / 布局与无动效时一致”，以及“中途反向不跳变”。
 - 每个阶段都执行 AOT 发布（0 个 IL 警告），并运行发布出来的二进制。
 - 帧率：在长会话（`HistoryBenchTests` 的数据）下开合面板、展开活动组，确认没有掉帧（每帧 < 16ms）。
@@ -163,7 +163,7 @@
 
 ## 8. 实现状态（2026-10-16）
 
-代码在 `src/TCode.Desktop/Motion/`，测试在 `tests/TCode.Desktop.Tests/MotionTests.cs`、`PanelMotionTests.cs`、`SplashTests.cs`。
+代码在 `src/TKCode.Desktop/Motion/`，测试在 `tests/TKCode.Desktop.Tests/MotionTests.cs`、`PanelMotionTests.cs`、`SplashTests.cs`。
 
 | 件 | 文件 | 说明 |
 |---|---|---|
@@ -194,5 +194,5 @@
 
 注意：
 - 透明度绝不能过冲：渲染时按 0–255 换算，1.04 会溢出成接近 0。弹簧缓动只用于缩放 / 位移；AtomUI 弹层动效（`PopoverInMotion`）的透明度过渡单独换成不过冲的缓动。此前“打开下拉闪几下”就是这个原因（真实窗口逐帧取证：透明度 1.04→1.01 的几帧画面几乎全透明）。`PopoverPlacementTests` 断言透明度单调且 ≤ 1。
-- AtomUI 弹层按触发按钮当时的变换后边界定位（打开后不随按钮回弹移动）：按下缩放会让弹层固定偏几个像素。所以弹层触发按钮（`TCode.ChipButton`）不做按下缩放，启动页退场后主界面入场只淡入。
+- AtomUI 弹层按触发按钮当时的变换后边界定位（打开后不随按钮回弹移动）：按下缩放会让弹层固定偏几个像素。所以弹层触发按钮（`TKCode.ChipButton`）不做按下缩放，启动页退场后主界面入场只淡入。
 - 画刷过渡必须预乘 alpha（`MotionBrushTransition.Mix`）：`Transparent` 是透明的白色，直接插值会在悬停时闪一层浅灰。

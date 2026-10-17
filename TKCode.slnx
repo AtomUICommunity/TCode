@@ -1,0 +1,36 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TKCode.Ai/TKCode.Ai.csproj" />
+    <Project Path="src/TKCode.Agent/TKCode.Agent.csproj" />
+    <Project Path="src/TKCode.Agent.Coding/TKCode.Agent.Coding.csproj" />
+    <Project Path="src/TKCode.Rpc.Contracts/TKCode.Rpc.Contracts.csproj" />
+    <Project Path="src/TKCode.AgentHost/TKCode.AgentHost.csproj" />
+    <Project Path="src/TKCode.Config/TKCode.Config.csproj" />
+    <Project Path="src/TKCode.Runtimes/TKCode.Runtimes.csproj" />
+    <Project Path="src/TKCode.Mcp/TKCode.Mcp.csproj" />
+    <Project Path="src/TKCode.Desktop/TKCode.Desktop.csproj" />
+    <Project Path="src/TKCode.Terminal.Core/TKCode.Terminal.Core.csproj" />
+    <Project Path="src/TKCode.Terminal.Pty/TKCode.Terminal.Pty.csproj" />
+    <Project Path="src/TKCode.Terminal.Protocol/TKCode.Terminal.Protocol.csproj" />
+    <Project Path="src/TKCode.Terminal.Host/TKCode.Terminal.Host.csproj" />
+    <Project Path="src/TKCode.Terminal.Avalonia/TKCode.Terminal.Avalonia.csproj" />
+  </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/TKCode.MemoryHarness/TKCode.MemoryHarness.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TKCode.Agent.Tests/TKCode.Agent.Tests.csproj" />
+    <Project Path="tests/TKCode.AgentHost.Tests/TKCode.AgentHost.Tests.csproj" />
+    <Project Path="tests/TKCode.Ai.Tests/TKCode.Ai.Tests.csproj" />
+    <Project Path="tests/TKCode.Runtimes.Tests/TKCode.Runtimes.Tests.csproj" />
+    <Project Path="tests/TKCode.Mcp.Tests/TKCode.Mcp.Tests.csproj" />
+    <Project Path="tests/TKCode.Mcp.TestServer/TKCode.Mcp.TestServer.csproj" />
+    <Project Path="tests/TKCode.Mcp.HttpTestServer/TKCode.Mcp.HttpTestServer.csproj" />
+    <Project Path="tests/TKCode.Desktop.Tests/TKCode.Desktop.Tests.csproj" />
+    <Project Path="tests/TKCode.Terminal.Core.Tests/TKCode.Terminal.Core.Tests.csproj" />
+    <Project Path="tests/TKCode.Terminal.Pty.Tests/TKCode.Terminal.Pty.Tests.csproj" />
+    <Project Path="tests/TKCode.Terminal.Avalonia.Tests/TKCode.Terminal.Avalonia.Tests.csproj" />
+    <Project Path="tests/TKCode.Terminal.Protocol.Tests/TKCode.Terminal.Protocol.Tests.csproj" />
+    <Project Path="tests/TKCode.Terminal.Host.Tests/TKCode.Terminal.Host.Tests.csproj" />
+  </Folder>
+</Solution>

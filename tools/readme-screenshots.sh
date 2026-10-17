@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="$(cd "$(dirname "${1:-docs/images}")" && pwd)/$(basename "${1:-docs/images}")"
 
-dotnet build src/TCode.AgentHost -v q
-dotnet build tests/TCode.Desktop.Tests -v q
-TCODE_README_SCREENSHOTS="$OUT" dotnet test tests/TCode.Desktop.Tests --no-build --filter "FullyQualifiedName~ReadmeScreenshotTests"
+dotnet build src/TKCode.AgentHost -v q
+dotnet build tests/TKCode.Desktop.Tests -v q
+TKCODE_README_SCREENSHOTS="$OUT" dotnet test tests/TKCode.Desktop.Tests --no-build --filter "FullyQualifiedName~ReadmeScreenshotTests"
 ls -lh "$OUT"

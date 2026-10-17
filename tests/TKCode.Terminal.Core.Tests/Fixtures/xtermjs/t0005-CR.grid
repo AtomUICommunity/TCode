@@ -1,0 +1,34 @@
+tkcode-grid 1
+size 80x25 cell 8x16
+cursor 0,24 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+rows
+   0 |a                                                           b                   | s0
+   1 |a                                                            b                  | s0
+   2 |a                                                             b                 | s0
+   3 |a                                                              b                | s0
+   4 |a                                                               b               | s0
+   5 |a                                                                b              | s0
+   6 |a                                                                 b             | s0
+   7 |a                                                                  b            | s0
+   8 |a                                                                   b           | s0
+   9 |a                                                                    b          | s0
+  10 |a                                                                     b         | s0
+  11 |a                                                                      b        | s0
+  12 |a                                                                       b       | s0
+  13 |a                                                                        b      | s0
+  14 |a                                                                         b     | s0
+  15 |a                                                                          b    | s0
+  16 |a                                                                           b   | s0
+  17 |a                                                                            b  | s0
+  18 |a                                                                             b | s0
+  19 |a                                                                              b| s0
+  20 |                                                                                | s0  wrap
+  21 |a                                                                               | s0
+  22 |                                                                                | s0  wrap
+  23 |ab                                                                              | s0
+  24 |                                                                                | s0

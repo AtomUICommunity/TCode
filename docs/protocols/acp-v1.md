@@ -1,58 +1,58 @@
-# Agent Client Protocol (ACP) v1 客户端协议规格（TCode 实现用）
+# Agent Client Protocol (ACP) v1 客户端协议规格（TKCode 实现用）
 
 > 版本基线：ACP schema **v1**（`agent-client-protocol-schema` 1.11.0，2026-10-09；仓库 commit `5ab891a`，2026-10-16 克隆）。
-> 用途：TCode（C#/.NET 10，NativeAOT）在 Agent Host 内作为 ACP **Client**，通过 stdio 启动并驱动原生支持 ACP 的 Agent（Gemini CLI、GitHub Copilot CLI、Cursor、OpenCode、Qwen Code、Kimi CLI、Goose 等），对应设计文档 [external-agent-runtimes.md](../design/external-agent-runtimes.md) 中的 `AcpRuntime`。
+> 用途：TKCode（C#/.NET 10，NativeAOT）在 Agent Host 内作为 ACP **Client**，通过 stdio 启动并驱动原生支持 ACP 的 Agent（Gemini CLI、GitHub Copilot CLI、Cursor、OpenCode、Qwen Code、Kimi CLI、Goose 等），对应设计文档 [external-agent-runtimes.md](../design/external-agent-runtimes.md) 中的 `AcpRuntime`。
 > 编写日期：2026-10-16。方法名、字段名、枚举值一律保留英文原文。所有结论都标了出处；标「待核实」的条目没有在一手资料里确认，实现时必须做容错，不要硬依赖。
 
 ## 0. 来源与可信度标注
 
 | 标记 | 来源 |
 |---|---|
-| **[Schema]** | 规范仓库 `schema/v1/schema.json`（权威）与 `schema/v1/meta.json`（方法名表）。本地路径：`/private/tmp/claude-501/-Users-token-code-AtomUI-TCode/441895dd-b473-4eec-9848-b8a86c1a67e3/scratchpad/research/acp-agent-client-protocol/repo/`（下文简称 `repo/`）。线上：`https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v1/schema.json` |
+| **[Schema]** | 规范仓库 `schema/v1/schema.json`（权威）与 `schema/v1/meta.json`（方法名表）。本地路径：`/private/tmp/claude-501/-Users-token-code-AtomUI-TKCode/441895dd-b473-4eec-9848-b8a86c1a67e3/scratchpad/research/acp-agent-client-protocol/repo/`（下文简称 `repo/`）。线上：`https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v1/schema.json` |
 | **[Unstable]** | `repo/schema/v1/schema.unstable.json`、`meta.unstable.json`：未稳定的扩展，Agent 可能发送，Client 只能宽松读取 |
 | **[Doc:xxx]** | `repo/docs/protocol/v1/xxx.mdx`，即 `https://agentclientprotocol.com/protocol/v1/xxx` |
 | **[RFD:xxx]** | `repo/docs/rfds/xxx.mdx`；**[RFD-v2:xxx]** 为 `repo/docs/rfds/v2/xxx.mdx` |
 | **[CL]** | `repo/CHANGELOG.md`（schema 发布记录，用于判断某特性何时稳定） |
-| **[Registry]** | ACP Registry 快照 `/private/tmp/claude-501/-Users-token-code-AtomUI-TCode/441895dd-b473-4eec-9848-b8a86c1a67e3/scratchpad/research/acp-registry/registry.json`（`https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`） |
+| **[Registry]** | ACP Registry 快照 `/private/tmp/claude-501/-Users-token-code-AtomUI-TKCode/441895dd-b473-4eec-9848-b8a86c1a67e3/scratchpad/research/acp-registry/registry.json`（`https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json`） |
 | **[zeron]** | zeron 的 ACP Client 实现：`scratchpad/research/zeron/crates/harness/src/acp/mod.rs`、`normalize.rs`，以及 `docs/research/acp.md`。用于交叉核对真实 Agent 的怪癖 |
 | **[本机]** | 在本机只读检查得到：`cursor-agent` 2026.08.11-e8db854 的安装包（`~/.local/share/cursor-agent/versions/2026.08.11-e8db854/*.js`，只做 grep，未启动 ACP 会话）、`cursor-agent --version/--help` 的输出、VS Code Copilot Chat 扩展放在 PATH 上的 `copilot` 包装脚本 |
 | **[待核实]** | 一手资料没有覆盖，取自经验或推断 |
 
-稳定性时间线（[CL]）：`session/list` 与 `session_info_update` 在 0.11.1 稳定；`session/resume`、`session/close` 在 0.12.2；`logout` 在 0.13.3；`additionalDirectories` 在 0.13.5；`messageId`、`usage_update`、`session/delete` 在 0.13.6；1.0.0 定版；`model_config` 分类在 1.1.0；`$/cancel_request` 在 1.2.0；`boolean` 配置项在 1.3.0；elicitation 与 terminal 认证在 1.7.0（schema-v1.21.0，2026-08-20，“stabilize elicitation (#1779)”）；tool call `name` 在 1.8.0；`notice` 与 compaction 在 1.11.0。旧 Agent 可能不发送这些较新的字段，TCode 必须把它们全部当作可选。
+稳定性时间线（[CL]）：`session/list` 与 `session_info_update` 在 0.11.1 稳定；`session/resume`、`session/close` 在 0.12.2；`logout` 在 0.13.3；`additionalDirectories` 在 0.13.5；`messageId`、`usage_update`、`session/delete` 在 0.13.6；1.0.0 定版；`model_config` 分类在 1.1.0；`$/cancel_request` 在 1.2.0；`boolean` 配置项在 1.3.0；elicitation 与 terminal 认证在 1.7.0（schema-v1.21.0，2026-08-20，“stabilize elicitation (#1779)”）；tool call `name` 在 1.8.0；`notice` 与 compaction 在 1.11.0。旧 Agent 可能不发送这些较新的字段，TKCode 必须把它们全部当作可选。
 
 ---
 
 ## 1. 角色与方法总表
 
-ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发请求和通知 [Doc:overview]。TCode 只扮演 Client。
+ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发请求和通知 [Doc:overview]。TKCode 只扮演 Client。
 
-### 1.1 Client → Agent（TCode 发出）
+### 1.1 Client → Agent（TKCode 发出）
 
-| 方法 | 类型 | 前置能力 | TCode 用法 |
+| 方法 | 类型 | 前置能力 | TKCode 用法 |
 |---|---|---|---|
 | `initialize` | 请求 | — | **必须**，连接上的第一条消息 |
 | `authenticate` | 请求 | `authMethods` 中有非 terminal 类型的方法 | 收到 `-32000` 后按 §4 处理 |
 | `session/new` | 请求 | 基线 | **必须** |
 | `session/load` | 请求 | `agentCapabilities.loadSession: true` | 恢复会话的后备方案（§5.3） |
 | `session/resume` | 请求 | `sessionCapabilities.resume` 非 null | 恢复会话的首选方案（§5.3） |
-| `session/list` | 请求 | `sessionCapabilities.list` 非 null | 第一阶段不用（设计：只显示 TCode 自己的会话） |
+| `session/list` | 请求 | `sessionCapabilities.list` 非 null | 第一阶段不用（设计：只显示 TKCode 自己的会话） |
 | `session/close` | 请求 | `sessionCapabilities.close` 非 null | 关闭会话时调用；没有该能力就直接结束进程 |
 | `session/delete` | 请求 | `sessionCapabilities.delete` 非 null | 不用 |
 | `session/prompt` | 请求 | 基线 | **必须**，一轮对话 |
 | `session/cancel` | **通知** | 基线 | **必须**，中断当前轮次 |
 | `session/set_config_option` | 请求 | Agent 返回了 `configOptions` | 切换模型、思考深度、模式等（§10） |
 | `session/set_mode` | 请求 | Agent 返回了 `modes` | 旧接口，只在没有 `category:"mode"` 配置项时使用（§10.5） |
-| `logout` | 请求 | `agentCapabilities.auth.logout` 非 null | 不用（TCode 不管理凭据） |
+| `logout` | 请求 | `agentCapabilities.auth.logout` 非 null | 不用（TKCode 不管理凭据） |
 | `$/cancel_request` | 通知 | — | 放弃 `session/prompt` 以外的挂起请求时发送（§9.2） |
 
 `session/set_model` 不在 v1 schema 中（unstable 接口，已于 2026-06-01 删除 [RFD:updates]），但仍有 Agent 在用，见 §10.6。
 
-### 1.2 Agent → Client（TCode 必须处理）
+### 1.2 Agent → Client（TKCode 必须处理）
 
-| 方法 | 类型 | TCode 处理 |
+| 方法 | 类型 | TKCode 处理 |
 |---|---|---|
 | `session/update` | 通知 | **必须**，全部变体见 §7 |
-| `session/request_permission` | 请求 | **必须**，映射到 TCode 审批（§8） |
+| `session/request_permission` | 请求 | **必须**，映射到 TKCode 审批（§8） |
 | `fs/read_text_file`、`fs/write_text_file` | 请求 | 不声明能力，收到就回 `-32601`（§12） |
 | `terminal/create`、`terminal/output`、`terminal/release`、`terminal/wait_for_exit`、`terminal/kill` | 请求 | 同上 |
 | `elicitation/create` | 请求 | 不声明能力，收到就回 `-32602`（§11） |
@@ -69,19 +69,19 @@ ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发
 - Client 以子进程方式启动 Agent。Agent 从 **stdin** 读消息，向 **stdout** 写消息。
 - 消息必须是 **UTF-8**。
 - 每条消息是一个 JSON-RPC 请求、通知或响应，**以 `\n` 分隔，消息内部不得包含换行**。
-- **没有 `Content-Length` 头**。这一点与 TCode 内部 UI↔Host 的 `JsonRpcConnection`（Content-Length 分帧）不同，必须使用按行分帧模式（设计文档 §9 第 2 步）。
+- **没有 `Content-Length` 头**。这一点与 TKCode 内部 UI↔Host 的 `JsonRpcConnection`（Content-Length 分帧）不同，必须使用按行分帧模式（设计文档 §9 第 2 步）。
 - Agent 可以往 **stderr** 写任意 UTF-8 日志，Client 可以采集、转发或忽略。
 - Agent 不得向 stdout 写非 ACP 内容；Client 不得向 stdin 写非 ACP 内容。
 - 关闭：Client 关闭 stdin 并结束子进程。
 
-### 2.2 TCode 写入要求
+### 2.2 TKCode 写入要求
 
 1. 每条消息用紧凑格式序列化（`WriteIndented = false`），后面追加一个 `\n`（只用 LF，不用 CRLF），然后 flush。System.Text.Json 会把字符串里的换行转义成 `\n`，所以紧凑输出天然不含裸换行；不要使用会输出裸控制字符的自定义编码器。
 2. 只有一个写者：所有写操作走单写者队列，保证一条消息完整写出后才写下一条。
 3. 发出的请求 `id` 用 `long`，每个连接从 0 开始递增。不发送 `id: null` 的请求。
 4. 不发送 JSON-RPC 批量数组（v1 没有定义批量；v2 才会遵循 JSON-RPC 批量规则 [RFD-v2:overview]）。
 
-### 2.3 TCode 读取要求
+### 2.3 TKCode 读取要求
 
 1. 以 `\n` 切分。切出的行如果以 `\r` 结尾，去掉 `\r`。空行和纯空白行跳过。
 2. **单行没有长度上限**：图片、diff、`rawOutput` 都可能让一行达到数 MB。用可增长的缓冲区（`PipeReader`），设一个保护上限（建议 64 MiB），超过时判定连接损坏。
@@ -93,7 +93,7 @@ ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发
    - 没有 `method`、有 `id`，且有 `result` 或 `error` → 响应。
    - 其它形状：记录日志后丢弃。
 6. 收到的请求 `id` 可以是整数或字符串（[Schema] `RequestId`：`null | int64 | string`）。回复时**原样回传**（保留原始 `JsonElement`），不要转换类型。
-7. **两个方向的 id 空间相互独立**：Agent 发来的请求 `id: 0` 与 TCode 自己发出的 `id: 0` 没有关系（夹具 B、C、D 就是这样）。
+7. **两个方向的 id 空间相互独立**：Agent 发来的请求 `id: 0` 与 TKCode 自己发出的 `id: 0` 没有关系（夹具 B、C、D 就是这样）。
 8. 响应按 `id` 匹配本端挂起的请求；找不到对应请求的响应，记录日志后丢弃。
 
 ### 2.4 顺序保证（重要）
@@ -119,7 +119,7 @@ ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发
 | 关闭 | 有 `sessionCapabilities.close` 就先发 `session/close`；然后关闭 stdin；等 2 秒；对进程组发 SIGTERM；再等 3 秒；发 SIGKILL。Windows 用 Job Object |
 | 进程意外退出 | 所有挂起请求以「连接断开」失败；进行中的轮次以 Error 结束（如果此前已经发出 `session/cancel`，则以 Aborted 结束）；把 stderr 尾部附在错误信息里。EOF 紧跟在最后一个响应之后属于正常结束 [zeron:acp.md] |
 
-**一个会话一个进程**：ACP 允许在同一连接上建多个会话，但 TCode 采用「每个活跃会话一个 Agent 进程」（设计文档 §3），这样隔离更好，中断时可以直接结束进程。连接层仍然要按 `sessionId` 校验和路由。
+**一个会话一个进程**：ACP 允许在同一连接上建多个会话，但 TKCode 采用「每个活跃会话一个 Agent 进程」（设计文档 §3），这样隔离更好，中断时可以直接结束进程。连接层仍然要按 `sessionId` 校验和路由。
 
 ---
 
@@ -131,29 +131,29 @@ ACP 基于 JSON-RPC 2.0。**Client 启动 Agent 子进程**；双方都可以发
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `protocolVersion` | `uint16` | 是 | Client 支持的**最新**主版本。TCode 发 `1` |
+| `protocolVersion` | `uint16` | 是 | Client 支持的**最新**主版本。TKCode 发 `1` |
 | `clientCapabilities` | `ClientCapabilities` | 否 | 省略的能力一律视为**不支持** [Doc:initialization] |
 | `clientInfo` | `Implementation` | 否（SHOULD） | `{name, title?, version}`，其中 `name` 和 `version` 必填 |
 | `_meta` | object | 否 | 扩展元数据 |
 
-TCode 发送的确切内容：
+TKCode 发送的确切内容：
 
 ```json
-{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"<TCode 版本号>"}}}
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"<TKCode 版本号>"}}}
 ```
 
-`clientInfo.name` 会被部分 Agent 用作宿主标识，例如 Cursor 把它放进 `x-cursor-host-app-name` 请求头 [本机]。固定使用 `tcode`。
+`clientInfo.name` 会被部分 Agent 用作宿主标识，例如 Cursor 把它放进 `x-cursor-host-app-name` 请求头 [本机]。固定使用 `tkcode`。
 
 ### 3.2 每项能力的取舍与理由
 
-| 能力 | TCode 值 | 理由 |
+| 能力 | TKCode 值 | 理由 |
 |---|---|---|
-| `fs.readTextFile` / `fs.writeTextFile` | `false` | ① 这组方法存在的意义是让 Agent 读到编辑器里**未保存的缓冲区**、并让编辑器跟踪改动 [Doc:file-system]；TCode 不是编辑器，磁盘就是唯一真相，Agent 自己的文件工具读写结果完全相同。② 声明后，TCode 就要自己实现路径边界检查、权限和并发写入，等于给 Agent 开了一个绕过其自身权限系统的后门。③ ACP v2 草案删除了整个 `fs/*` 方法组 [RFD-v2:overview]。④ zeron 同样拒绝 [zeron:mod.rs `initialize_params`] |
-| `terminal` | `false` | ① 声明后 Agent 会把命令交给 Client 执行（`terminal/create` 等 5 个方法），TCode 就要负责沙箱、输出缓冲、超时和进程树清理，这些本该是 Agent 自己的职责。② 不声明时，Agent 用自己的 shell 工具执行，并通过 `session/request_permission` 请求批准，TCode 的审批照样生效。③ v2 草案删除了 Client 执行终端的接口，改为 Agent 自有、只读展示的终端输出 [RFD-v2:overview]。副作用：`ToolCallContent` 里的 `terminal` 变体不应出现（§7.5） |
-| `auth.terminal` | `false` | 设为 `true` 表示 Client 能在交互式终端里重现 Agent 的启动命令 [Doc:authentication]。TCode 第一阶段没有内嵌终端，而且设计上不经手登录。等内嵌终端（Iciclecreek.Avalonia.Terminal）上线后再改为 `true`（§4.3） |
-| `elicitation` | 省略 | 省略或 `null` 表示不支持；**注意 `{}` 也表示不支持任何模式**，与 MCP 不同 [Doc:elicitation]。TCode 的 `input/request` 提问面板完成之前不声明（§11） |
-| `session.configOptions.boolean` | `{}` | 允许 Agent 发 `type:"boolean"` 的配置项。TCode 渲染为开关即可，成本很低；不声明的话 Agent 可能直接隐藏这类选项 [Doc:session-config-options] |
-| `session.notices` | `{}` | 不声明时，Agent 可能把通知当作普通 Agent 消息发送，污染对话记录 [Doc:prompt-turn「Session Notices」]。声明后 TCode 用 toast 显示，不写入转录 |
+| `fs.readTextFile` / `fs.writeTextFile` | `false` | ① 这组方法存在的意义是让 Agent 读到编辑器里**未保存的缓冲区**、并让编辑器跟踪改动 [Doc:file-system]；TKCode 不是编辑器，磁盘就是唯一真相，Agent 自己的文件工具读写结果完全相同。② 声明后，TKCode 就要自己实现路径边界检查、权限和并发写入，等于给 Agent 开了一个绕过其自身权限系统的后门。③ ACP v2 草案删除了整个 `fs/*` 方法组 [RFD-v2:overview]。④ zeron 同样拒绝 [zeron:mod.rs `initialize_params`] |
+| `terminal` | `false` | ① 声明后 Agent 会把命令交给 Client 执行（`terminal/create` 等 5 个方法），TKCode 就要负责沙箱、输出缓冲、超时和进程树清理，这些本该是 Agent 自己的职责。② 不声明时，Agent 用自己的 shell 工具执行，并通过 `session/request_permission` 请求批准，TKCode 的审批照样生效。③ v2 草案删除了 Client 执行终端的接口，改为 Agent 自有、只读展示的终端输出 [RFD-v2:overview]。副作用：`ToolCallContent` 里的 `terminal` 变体不应出现（§7.5） |
+| `auth.terminal` | `false` | 设为 `true` 表示 Client 能在交互式终端里重现 Agent 的启动命令 [Doc:authentication]。TKCode 第一阶段没有内嵌终端，而且设计上不经手登录。等内嵌终端（Iciclecreek.Avalonia.Terminal）上线后再改为 `true`（§4.3） |
+| `elicitation` | 省略 | 省略或 `null` 表示不支持；**注意 `{}` 也表示不支持任何模式**，与 MCP 不同 [Doc:elicitation]。TKCode 的 `input/request` 提问面板完成之前不声明（§11） |
+| `session.configOptions.boolean` | `{}` | 允许 Agent 发 `type:"boolean"` 的配置项。TKCode 渲染为开关即可，成本很低；不声明的话 Agent 可能直接隐藏这类选项 [Doc:session-config-options] |
+| `session.notices` | `{}` | 不声明时，Agent 可能把通知当作普通 Agent 消息发送，污染对话记录 [Doc:prompt-turn「Session Notices」]。声明后 TKCode 用 toast 显示，不写入转录 |
 | `session.compaction` | 省略 | 需要实现按 ID 寻址的压缩实体（补丁、重放语义），第一阶段不做。不声明时 Agent 不得发送 `compaction_update` / `compaction_summary_chunk`，可以改用普通消息说明 |
 | `_meta` | 省略 | 不声明任何厂商扩展（例如 Devin 的 `cognition.ai/subagentSupport` [zeron]） |
 
@@ -167,18 +167,18 @@ TCode 发送的确切内容：
 | `agentCapabilities` | `AgentCapabilities` | 见下 | 解析失败时取默认值 |
 | `authMethods` | `AuthMethod[]` | `[]` | 解析失败的条目跳过 |
 | `agentInfo` | `Implementation` \| null | — | 用于界面显示名称和版本 |
-| `_meta` | object | — | 厂商扩展（例如 `_meta.steering.supported` [zeron]），TCode 忽略 |
+| `_meta` | object | — | 厂商扩展（例如 `_meta.steering.supported` [zeron]），TKCode 忽略 |
 
 `AgentCapabilities`：
 
-| 路径 | 类型 | 默认 | 含义 / TCode 用法 |
+| 路径 | 类型 | 默认 | 含义 / TKCode 用法 |
 |---|---|---|---|
 | `loadSession` | bool | `false` | 是否支持 `session/load` |
 | `promptCapabilities.image` | bool | `false` | prompt 可以带 `image` 块 |
-| `promptCapabilities.audio` | bool | `false` | prompt 可以带 `audio` 块（TCode 不用） |
+| `promptCapabilities.audio` | bool | `false` | prompt 可以带 `audio` 块（TKCode 不用） |
 | `promptCapabilities.embeddedContext` | bool | `false` | prompt 可以带 `resource` 块 |
 | `mcpCapabilities.http` | bool | `false` | `mcpServers` 可以用 HTTP 传输 |
-| `mcpCapabilities.sse` | bool | `false` | SSE 传输（MCP 已废弃，TCode 不用） |
+| `mcpCapabilities.sse` | bool | `false` | SSE 传输（MCP 已废弃，TKCode 不用） |
 | `sessionCapabilities.list` / `resume` / `close` / `delete` / `additionalDirectories` | object \| null | 省略 | **非 null 对象（包括 `{}`）表示支持**；省略或 `null` 表示不支持 |
 | `auth.logout` | object \| null | 省略 | 同上 |
 | `_meta` | object | — | 厂商自定义能力 |
@@ -188,7 +188,7 @@ TCode 发送的确切内容：
 ### 3.4 版本协商
 
 - Client 发自己支持的最新版本；Agent 支持该版本就原样返回，否则返回它支持的最新版本 [Doc:initialization]。
-- TCode 收到的 `protocolVersion` **不等于 1** 时：关闭连接，界面提示「该 Agent 使用 ACP v{N}，TCode 目前只支持 v1」。不要尝试按 v1 继续通信。
+- TKCode 收到的 `protocolVersion` **不等于 1** 时：关闭连接，界面提示「该 Agent 使用 ACP v{N}，TKCode 目前只支持 v1」。不要尝试按 v1 继续通信。
 - 能力的新增不算破坏性变更，所以同为 v1 的 Agent 之间能力差异很大，一切以能力字段为准。
 
 ### 3.5 真实 Agent 的初始化响应示例
@@ -209,7 +209,7 @@ Cursor 2026.08.11（[本机] 安装包 `2996.index.js`）：`loadSession:true`�
 | `"terminal"` | `{id, name, description?, type:"terminal", args?: string[], env?: {string:string}}` | 用**同一个 Agent 程序和基础启动配置**，追加 `args`、覆盖 `env`，在交互式终端里运行；退出码 0 表示成功；然后**重新连接并重新 `initialize`**。**不得**对 terminal 方法调用 `authenticate` |
 | 其它未知值 | — | 跳过该条目 |
 
-Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 方法。TCode 声明为 `false`，所以第一阶段不应收到 terminal 方法；收到了也只按 §4.3 给出提示，不自动执行。
+Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 方法。TKCode 声明为 `false`，所以第一阶段不应收到 terminal 方法；收到了也只按 §4.3 给出提示，不自动执行。
 
 ### 4.2 `authenticate`
 
@@ -221,17 +221,17 @@ Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 
 - 参数：`methodId`（必填）、`_meta`。成功返回空对象（可能带 `_meta`）。
 - 成功后，创建会话等受认证保护的请求不再返回 `auth_required`。
 
-### 4.3 TCode 的认证策略
+### 4.3 TKCode 的认证策略
 
-设计文档的约束：**TCode 不提供登录、不读写凭据，直接复用 CLI 已有的登录状态**。因此：
+设计文档的约束：**TKCode 不提供登录、不读写凭据，直接复用 CLI 已有的登录状态**。因此：
 
 1. **不在 `initialize` 后主动调用 `authenticate`**。直接发 `session/new`。
 2. `session/new`（或 `session/load` / `session/resume` / `session/prompt`）返回错误码 **`-32000`（Authentication required）** 时，进入认证处理：
    - `authMethods` 中恰好有一个 agent 类型方法，且该方法属于「复用已有凭据、不弹出交互」的已知白名单时，自动调用一次 `authenticate`，成功后重试原请求一次。白名单目前只有 Cursor 的 `cursor_login`：Cursor 的 `session/new` 在未认证时会报错，提示先运行 `cursor-agent login`，再用 `cursor_login` 调用 `authenticate` [本机]。其它方法（例如 Gemini 的 `oauth-personal`）可能会打开浏览器，[待核实] 不自动调用。
    - 否则在界面显示「需要登录」：列出每个 agent 类型方法的 `name` / `description`，由用户点击后调用 `authenticate`；同时显示通用提示「请在终端运行 `<可执行文件> login`（或该 CLI 的登录命令），完成后点击重试」。
-   - terminal 类型方法：显示可复制的命令行 `<可执行文件> <args...>`，以及需要设置的 `env`，由用户在自己的终端运行，完成后 TCode 重启 Agent 进程并重新初始化。等 TCode 有了内嵌终端，再改为声明 `auth.terminal:true` 并按 §4.1 的流程自动执行。
+   - terminal 类型方法：显示可复制的命令行 `<可执行文件> <args...>`，以及需要设置的 `env`，由用户在自己的终端运行，完成后 TKCode 重启 Agent 进程并重新初始化。等 TKCode 有了内嵌终端，再改为声明 `auth.terminal:true` 并按 §4.1 的流程自动执行。
 3. `authenticate` 自身失败：把 `error.message` 显示给用户，不再自动重试。
-4. `logout`：TCode 不调用。即使需要，也必须先确认 `agentCapabilities.auth.logout` 非 null [Doc:authentication]。
+4. `logout`：TKCode 不调用。即使需要，也必须先确认 `agentCapabilities.auth.logout` 非 null [Doc:authentication]。
 5. 会话中途收到 `-32000`（例如凭据过期）：结束当前轮次（Error），显示登录提示；用户重新登录后，重启进程并用 `session/resume` / `session/load` 恢复。
 
 ---
@@ -249,13 +249,13 @@ Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 
 | `additionalDirectories` | string[] | 否 | 只有 `sessionCapabilities.additionalDirectories` 非 null 时才能发；每项必须是绝对路径 |
 | `_meta` | object | 否 | |
 
-`McpServer`（TCode 自己的工具以 MCP 服务器的形式交给 Agent 时使用，设计文档 §8）：
+`McpServer`（TKCode 自己的工具以 MCP 服务器的形式交给 Agent 时使用，设计文档 §8）：
 
 | 变体 | 判别 | 必填字段 |
 |---|---|---|
 | stdio（所有 Agent 必须支持） | **没有 `type` 字段** | `name`、`command`（可执行文件**绝对路径**）、`args: string[]`、`env: [{name, value}]`（四个都必填，空就发 `[]`） |
 | http | `type:"http"` | `name`、`url`、`headers: [{name, value}]`；需要 `mcpCapabilities.http` |
-| sse | `type:"sse"` | 同 http；需要 `mcpCapabilities.sse`；已废弃，TCode 不用 |
+| sse | `type:"sse"` | 同 http；需要 `mcpCapabilities.sse`；已废弃，TKCode 不用 |
 
 响应（[Schema] `NewSessionResponse`）：
 
@@ -267,7 +267,7 @@ Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 
 | `_meta` | object | |
 | `models`（**schema 外**） | `{currentModelId, availableModels:[{modelId, name, description?}]}` | 已删除的 unstable 模型接口，部分 Agent 仍然发送（§10.6） |
 
-**真实怪癖：`session/new` 响应之前就可能到达该会话的通知。** 例如 Agent 在创建会话时立即推送 `available_commands_update` 或 `config_option_update`，而此时 TCode 还不知道 `sessionId`。处理规则：读循环收到未知 `sessionId` 的 `session/update` 时，如果本连接上有挂起的 `session/new` / `session/load` / `session/resume`，就按 `sessionId` 暂存（上限 64 条）；响应到达后，对匹配的会话按原顺序回放这些暂存通知。zeron 也是这样做的，原因是丢掉它们可能会漏掉唯一一次「新模型上线」的通知 [zeron:mod.rs `request_draining`]。夹具 F 覆盖这个场景。Cursor 是在响应之后用 `setTimeout` 推送命令列表的 [本机]。
+**真实怪癖：`session/new` 响应之前就可能到达该会话的通知。** 例如 Agent 在创建会话时立即推送 `available_commands_update` 或 `config_option_update`，而此时 TKCode 还不知道 `sessionId`。处理规则：读循环收到未知 `sessionId` 的 `session/update` 时，如果本连接上有挂起的 `session/new` / `session/load` / `session/resume`，就按 `sessionId` 暂存（上限 64 条）；响应到达后，对匹配的会话按原顺序回放这些暂存通知。zeron 也是这样做的，原因是丢掉它们可能会漏掉唯一一次「新模型上线」的通知 [zeron:mod.rs `request_draining`]。夹具 F 覆盖这个场景。Cursor 是在响应之后用 `setTimeout` 推送命令列表的 [本机]。
 
 ### 5.2 `session/load`（需要 `loadSession: true`）
 
@@ -278,25 +278,25 @@ Agent 只有在 Client 声明 `auth.terminal: true` 时才可以返回 terminal 
 - 响应：`{configOptions?, modes?, _meta?}`。
 - 实时通知（`notice`）不重放。
 
-TCode 的处理：
-- TCode 自己的 JSONL 才是转录的唯一来源，所以**重放的消息类和工具类更新一律不渲染、不写盘**。
+TKCode 的处理：
+- TKCode 自己的 JSONL 才是转录的唯一来源，所以**重放的消息类和工具类更新一律不渲染、不写盘**。
 - 重放期间的**状态类**更新（`config_option_update`、`available_commands_update`、`current_mode_update`、`session_info_update`、`usage_update`）照常应用。
 - 响应到达后，按 §2.4 先处理完它之前的所有通知，再进入「就绪」状态。之后才到达的 `user_message_chunk` 等不再属于重放。
 
 ### 5.3 `session/resume`（需要 `sessionCapabilities.resume`）
 
-请求：`{sessionId, cwd, mcpServers?, additionalDirectories?, _meta?}`（[Schema] 中只有 `sessionId`、`cwd` 必填，TCode 仍然总是发送 `mcpServers`）。
+请求：`{sessionId, cwd, mcpServers?, additionalDirectories?, _meta?}`（[Schema] 中只有 `sessionId`、`cwd` 必填，TKCode 仍然总是发送 `mcpServers`）。
 
 语义：恢复上下文，**不重放历史**，准备好后响应 `{configOptions?, modes?, _meta?}`。
 
-**TCode 的恢复顺序**（设计文档 §7）：
+**TKCode 的恢复顺序**（设计文档 §7）：
 1. 有 `resume` 能力 → `session/resume`。
 2. 否则有 `loadSession` → `session/load`，丢弃重放内容。
 3. 都没有，或调用失败 → `session/new`，界面提示「Agent 端上下文已丢失，新会话不包含之前的对话」。
 
 已知失败情形：Devin 在旧进程仍持有会话时，`session/load` 返回 `-32015 "already open in another process"` [zeron:acp.md]。另一个怪癖：被取消的轮次会在 Devin 的历史里留下一条没有回复的用户消息，恢复后的下一轮可能同时回答新旧两个问题 [zeron:acp.md]。
 
-`cwd` 必须与原会话一致（TCode 只在同一个 cwd 下恢复）。`additionalDirectories` 每次都要发完整列表，省略不会恢复之前的值 [Doc:session-setup]。
+`cwd` 必须与原会话一致（TKCode 只在同一个 cwd 下恢复）。`additionalDirectories` 每次都要发完整列表，省略不会恢复之前的值 [Doc:session-setup]。
 
 ### 5.4 `session/list`（需要 `sessionCapabilities.list`）
 
@@ -308,11 +308,11 @@ TCode 的处理：
 
 ### 5.5 `session/close`（需要 `sessionCapabilities.close`）
 
-请求 `{sessionId}`，响应 `{}`。Agent 必须先像收到 `session/cancel` 一样取消进行中的工作，再释放资源。会话不存在时可以报错，TCode 忽略这个错误。TCode 在关闭会话或退出时调用，然后按 §2.5 结束进程。
+请求 `{sessionId}`，响应 `{}`。Agent 必须先像收到 `session/cancel` 一样取消进行中的工作，再释放资源。会话不存在时可以报错，TKCode 忽略这个错误。TKCode 在关闭会话或退出时调用，然后按 §2.5 结束进程。
 
 ### 5.6 `session/delete`
 
-不使用（删除的是 Agent 侧的历史，TCode 不管理）。
+不使用（删除的是 Agent 侧的历史，TKCode 不管理）。
 
 ---
 
@@ -344,7 +344,7 @@ ContentBlock 与 MCP 的结构相同，所有变体都可以带 `annotations`（
 | `resource_link` | `uri`、`name` | `mimeType`、`title`、`description`、`size`(int64)、`annotations` | 基线 |
 | `resource` | `resource`：`{uri, text, mimeType?}`（文本）或 `{uri, blob(base64), mimeType?}`（二进制） | `annotations` | `promptCapabilities.embeddedContext` |
 
-TCode 把用户消息映射为 prompt 的规则：
+TKCode 把用户消息映射为 prompt 的规则：
 1. 文本 → 一个 `text` 块。
 2. 图片 → `image` 块；Agent 不支持时**不发送**，并在界面提示「该 Agent 不支持图片」。
 3. 引用的文件（@ 提及、附件）：
@@ -355,13 +355,13 @@ TCode 把用户消息映射为 prompt 的规则：
 
 ### 6.3 同一会话同时只能有一个轮次
 
-在上一个 `session/prompt` 的响应到达之前，不要发下一个 `session/prompt`。真实 Agent 会拒绝重叠的 prompt（报 Invalid request）[zeron:acp.md]。TCode 的 steer / followUp 队列在 ACP 下都按**轮次边界**投递：等当前轮次结束后，作为下一个 `session/prompt` 发出（ACP v1 没有标准的中途插话接口；`_session/steering` 是厂商扩展 [zeron]，TCode 不用）。
+在上一个 `session/prompt` 的响应到达之前，不要发下一个 `session/prompt`。真实 Agent 会拒绝重叠的 prompt（报 Invalid request）[zeron:acp.md]。TKCode 的 steer / followUp 队列在 ACP 下都按**轮次边界**投递：等当前轮次结束后，作为下一个 `session/prompt` 发出（ACP v1 没有标准的中途插话接口；`_session/steering` 是厂商扩展 [zeron]，TKCode 不用）。
 
 ### 6.4 响应与 `stopReason`
 
 响应（[Schema] `PromptResponse`）：`{stopReason, _meta?}`。
 
-| `stopReason` | 含义 [Doc:prompt-turn] | TCode `StopReason` | 说明 |
+| `stopReason` | 含义 [Doc:prompt-turn] | TKCode `StopReason` | 说明 |
 |---|---|---|---|
 | `end_turn` | 模型结束回答，不再请求工具 | `Stop` | |
 | `max_tokens` | 达到 token 上限 | `Length` | 提示用户输出被截断 |
@@ -370,7 +370,7 @@ TCode 把用户消息映射为 prompt 的规则：
 | `cancelled` | Client 取消了轮次 | `Aborted` | |
 | 其它未知值（例如 unstable / v2 的 `error`） | — | `Error` | 文案里带上原始值 |
 
-**Agent 的取消必须返回 `cancelled`，而不是错误**：规范要求 Agent 捕获中止时抛出的异常 [Doc:prompt-turn「Cancellation」]。但 TCode 仍要容错：已经发出 `session/cancel` 后收到任何错误响应，一律按 `Aborted` 处理，不显示错误。
+**Agent 的取消必须返回 `cancelled`，而不是错误**：规范要求 Agent 捕获中止时抛出的异常 [Doc:prompt-turn「Cancellation」]。但 TKCode 仍要容错：已经发出 `session/cancel` 后收到任何错误响应，一律按 `Aborted` 处理，不显示错误。
 
 **逐轮用量（unstable）**：schema.unstable 在 `PromptResponse` 上增加了 `usage: {totalTokens, inputTokens, outputTokens, thoughtTokens?, cachedReadTokens?, cachedWriteTokens?}`（RFD end-turn-token-usage，仍处于草案阶段）[Unstable]。如果存在就读取。Grok 把 `inputTokens` / `outputTokens` 放在响应的 `_meta` 里 [zeron:mod.rs `usage_from_response`]。都没有时，本轮不报逐轮用量。
 
@@ -388,7 +388,7 @@ TCode 把用户消息映射为 prompt 的规则：
 
 通知参数（[Schema] `SessionNotification`）：`{sessionId, update: SessionUpdate, _meta?}`。`update.sessionUpdate` 是判别字段。v1 稳定 schema 定义了以下 14 种（[Schema] `SessionUpdate`），这就是完整集合 [Doc:prompt-turn]：
 
-| `sessionUpdate` | 载荷类型 | 稳定版本 | TCode 处理 |
+| `sessionUpdate` | 载荷类型 | 稳定版本 | TKCode 处理 |
 |---|---|---|---|
 | `user_message_chunk` | `ContentChunk` | 1.0 前 | 实时轮次中忽略；重放时丢弃 |
 | `agent_message_chunk` | `ContentChunk` | 1.0 前 | `textDelta` |
@@ -407,7 +407,7 @@ TCode 把用户消息映射为 prompt 的规则：
 
 未知的 `sessionUpdate`（包括 unstable 的 `plan_update`、`plan_removed` 等）：**忽略**，写调试日志。`sessionId` 与本会话不符的通知：忽略（§5.1 的暂存情形除外）。
 
-会话更新**不局限于轮次进行中**：Agent 可以在会话创建后、轮次之间随时推送命令列表、配置变化、标题、通知等 [Doc:prompt-turn]。轮次之外到达的消息类更新（例如 Agent 自主继续工作的输出），TCode 应创建一个没有对应 prompt 的「Agent 自发」轮次来展示 [待核实：哪些 Agent 会这样做]。
+会话更新**不局限于轮次进行中**：Agent 可以在会话创建后、轮次之间随时推送命令列表、配置变化、标题、通知等 [Doc:prompt-turn]。轮次之外到达的消息类更新（例如 Agent 自主继续工作的输出），TKCode 应创建一个没有对应 prompt 的「Agent 自发」轮次来展示 [待核实：哪些 Agent 会这样做]。
 
 ### 7.1 `ContentChunk`：`user_message_chunk` / `agent_message_chunk` / `agent_thought_chunk`
 
@@ -425,7 +425,7 @@ TCode 把用户消息映射为 prompt 的规则：
   - `audio` → 忽略。
 - `agent_thought_chunk`：只取 `text` → `thinkingDelta`，其它类型忽略。ACP 的思考内容只用于显示，**没有签名，也不需要回放**（ACP 下 Agent 自己管理历史）。
 - `user_message_chunk`：
-  - 实时轮次中，这通常是 Agent 回显的 TCode 自己发出的 prompt → 忽略（zeron 同样忽略 [zeron:normalize.rs]）；
+  - 实时轮次中，这通常是 Agent 回显的 TKCode 自己发出的 prompt → 忽略（zeron 同样忽略 [zeron:normalize.rs]）；
   - `session/load` 重放中 → 丢弃（§5.2）。
 - 文本块直接拼接，**不要**在块之间插入空格或换行。
 
@@ -459,7 +459,7 @@ TCode 把用户消息映射为 prompt 的规则：
 | `rawInput`、`rawOutput` | 不变 | 不变 | 替换 |
 | `_meta` | 不变 | 不变 | 替换 |
 
-注意：夹具 B 的 `completed` 更新省略了 `content`，因此首个 `tool_call` 里的 diff 必须保留。如果某个更新只带一段文本 `content`，前面的 diff 就被替换掉了；TCode 在把工具结果写入转录时，应当另外保留曾经出现过的最后一个 diff 作为「变更记录」，避免界面上的 diff 被冲掉 [zeron 采用了类似做法：只有出现新的形状信息时才刷新调用]。
+注意：夹具 B 的 `completed` 更新省略了 `content`，因此首个 `tool_call` 里的 diff 必须保留。如果某个更新只带一段文本 `content`，前面的 diff 就被替换掉了；TKCode 在把工具结果写入转录时，应当另外保留曾经出现过的最后一个 diff 作为「变更记录」，避免界面上的 diff 被冲掉 [zeron 采用了类似做法：只有出现新的形状信息时才刷新调用]。
 
 容错：
 - `tool_call_update` 引用了**从未出现过的 `toolCallId`**：当作新的 tool call 创建，`title` 依次回退为 `name`、`toolCallId`。Cursor 的提问会使用从未声明过的 `toolCallId`（如 `<id>_q0`）[本机]。
@@ -467,7 +467,7 @@ TCode 把用户消息映射为 prompt 的规则：
 
 ### 7.4 `ToolKind`
 
-| 值 | 含义 | TCode 用途 |
+| 值 | 含义 | TKCode 用途 |
 |---|---|---|
 | `read` | 读文件或数据 | 图标；只读 |
 | `edit` | 修改文件 | 图标；有 diff 时展示变更 |
@@ -487,8 +487,8 @@ TCode 把用户消息映射为 prompt 的规则：
 | `type` | 字段 | 说明 |
 |---|---|---|
 | `content` | `content: ContentBlock`（必填） | 普通内容：文本、图片、资源 |
-| `diff` | `path`（必填，绝对路径）、`oldText`（string \| null；**null 或省略表示新文件**）、`newText`（必填） | 文件修改。是整文件（或片段）的前后文本，不是 unified diff；TCode 用 DiffPlex 自己计算差异 |
-| `terminal` | `terminalId`（必填） | 引用一个通过 `terminal/create` 创建的终端。TCode 没有声明 `terminal` 能力，**不应出现**；出现时显示「终端输出不可用」占位，不报错 |
+| `diff` | `path`（必填，绝对路径）、`oldText`（string \| null；**null 或省略表示新文件**）、`newText`（必填） | 文件修改。是整文件（或片段）的前后文本，不是 unified diff；TKCode 用 DiffPlex 自己计算差异 |
+| `terminal` | `terminalId`（必填） | 引用一个通过 `terminal/create` 创建的终端。TKCode 没有声明 `terminal` 能力，**不应出现**；出现时显示「终端输出不可用」占位，不报错 |
 
 未知 `type` 的条目跳过。所有变体都可以带 `_meta`。
 
@@ -505,7 +505,7 @@ v1 **没有** `cancelled` 状态（v2 草案新增了 [CL 1.6.0 unstable-v2]）�
 
 ### 7.7 `plan`（[Schema] `Plan`）
 
-`{entries: PlanEntry[]}`，每个条目 `{content, priority: "high"|"medium"|"low", status: "pending"|"in_progress"|"completed", _meta?}`。**每次都是完整列表，Client 必须整体替换** [Doc:agent-plan]。计划没有 ID，TCode 用一个固定的合成 ID（例如 `acp-plan`）刷新同一个计划卡片 [zeron:normalize.rs]。未知的 priority / status 值按 `medium` / `pending` 显示。
+`{entries: PlanEntry[]}`，每个条目 `{content, priority: "high"|"medium"|"low", status: "pending"|"in_progress"|"completed", _meta?}`。**每次都是完整列表，Client 必须整体替换** [Doc:agent-plan]。计划没有 ID，TKCode 用一个固定的合成 ID（例如 `acp-plan`）刷新同一个计划卡片 [zeron:normalize.rs]。未知的 priority / status 值按 `medium` / `pending` 显示。
 
 ### 7.8 `available_commands_update`
 
@@ -521,7 +521,7 @@ v1 **没有** `cancelled` 状态（v2 草案新增了 [CL 1.6.0 unstable-v2]）�
 
 ### 7.11 `session_info_update`
 
-`{title?: string|null, updatedAt?: string|null, _meta?}`。补丁语义：省略表示不变，`null` 表示清除，有值表示替换 [Doc:session-list]。TCode 用 `title` 作为会话标题的候选（仅当用户没有手动命名时）。
+`{title?: string|null, updatedAt?: string|null, _meta?}`。补丁语义：省略表示不变，`null` 表示清除，有值表示替换 [Doc:session-list]。TKCode 用 `title` 作为会话标题的候选（仅当用户没有手动命名时）。
 
 ### 7.12 `usage_update`
 
@@ -529,7 +529,7 @@ v1 **没有** `cancelled` 状态（v2 草案新增了 [CL 1.6.0 unstable-v2]）�
 
 - `used` / `size`：**当前会话上下文**的 token 占用和窗口大小，不是本轮的输入输出 token。
 - `cost`：会话**累计**费用。
-- TCode 映射为 `usage` 事件中的「上下文用量」和「累计费用」字段，不要把它累加到逐轮用量里（zeron 明确不把它当作逐轮 token [zeron:acp.md]）。
+- TKCode 映射为 `usage` 事件中的「上下文用量」和「累计费用」字段，不要把它累加到逐轮用量里（zeron 明确不把它当作逐轮 token [zeron:acp.md]）。
 
 ### 7.13 `notice`
 
@@ -542,7 +542,7 @@ v1 **没有** `cancelled` 状态（v2 草案新增了 [CL 1.6.0 unstable-v2]）�
 
 ### 7.14 `compaction_update` / `compaction_summary_chunk`
 
-TCode 不声明 `session.compaction`，Agent 不得发送 [Doc:prompt-turn「Session Compaction」]。出现时忽略并记录日志。后续实现时的要点：
+TKCode 不声明 `session.compaction`，Agent 不得发送 [Doc:prompt-turn「Session Compaction」]。出现时忽略并记录日志。后续实现时的要点：
 - `compactionId` 是实体 ID；
 - `status` 取值为 `in_progress` / `completed` / `failed` / `cancelled`；
 - `summary` 为 `ContentBlock[]`，`null` 或 `[]` 表示清除；
@@ -581,11 +581,11 @@ TCode 不声明 `session.compaction`，Agent 不得发送 [Doc:prompt-turn「Ses
 - `selected`：必须带 Agent 提供的某个 `optionId`，**原样回传，绝不能自己编造**。
 - `cancelled`：表示轮次被取消。
 
-### 8.2 映射到 TCode 审批
+### 8.2 映射到 TKCode 审批
 
-TCode 审批对话框有三个按钮：**允许一次 / 始终允许 / 拒绝**（设计文档 §6 称为「允许一次 / 本会话允许 / 拒绝」）。只有当 `options` 是**规范形状**时才使用三按钮模式。规范形状指：每种 kind 最多出现一次，并且所有 kind 都是已知的 4 种之一。
+TKCode 审批对话框有三个按钮：**允许一次 / 始终允许 / 拒绝**（设计文档 §6 称为「允许一次 / 本会话允许 / 拒绝」）。只有当 `options` 是**规范形状**时才使用三按钮模式。规范形状指：每种 kind 最多出现一次，并且所有 kind 都是已知的 4 种之一。
 
-| TCode 按钮 | 选择的选项 | 选项不存在时 |
+| TKCode 按钮 | 选择的选项 | 选项不存在时 |
 |---|---|---|
 | 允许一次 | `kind == allow_once` | 隐藏按钮 |
 | 始终允许 | `kind == allow_always` | 隐藏按钮。按钮文案用该选项的 `name`，旁边注明「由 Agent 记住」 |
@@ -602,7 +602,7 @@ TCode 审批对话框有三个按钮：**允许一次 / 始终允许 / 拒绝**�
 
 ### 8.3 自动放行与安全规则
 
-- **默认弹出审批**。会话级「自动放行」开启时，自动选择 `allow_once`；没有时选 `allow_always`。**优先 `allow_once`**，避免在 Agent 侧留下持久的放行规则。zeron 优先 `allow_always`，是因为它全程无人值守，这一点 TCode 不照搬。
+- **默认弹出审批**。会话级「自动放行」开启时，自动选择 `allow_once`；没有时选 `allow_always`。**优先 `allow_once`**，避免在 Agent 侧留下持久的放行规则。zeron 优先 `allow_always`，是因为它全程无人值守，这一点 TKCode 不照搬。
 - 非规范形状的请求（问题类）**永不自动回答**，始终弹出。
 - UI 没有响应、连接断开、超时（建议 10 分钟）、对话框被关闭时，**一律拒绝**：
   - 有 `reject_once` 时选它；
@@ -610,7 +610,7 @@ TCode 审批对话框有三个按钮：**允许一次 / 始终允许 / 拒绝**�
   - 否则回复 `cancelled`。
 - 请求的 `sessionId` 不是本连接上的活跃会话时，立即回复 `cancelled` [zeron:mod.rs `handle_server_request_live`]。
 - 每个请求**只回复一次**。多个权限请求可能同时挂起，各自独立处理。
-- 回复之后，工具调用的后续状态以 Agent 的 `tool_call_update` 为准。TCode 不要因为用户点了「允许」就自行把状态改为 `in_progress`。
+- 回复之后，工具调用的后续状态以 Agent 的 `tool_call_update` 为准。TKCode 不要因为用户点了「允许」就自行把状态改为 `in_progress`。
 
 ---
 
@@ -622,7 +622,7 @@ TCode 审批对话框有三个按钮：**允许一次 / 始终允许 / 拒绝**�
 {"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"sess_7f3a9c"}}
 ```
 
-这是一个**通知**，没有响应。TCode 的中断流程（`InterruptAsync`）：
+这是一个**通知**，没有响应。TKCode 的中断流程（`InterruptAsync`）：
 1. 发送 `session/cancel`。
 2. 本地立即把本轮所有未结束的工具调用标为「已取消」（规范：SHOULD），发出相应的结束事件（§15.3）。
 3. 对本会话**所有挂起的** `session/request_permission` 回复 `{"outcome":{"outcome":"cancelled"}}`（规范：MUST），并关闭对应的审批对话框。不要等待 `$/cancel_request`。
@@ -640,13 +640,13 @@ zeron 的做法相同：先 `session/cancel`，再等待完成，必要时升级
 
 - 由**发出请求的一方**发送，`requestId` 是被取消请求的 `id`。
 - 接收方可以忽略（`$/` 开头的通知都允许忽略）；如果处理，**必须**仍然对原请求给出一个响应：一个有效结果，或错误 `-32800`。
-- **注意拼写**：ACP 用的是 `$/cancel_request`，参数为 `requestId`。TCode 内部 UI↔Host 的 RPC 用的是 `$/cancelRequest`，两者不能混用。
+- **注意拼写**：ACP 用的是 `$/cancel_request`，参数为 `requestId`。TKCode 内部 UI↔Host 的 RPC 用的是 `$/cancelRequest`，两者不能混用。
 
-TCode 作为**发送方**：
+TKCode 作为**发送方**：
 - 取消 `session/prompt` 一律用 `session/cancel`，不用 `$/cancel_request`。
 - 放弃其它挂起请求时（例如用户在 `session/load` 重放期间关闭会话、`session/set_config_option` 等待太久），可以发 `$/cancel_request`，然后仍然等待响应或直接结束进程。
 
-TCode 作为**接收方**（Agent 取消自己发给 TCode 的请求）：
+TKCode 作为**接收方**（Agent 取消自己发给 TKCode 的请求）：
 - 对应 `session/request_permission`：关闭对话框，回复 `{"outcome":{"outcome":"cancelled"}}`。
 - 对应其它请求：回复错误 `{"code":-32800,"message":"Request cancelled"}`。
 - `requestId` 未知或已回复：忽略。
@@ -669,12 +669,12 @@ TCode 作为**接收方**（Agent 取消自己发给 TCode 的请求）：
 
 `category`（开放枚举，只用于 UX，**不得用于判断正确性**）：
 
-| 值 | 含义 | TCode 控件 |
+| 值 | 含义 | TKCode 控件 |
 |---|---|---|
 | `mode` | 会话模式（审批级别、计划模式等） | 输入框旁的模式选择器 |
 | `model` | 模型 | 模型选择器 |
 | `model_config` | 与模型相关的参数（上下文长度、快速模式等） | 放在模型选择器的同一个弹出面板里 |
-| `thought_level` | 思考 / 推理深度 | TCode 的 `ThinkingLevel` 选择器 |
+| `thought_level` | 思考 / 推理深度 | TKCode 的 `ThinkingLevel` 选择器 |
 | `_` 开头 | 厂商自定义 | 通用「Agent 设置」面板 |
 | 省略或其它未知值 | — | 通用「Agent 设置」面板 |
 
@@ -691,25 +691,25 @@ TCode 作为**接收方**（Agent 取消自己发给 TCode 的请求）：
 
 - `select`：`value` 是某个选项的 `value`。**不发** `type` 字段。
 - `boolean`：必须带 `"type":"boolean"`，`value` 为 bool。
-- 响应：`{configOptions: SessionConfigOption[]}`，是**完整状态**，可能带有连带变化（例如换模型后思考深度的可选值变了，夹具 E）。TCode 整体替换本地状态。
+- 响应：`{configOptions: SessionConfigOption[]}`，是**完整状态**，可能带有连带变化（例如换模型后思考深度的可选值变了，夹具 E）。TKCode 整体替换本地状态。
 - 可以在轮次进行中调用 [Doc:session-config-options]。
 - 出错时：恢复 UI 上的原值，显示错误信息。
 
-### 10.3 TCode 的配置应用策略
+### 10.3 TKCode 的配置应用策略
 
 1. `session/new` / `load` / `resume` 的响应里有 `configOptions` 时，作为权威状态保存，并通过 SessionEvent 推送给 UI。
-2. 用户在 TCode 中为该运行时选择的模型和思考深度：
+2. 用户在 TKCode 中为该运行时选择的模型和思考深度：
    - 如果对应分类的选项存在、目标值在可选值内、且不等于 `currentValue`，就调用 `set_config_option`；
    - 值已经是当前值时跳过；
    - 值不存在时保留 Agent 的默认值，并提示用户。
    - 思考深度、模式等辅助选项设置失败只记录日志、不阻断；**用户显式指定的模型**设置失败时，在发送 prompt 之前报错。zeron 的做法也是如此：用错误的模型继续跑，比报错更糟 [zeron:mod.rs]。
-3. `ThinkingLevel` → `thought_level`：按值的 id，其次按 `name`（不区分大小写）匹配 `off/none/minimal/low/medium/high/xhigh/max`，找不到就按顺序就近选择（与 `ThinkingLevels.ChooseEffort` 一致）。有的 Agent 不提供 `thought_level`，而是把深度编码在模型 id 里（例如 Devin 的 `claude-5-fable-high`）[zeron:acp.md]，这种情况下 TCode 不显示思考深度选择器。
+3. `ThinkingLevel` → `thought_level`：按值的 id，其次按 `name`（不区分大小写）匹配 `off/none/minimal/low/medium/high/xhigh/max`，找不到就按顺序就近选择（与 `ThinkingLevels.ChooseEffort` 一致）。有的 Agent 不提供 `thought_level`，而是把深度编码在模型 id 里（例如 Devin 的 `claude-5-fable-high`）[zeron:acp.md]，这种情况下 TKCode 不显示思考深度选择器。
 4. 模型列表发现：启动一个短时进程，执行 `initialize` → `session/new`，读取 `category:"model"` 的选项（zeron 的探测方式 [zeron:acp.md]），然后有 `close` 能力就关闭会话，再结束进程。结果按「可执行文件路径 + 版本」缓存。**副作用**：会在 Agent 的会话历史里留下一个空会话。
 5. **优先使用 config options**：Agent 同时提供 `configOptions` 和 `modes` 时，只用 `configOptions` [Doc:session-config-options]。同时提供 `configOptions` 中的 model 选项和旧的 `models` 时，只用前者。原因：codex-acp 在旧接口里把「模型 × 深度」展开成很多行，而 `configOptions` 里是基础模型 id 加上单独的 `thought_level` [zeron:acp.md]。
 
 ### 10.4 Agent 主动修改
 
-`config_option_update`（§7.10）推送完整状态，TCode 整体替换。用户正在编辑的控件以新状态为准。
+`config_option_update`（§7.10）推送完整状态，TKCode 整体替换。用户正在编辑的控件以新状态为准。
 
 ### 10.5 旧接口：session modes（仍是 v1 稳定接口，v2 中删除）
 
@@ -726,7 +726,7 @@ TCode 作为**接收方**（Agent 取消自己发给 TCode 的请求）：
 - 响应字段：`"models": {"currentModelId": "grok-4.6", "availableModels": [{"modelId": "grok-4.6", "name": "Grok 4.6", "description"?: "..."}]}`；
 - 请求：`session/set_model {"sessionId": "...", "modelId": "grok-4.5"}`，响应为 `{}`。
 
-TCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个接口。`session/set_model` 返回 `-32601` 时，标记该 Agent「不支持在线切换模型」。
+TKCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个接口。`session/set_model` 返回 `-32601` 时，标记该 Agent「不支持在线切换模型」。
 
 ---
 
@@ -742,7 +742,7 @@ TCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个�
 
 第二阶段的约定：
 - 只声明 `{"elicitation":{"form":{}}}`。
-- **不声明 `url`**：URL 模式要求做到以下几点，TCode 暂不具备：
+- **不声明 `url`**：URL 模式要求做到以下几点，TKCode 暂不具备：
   - 显示完整 URL 并取得同意；
   - 在 Agent 和模型都无法观察的安全上下文中打开；
   - 对 Punycode 域名告警。
@@ -778,9 +778,9 @@ TCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个�
 
 `{code: int32, message: string, data?: any}`（[Schema] `Error`；注意 `Error` **没有** `_meta`）。
 
-| code | 名称 | TCode 处理 |
+| code | 名称 | TKCode 处理 |
 |---|---|---|
-| `-32700` | Parse error | 记录；说明 TCode 发出的 JSON 有问题，属于 bug |
+| `-32700` | Parse error | 记录；说明 TKCode 发出的 JSON 有问题，属于 bug |
 | `-32600` | Invalid request | 显示错误。常见原因：在一个轮次进行中又发了 prompt |
 | `-32601` | Method not found | 可选方法不可用：标记该能力不可用，降级处理（例如 `set_model` 不可用） |
 | `-32602` | Invalid params | 显示错误；对 `set_config_option`，恢复原值 |
@@ -794,9 +794,9 @@ TCode 规则：**只在没有 `category:"model"` 配置项时**才使用这个�
 
 1. 错误信息展示格式：`{agentInfo.title ?? name}: {message}（code {code}）`，有非 null 的 `data` 时附上它的 JSON（截断到 2 KB）。
 2. 通知不会有响应，也不能回复错误 [Doc:overview]。
-3. 处理 Agent 请求时 TCode 内部出现异常：回复 `-32603`，不让异常穿透读循环。
+3. 处理 Agent 请求时 TKCode 内部出现异常：回复 `-32603`，不让异常穿透读循环。
 4. 进程退出或管道断开：按 §2.5 处理，错误信息附 stderr 尾部。
-5. TCode 自己的约定：**流永不抛异常**（architecture §3.2），所有失败都编码为 `agentEnded` 的 Error 或 Aborted。
+5. TKCode 自己的约定：**流永不抛异常**（architecture §3.2），所有失败都编码为 `agentEnded` 的 Error 或 Aborted。
 
 ---
 
@@ -806,19 +806,19 @@ ACP 的 Rust schema 给很多字段标注了宽松解析：
 - `x-deserialize-default-on-error`：值格式错误时取默认值；
 - `x-deserialize-skip-invalid-items`：数组中格式错误的条目跳过。
 
-1.10.2 起，Rust SDK 对格式错误的列表条目「静默跳过」[CL；Schema]。TCode 必须做到同等宽松：
+1.10.2 起，Rust SDK 对格式错误的列表条目「静默跳过」[CL；Schema]。TKCode 必须做到同等宽松：
 
 1. **未知字段**：一律忽略，绝不报错。所有对象都可能出现新字段。
 2. **`_meta`**：
    - 任何对象上都可能出现，可能为 `null`；
    - 原样保存在原始 `JsonElement` 中，但不解释（§7.2 提到的厂商键只用于日志和调试）；
-   - TCode 发出的 `_meta` 不要在根级添加自定义键。规范保留 `traceparent`、`tracestate`、`baggage` [Doc:extensibility]。
+   - TKCode 发出的 `_meta` 不要在根级添加自定义键。规范保留 `traceparent`、`tracestate`、`baggage` [Doc:extensibility]。
 3. **未知判别值**：
    - `sessionUpdate` 未知 → 忽略整条更新；
    - `ContentBlock.type`、`ToolCallContent.type` 未知 → 跳过该块；
    - `SessionConfigOption.type` 未知 → 跳过该选项；
    - `AuthMethod.type` 未知 → 跳过该方法；
-   - `McpServer` 只由 TCode 发出，不涉及。
+   - `McpServer` 只由 TKCode 发出，不涉及。
 4. **未知枚举值**：
    - `ToolKind` → `other`；
    - `ToolCallStatus` → 保持之前的状态；
@@ -845,13 +845,13 @@ ACP 的 Rust schema 给很多字段标注了宽松解析：
 
 ---
 
-## 15. TCode 事件映射
+## 15. TKCode 事件映射
 
 ### 15.1 总表
 
-| TCode 事件 | ACP 来源 | 规则 |
+| TKCode 事件 | ACP 来源 | 规则 |
 |---|---|---|
-| `agentStarted` | TCode 写出 `session/prompt` 后 | 每轮一次 |
+| `agentStarted` | TKCode 写出 `session/prompt` 后 | 每轮一次 |
 | `messageStarted` | 当前没有打开的消息时，收到第一个 `agent_message_chunk` / `agent_thought_chunk` / `tool_call` | 见 §15.2 |
 | `thinkingDelta` | `agent_thought_chunk`（`text`） | 带 `contentIndex` |
 | `textDelta` | `agent_message_chunk`（`text`） | 带 `contentIndex` |
@@ -869,7 +869,7 @@ ACP 的 Rust schema 给很多字段标注了宽松解析：
 
 ### 15.2 消息与内容块边界（状态机）
 
-ACP 没有消息开始和结束帧，TCode 按以下规则生成，保证结果确定、可测试：
+ACP 没有消息开始和结束帧，TKCode 按以下规则生成，保证结果确定、可测试：
 
 1. **打开消息**：当前轮次没有打开的消息时，第一个 `agent_message_chunk`、`agent_thought_chunk` 或 `tool_call` 到达，发出 `messageStarted`。
 2. **内容块**：消息内部维护 `contentIndex`，从 0 开始。连续的同类更新（thought → thought，text → text）追加到当前块。类别切换（thought ↔ text，或遇到新的 tool call）时，`contentIndex` 加 1，开始新块。每个 tool call 单独占一个块。
@@ -893,9 +893,9 @@ Pending/Running --轮次结束仍未终结--> Done(aborted)        [同上，结
 Done --任何后续更新--> Done                              [只更新 content / rawOutput 的显示，不再发生命周期事件]
 ```
 
-### 15.4 TCode 审批与 ACP 权限的对应
+### 15.4 TKCode 审批与 ACP 权限的对应
 
-| TCode 审批结果 | ACP 回复 |
+| TKCode 审批结果 | ACP 回复 |
 |---|---|
 | 允许一次 | `{"outcome":{"outcome":"selected","optionId":<allow_once 的 optionId>}}` |
 | 始终允许（本会话允许） | `selected` + `allow_always` 的 `optionId` |
@@ -909,9 +909,9 @@ Done --任何后续更新--> Done                              [只更新 conten
 
 ## 16. v2 草案的差异与预留
 
-v2 处于 **Active 草案**阶段（[RFD-v2:overview]；`schema/v2/` 的 `meta.json` 中 version 为 2）。TCode 现在始终发送 `protocolVersion: 1`，v2 Agent 按版本协商会回落到 v1，或者返回 2（这时 TCode 断开连接，见 §3.4）。为了将来能平滑加入 v2，现在就应遵守下表中的「现在的准备」。
+v2 处于 **Active 草案**阶段（[RFD-v2:overview]；`schema/v2/` 的 `meta.json` 中 version 为 2）。TKCode 现在始终发送 `protocolVersion: 1`，v2 Agent 按版本协商会回落到 v1，或者返回 2（这时 TKCode 断开连接，见 §3.4）。为了将来能平滑加入 v2，现在就应遵守下表中的「现在的准备」。
 
-| v2 变化 | 对 TCode 的影响 | 现在的准备 |
+| v2 变化 | 对 TKCode 的影响 | 现在的准备 |
 |---|---|---|
 | `initialize` 中的 `clientCapabilities` / `agentCapabilities` 合并为 `capabilities`；`clientInfo` / `agentInfo` 合并为必填的 `info`；`sessionCapabilities` 改为 `session`，`promptCapabilities` / `mcpCapabilities` 改为 `session.prompt` / `session.mcp`；能力标记统一为对象（`{}` 表示支持） | 初始化需要按版本分别编写 | 能力解析集中在一个 `AcpCapabilities` 归一化对象里，不要在各处直接读 JSON |
 | 认证改为 `auth/login`、`auth/logout`；只要 `authMethods` 非空，Agent 就必须实现这两个方法 | 方法名变化 | 认证调用经过版本适配层 |
@@ -934,7 +934,7 @@ v2 处于 **Active 草案**阶段（[RFD-v2:overview]；`schema/v2/` 的 `meta.j
 
 ### 17.1 发现与自动启用规则
 
-TCode **只自动启用「可执行文件已安装、能直接 exec」的 Agent**，不运行 `npx` / `uvx`，也不下载 Registry 里的压缩包（设计文档 §2、§4）。
+TKCode **只自动启用「可执行文件已安装、能直接 exec」的 Agent**，不运行 `npx` / `uvx`，也不下载 Registry 里的压缩包（设计文档 §2、§4）。
 
 1. 按设计文档 §4 的顺序查找可执行文件：环境变量覆盖 → 进程 PATH → 登录 shell 的 PATH 快照 → 已知目录（`~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、npm 全局前缀、`~/.opencode/bin` 等）。
 2. 解析符号链接后再判断。
@@ -948,7 +948,7 @@ TCode **只自动启用「可执行文件已安装、能直接 exec」的 Agent*
 
 ### 17.2 Registry 条目分类
 
-Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）。命令列取自 `distribution.binary.<平台>.cmd/args` 或 `distribution.npx/uvx.args`。「直接启动命令」一列是 TCode 在 PATH 上找到对应可执行文件后实际 exec 的命令。
+Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）。命令列取自 `distribution.binary.<平台>.cmd/args` 或 `distribution.npx/uvx.args`。「直接启动命令」一列是 TKCode 在 PATH 上找到对应可执行文件后实际 exec 的命令。
 
 **A 类：Registry 以原生二进制分发，可以直接启动（自动启用候选）**
 
@@ -995,7 +995,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 | `minion-code` | Minion Code | uvx `minion-code@0.1.44` | `minion-code acp` | |
 | `fast-agent` | fast-agent | uvx `fast-agent-acp==0.10.1` | `fast-agent-acp -x` | Registry 的环境变量 `FAST_AGENT_MODEL=codexplan` |
 
-**C 类：适配器或只能通过 npx 运行的包，TCode 不启用**
+**C 类：适配器或只能通过 npx 运行的包，TKCode 不启用**
 
 - `claude-acp`（`@agentclientprotocol/claude-agent-acp`）、`codex-acp`（`@agentclientprotocol/codex-acp`）：Claude 和 Codex 走原生协议（设计文档 §2）。
 - `pi-acp`、`deepagents`（`deepagents-acp`）、`autohand`（`@autohandai/autohand-acp`）、`glm-acp-agent`、`agoragentic-acp`（`agoragentic-mcp --acp`）：只有 npx 形式的适配器，没有独立安装的 CLI。
@@ -1019,7 +1019,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 5. 每个 Agent 发来的请求都必须且只能回复一次。不认识的方法回复 `-32601`，未声明的 elicitation 回复 `-32602`，未知通知忽略。
 
 **初始化与认证**
-6. `initialize` 发送 `protocolVersion:1`、`clientCapabilities = {fs:{readTextFile:false, writeTextFile:false}, terminal:false, auth:{terminal:false}, session:{configOptions:{boolean:{}}, notices:{}}}`，以及 `clientInfo{name:"tcode", title, version}`。不声明 elicitation 和 compaction。
+6. `initialize` 发送 `protocolVersion:1`、`clientCapabilities = {fs:{readTextFile:false, writeTextFile:false}, terminal:false, auth:{terminal:false}, session:{configOptions:{boolean:{}}, notices:{}}}`，以及 `clientInfo{name:"tkcode", title, version}`。不声明 elicitation 和 compaction。
 7. 返回的 `protocolVersion ≠ 1` 时断开连接并提示用户。能力对象中 `null` 与省略都表示不支持，`{}` 表示支持。
 8. 不主动调用 `authenticate`。收到 `-32000` 后按 §4.3 处理：只有白名单方法（`cursor_login`）自动调用一次；绝不对 `terminal` 类型的方法调用 `authenticate`；不调用 `logout`。
 
@@ -1059,7 +1059,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 31. 关闭流程：有能力时先 `session/close` → 关闭 stdin → SIGTERM（进程组）→ SIGKILL。Windows 用 Job Object。进程意外退出时，所有挂起请求失败，进行中的轮次以 Error（已取消的以 Aborted）结束，并附上 stderr 尾部。
 
 **测试**
-32. 附录 A 的夹具全部作为单元测试：`>` 行与 TCode 实际写出的消息按 **JSON 语义相等**（不比较键顺序和空白）逐条比对；`<` 行喂给 TCode；最后断言 TCode 产生的事件序列与「期望事件」一致。
+32. 附录 A 的夹具全部作为单元测试：`>` 行与 TKCode 实际写出的消息按 **JSON 语义相等**（不比较键顺序和空白）逐条比对；`<` 行喂给 TKCode；最后断言 TKCode 产生的事件序列与「期望事件」一致。
 
 ---
 
@@ -1068,20 +1068,20 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.0 格式
 
 - 每行一条消息，行首两个字符表示方向：
-  - `> `：TCode（Client）→ Agent，即 TCode **必须写出**的消息；
-  - `< `：Agent → TCode，即测试**注入**的消息。
+  - `> `：TKCode（Client）→ Agent，即 TKCode **必须写出**的消息；
+  - `< `：Agent → TKCode，即测试**注入**的消息。
 - 去掉行首两个字符后，剩下的部分是一条完整的 ACP 消息，可以原样作为 stdio 的一行。
 - 所有消息都已用 `schema/v1/schema.json` 逐条校验：请求按 `x-method` 找到对应的 `*Request` / `*Notification` 定义，响应按配对请求找到 `*Response` 定义，错误按 `Error` 定义；并检查没有 schema 未定义的字段名（`rawInput` / `rawOutput` 内部除外）。
 - 夹具中的固定值：
-  - TCode 的请求 id 从 0 开始；Agent 的请求 id 也从 0 开始（独立空间）；
+  - TKCode 的请求 id 从 0 开始；Agent 的请求 id 也从 0 开始（独立空间）；
   - `clientInfo.version` 固定为 `"0.1.0"`，测试时注入同样的版本号；
   - 工作目录为 `/Users/dev/project`，会话 id 为 `sess_7f3a9c`。
-- 「期望事件」中，`agentStarted` 等是 §15 中的 TCode 事件；括号内是关键载荷。`[UI]` 表示 Host 发给 UI 的请求或状态（`tool/approve`、SessionEvent 状态），不属于 AgentEvent。
+- 「期望事件」中，`agentStarted` 等是 §15 中的 TKCode 事件；括号内是关键载荷。`[UI]` 表示 Host 发给 UI 的请求或状态（`tool/approve`、SessionEvent 状态），不属于 AgentEvent。
 
 ### A.1 夹具 A：initialize → session/new → prompt（思考 + 正文）→ end_turn
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1111,7 +1111,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.2 夹具 B：tool_call（kind=edit，diff）→ 权限请求 → 允许一次 → completed
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1132,7 +1132,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 3. ``textDelta(0, "I'll enable debug mode in `src/config.json`.")``
 4. `toolCallStarted(call_001, name="edit_file", kind=edit, title="Edit src/config.json", locations=[config.json:2])`
 5. `toolCallDelta(call_001, rawInput={path, old_string, new_string}, 整体替换)`
-6. `[UI] tool/approve`：三按钮模式，三个选项都可用，并显示 diff。用户选择「允许一次」→ TCode 写出 `selected / allow-once`。
+6. `[UI] tool/approve`：三按钮模式，三个选项都可用，并显示 diff。用户选择「允许一次」→ TKCode 写出 `selected / allow-once`。
 7. `toolCallEnded(call_001)`
 8. `toolExecutionStarted(call_001)`
 9. `toolExecutionEnded(call_001, completed, diff 保留（该更新省略了 content）, rawOutput={success:true}, isError=false)`
@@ -1145,7 +1145,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.3 夹具 C：权限被拒绝
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1165,7 +1165,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 3. `textDelta(0, "I'll remove the build directory first.")`
 4. `toolCallStarted(call_002, name="run_shell_command", kind=execute, title="rm -rf build")`
 5. `toolCallDelta(call_002, rawInput={command:"rm -rf build", cwd:"/Users/dev/project"})`
-6. `[UI] tool/approve`：三按钮模式，显示命令。用户选择「拒绝」→ TCode 写出 `selected / reject-once`。
+6. `[UI] tool/approve`：三按钮模式，显示命令。用户选择「拒绝」→ TKCode 写出 `selected / reject-once`。
 7. `toolCallEnded(call_002)`
 8. `toolExecutionStarted(call_002)`：补发，因为状态从 `pending` 直接跳到了 `failed`
 9. `toolExecutionEnded(call_002, failed, isError=true, rejected=true, content="The user rejected this command.")`
@@ -1178,7 +1178,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.4 夹具 D：权限挂起时 session/cancel → cancelled
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c"}}
@@ -1192,7 +1192,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 < {"jsonrpc":"2.0","id":2,"result":{"stopReason":"cancelled"}}
 ```
 
-注意第 9、10 行：用户点击「停止」后，TCode **先**写出 `session/cancel` 通知，**再**对挂起的权限请求（Agent 的 id=0）回复 `cancelled`。两行的相对顺序是本夹具的断言点。权限请求里的 `toolCall` 只有 `toolCallId`，这是合法的。
+注意第 9、10 行：用户点击「停止」后，TKCode **先**写出 `session/cancel` 通知，**再**对挂起的权限请求（Agent 的 id=0）回复 `cancelled`。两行的相对顺序是本夹具的断言点。权限请求里的 `toolCall` 只有 `toolCallId`，这是合法的。
 
 期望事件：
 1. `agentStarted`
@@ -1209,7 +1209,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.5 夹具 E：config options（分组的模型选择、思考深度、布尔项）+ set_config_option
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"result":{"sessionId":"sess_7f3a9c","configOptions":[{"id":"mode","name":"Approval Mode","description":"Controls when the agent asks for permission","category":"mode","type":"select","currentValue":"default","options":[{"value":"default","name":"Default","description":"Ask before edits and commands"},{"value":"auto_edit","name":"Auto Edit","description":"Apply edits without asking"},{"value":"plan","name":"Plan","description":"Read-only planning"}]},{"id":"model","name":"Model","category":"model","type":"select","currentValue":"pro-2","options":[{"group":"recommended","name":"Recommended","options":[{"value":"pro-2","name":"Pro 2","description":"Most capable"},{"value":"flash-2","name":"Flash 2","description":"Fast and low cost"}]},{"group":"legacy","name":"Legacy","options":[{"value":"pro-1","name":"Pro 1"}]}]},{"id":"reasoning","name":"Thinking","category":"thought_level","type":"select","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"medium","name":"Medium"},{"value":"high","name":"High"}]},{"id":"fast","name":"Fast Mode","description":"Lower latency at higher cost","category":"model_config","type":"boolean","currentValue":false}]}}
@@ -1227,9 +1227,9 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
    - `reasoning`：thought_level，当前 `high`；
    - `fast`：model_config 类布尔项，当前 `false`。
    - UI 映射：`model` → 模型选择器（分两组显示）；`reasoning` → ThinkingLevel；`mode` → 模式选择器；`fast` → 模型面板中的开关。
-2. 用户选择 `flash-2` → TCode 写出 `{configId:"model", value:"flash-2"}`（**不带** `type`）。
+2. 用户选择 `flash-2` → TKCode 写出 `{configId:"model", value:"flash-2"}`（**不带** `type`）。
 3. 响应整体替换本地状态：`reasoning` 的可选值变为 `low` / `medium`，当前值变为 `medium`。UI 的 ThinkingLevel 选项随之更新。
-4. 用户打开 Fast Mode → TCode 写出 `{configId:"fast", type:"boolean", value:true}`。
+4. 用户打开 Fast Mode → TKCode 写出 `{configId:"fast", type:"boolean", value:true}`。
 5. 响应整体替换：`fast=true`。
 6. Agent 主动推送 `config_option_update`：`mode` 变为 `auto_edit`。整体替换后，UI 模式选择器显示 Auto Edit。
 7. 全程不产生 AgentEvent（没有轮次）。
@@ -1237,7 +1237,7 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 ### A.6 夹具 F：响应之前到达的通知 + 旧版 modes / set_mode
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{"list":{},"resume":{},"close":{}},"auth":{}},"authMethods":[{"id":"oauth-personal","name":"Log in with Google","description":"Sign in with your Google account"}],"agentInfo":{"name":"example-agent","title":"Example Agent","version":"1.4.2"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_b20e41","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compress","description":"Summarize the conversation to save context"}]}}}
@@ -1251,13 +1251,13 @@ Registry 快照共 42 个条目（A 类 19 个、B 类 16 个、C 类 7 个）�
 1. 第 4 行的 `available_commands_update` 到达时，`sess_b20e41` 还未知。因为 `session/new`（id=1）仍在挂起，所以暂存这条通知。
 2. 第 5 行响应到达后，确定会话为 `sess_b20e41`，回放暂存的通知：命令列表为 `compress`。
 3. 响应中没有 `configOptions`，只有 `modes`，因此回退到旧的模式接口：当前模式为 `ask`，可选 `ask` / `code`。
-4. 用户切换到 Code → TCode 写出 `session/set_mode {modeId:"code"}`。
+4. 用户切换到 Code → TKCode 写出 `session/set_mode {modeId:"code"}`。
 5. `current_mode_update` 先于响应到达：应用 `currentModeId = code`。响应 `{}` 到达后，状态保持 `code`。
 
 ### A.7 夹具 G：auth_required → authenticate（白名单方法）→ 重试 session/new
 
 ```text
-> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
+> {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{}},"auth":{"terminal":false},"session":{"configOptions":{"boolean":{}},"notices":{}}},"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
 < {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":true,"sse":true},"sessionCapabilities":{"list":{}}},"authMethods":[{"id":"cursor_login","name":"Cursor Login","description":"Authenticate using existing Cursor login credentials. Run 'cursor-agent login' first if not logged in."}],"agentInfo":{"name":"example-agent","version":"1.0.0"}}}
 > {"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/Users/dev/project","mcpServers":[]}}
 < {"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Authentication required"}}

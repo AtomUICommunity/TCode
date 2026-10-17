@@ -1,18 +1,18 @@
-# TCode 终端：输入（键盘、IME、鼠标、选区、剪贴板、粘贴、链接、搜索、可访问性）
+# TKCode 终端：输入（键盘、IME、鼠标、选区、剪贴板、粘贴、链接、搜索、可访问性）
 
 > 状态：设计稿 v1（2026-10-16）。上游约束见 [01-architecture.md](01-architecture.md)（D6 快捷键、§3.2 状态一致性、§5.2 线程、§6.5 TerminalView）；依据见 [research/05](research/05-platform-behavior-config.md) §4–§6、§9，[research/03](research/03-vt-protocol.md) §4–§6，[research/04](research/04-rendering-performance.md) §6。渲染侧见 [05-rendering.md](05-rendering.md)。
 >
-> **来源标注**：**[已核实]** = 在只读源码中读到（Avalonia tag `12.1.3`/`8eeda4f`，libghostty-vt `b3dc3d7`，Windows Terminal `44b440b`，TCode `dfd3657`），给出 `文件:行`；**[推断]** = 设计决定或推导，未经运行验证。
+> **来源标注**：**[已核实]** = 在只读源码中读到（Avalonia tag `12.1.3`/`8eeda4f`，libghostty-vt `b3dc3d7`，Windows Terminal `44b440b`，TKCode `dfd3657`），给出 `文件:行`；**[推断]** = 设计决定或推导，未经运行验证。
 
 ## 0. 结论摘要
 
 | 主题 | 决定 |
 |---|---|
-| 按键路由 | `MainWindow` 的 Tunnel 处理器在焦点位于终端时**不处理**按键；`TerminalView` 在自己的 KeyDown 里抛出 `KeyRouting`，由 Desktop 的 `TerminalKeyRouter` 按平台键表决定"归 TCode 执行"还是"归 shell 编码" |
-| 键表 | macOS：⌘ 组合全部归 TCode，⌘K 清屏；Win/Linux：Ctrl+字母交给 shell，TCode 用 Ctrl+Shift；命令面板全平台增加 ⌘⇧P / Ctrl+Shift+P（D6） |
+| 按键路由 | `MainWindow` 的 Tunnel 处理器在焦点位于终端时**不处理**按键；`TerminalView` 在自己的 KeyDown 里抛出 `KeyRouting`，由 Desktop 的 `TerminalKeyRouter` 按平台键表决定"归 TKCode 执行"还是"归 shell 编码" |
+| 键表 | macOS：⌘ 组合全部归 TKCode，⌘K 清屏；Win/Linux：Ctrl+字母交给 shell，TKCode 用 Ctrl+Shift；命令面板全平台增加 ⌘⇧P / Ctrl+Shift+P（D6） |
 | KeyDown / TextInput | 可打印文本（含 AltGr、死键、Option 字符、IME 提交）走 TextInput；其余在 KeyDown 编码并设 `Handled`。KeyDown 一旦 `Handled`，Win32 与 macOS 都不会再产生文本 [已核实] |
 | 编码 | UI 线程持有 `GhosttyKeyEncoder` / `GhosttyMouseEncoder`，选项来自 actor 单独发布的 `InputModes`（不受 mode 2026 扣快照影响），输入路径零线程跳转 |
-| win32-input-mode 9001 | libghostty-vt **不支持**（模式表里没有 9001 [已核实]）→ 需要 overlay 补丁登记该模式；编码由 TCode 自己实现，Win32 原始键信息用 `Win32Properties.AddWndProcHookCallback` 取得 |
+| win32-input-mode 9001 | libghostty-vt **不支持**（模式表里没有 9001 [已核实]）→ 需要 overlay 补丁登记该模式；编码由 TKCode 自己实现，Win32 原始键信息用 `Win32Properties.AddWndProcHookCallback` 取得 |
 | IME | `TextInputMethodClient`（`SupportsPreedit=true`），预编辑自绘，列宽用 `ghostty_unicode_grapheme_width` 预测，`CursorRectangle` 跟随预编辑插入符 |
 | 鼠标 / 选区 | 上报编码在 UI 线程；选区手势、自动滚动交给 actor 上的 libghostty selection gesture 状态机（15 ms tick，与 Ghostty 相同） |
 | 剪贴板 / 粘贴 | 复制默认纯文本；粘贴走 `ghostty_terminal_paste`，`GHOSTTY_REJECTED` → 确认框 → `allow_unsafe` 重试 |
@@ -23,12 +23,12 @@
 
 | 类型 | 项目 | 职责 |
 |---|---|---|
-| `TerminalKeyRouter` / `TerminalKeymap` | TCode.Desktop | 平台键表、`skipShell`、命令执行（§2） |
-| `TerminalInputController` | TCode.Terminal.Avalonia | KeyDown / KeyUp / TextInput 决策、修饰键左右跟踪、吞掉被拦截按键的释放事件（§3） |
+| `TerminalKeyRouter` / `TerminalKeymap` | TKCode.Desktop | 平台键表、`skipShell`、命令执行（§2） |
+| `TerminalInputController` | TKCode.Terminal.Avalonia | KeyDown / KeyUp / TextInput 决策、修饰键左右跟踪、吞掉被拦截按键的释放事件（§3） |
 | `KeyInputMapper` | 同上 | Avalonia `KeyEventArgs` → `KeyInput`（§3.4） |
 | `PlatformKeyboard`（Win32 / macOS / X11 三个实现） | 同上 | 取"去掉 Option / Alt 后的字符"、Win32 VK / 扫描码 / 控制键状态（§3.5、§3.6） |
-| `Win32InputModeEncoder` | TCode.Terminal.Core | `CSI Vk;Sc;Uc;Kd;Cs;Rc _` 编码（§3.7） |
-| `TerminalImeClient` | TCode.Terminal.Avalonia | IME 客户端（§4） |
+| `Win32InputModeEncoder` | TKCode.Terminal.Core | `CSI Vk;Sc;Uc;Kd;Cs;Rc _` 编码（§3.7） |
+| `TerminalImeClient` | TKCode.Terminal.Avalonia | IME 客户端（§4） |
 | `MouseController` / `SelectionController` | 同上 | 上报、滚轮、手势、右键 / 中键（§5） |
 | `ITerminalClipboard` / `PrimarySelection` | 同上 | 剪贴板抽象、进程内 PRIMARY（§6） |
 | `PasteController` / `PathQuoter` | 同上 | 粘贴流程、拖放路径转义（§7） |
@@ -40,7 +40,7 @@
 
 ### 2.1 Avalonia 中的事件顺序（已核实）
 
-1. Window 上的 Tunnel 处理器先收到 KeyDown：TCode 的 `MainWindow` 在这里处理全局快捷键 [已核实 `MainWindow.axaml.cs:159` `AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel)`；`:463-541`]。
+1. Window 上的 Tunnel 处理器先收到 KeyDown：TKCode 的 `MainWindow` 在这里处理全局快捷键 [已核实 `MainWindow.axaml.cs:159` `AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel)`；`:463-541`]。
 2. 焦点元素（`TerminalView`）的 KeyDown。
 3. 若 KeyDown 未 `Handled`，平台再产生 TextInput：
    - Win32：`WM_KEYDOWN` 被 Handled 后 `_ignoreWmChar = true`，随后的 `WM_CHAR` 被丢弃；`< 0x20` 的 `WM_CHAR` 一律丢弃；IME 组合中不产生 TextInput [已核实 `WindowImpl.AppWndProc.cs:261-275, 975-988`]。`WM_SYSCHAR`（Alt+字母）**没有**处理分支，所以 Alt+字母永远没有 TextInput [已核实：该文件无 `WM_SYSCHAR` 分支]。
@@ -59,12 +59,12 @@ TerminalView（自身的 Tunnel 处理器，保证先于模板内子元素）
    ├─ 修饰键本身 → 记录左右；kitty flag 8 时编码；return
    ├─ 抛出 KeyRouting(TerminalKeyRoutingEventArgs)
    │     Desktop.TerminalKeyRouter：Chord → 命令 id → 是否在 skipShell 集合 → 命令是否"可执行"(performable)
-   │     → 执行，并设 args.Route = TCode
-   ├─ Route == TCode → e.Handled = true；记住 PhysicalKey 以吞掉其 KeyUp（§2.6）
+   │     → 执行，并设 args.Route = TKCode
+   ├─ Route == TKCode → e.Handled = true；记住 PhysicalKey 以吞掉其 KeyUp（§2.6）
    └─ 否则 → TerminalInputController 编码（§3）
 ```
 
-为什么不在 Window 的 Tunnel 里直接查表：Window 不知道终端当前能否执行某个命令（例如"有选区才复制"、"备用屏下 ⌘K 不清屏"），而 `TerminalView` 又不应该知道 TCode 的命令。`KeyRouting` 事件让两者各管一半，和 Ghostty 的 `performable:`（只有动作能执行时才吞键）同义 [已核实 research/05 §4.6]。
+为什么不在 Window 的 Tunnel 里直接查表：Window 不知道终端当前能否执行某个命令（例如"有选区才复制"、"备用屏下 ⌘K 不清屏"），而 `TerminalView` 又不应该知道 TKCode 的命令。`KeyRouting` 事件让两者各管一半，和 Ghostty 的 `performable:`（只有动作能执行时才吞键）同义 [已核实 research/05 §4.6]。
 
 ```csharp
 public sealed class TerminalKeyRoutingEventArgs : EventArgs
@@ -72,7 +72,7 @@ public sealed class TerminalKeyRoutingEventArgs : EventArgs
     public KeyEventArgs Key { get; }
     public KeyChord Chord { get; }              // 规范化后的组合：物理修饰键 + Key/PhysicalKey
     public ITerminalCommandContext Terminal { get; }   // HasSelection、IsAlternateScreen、HasShellIntegration、IsSearchOpen……
-    public TerminalKeyRoute Route { get; set; } = TerminalKeyRoute.Shell;   // Shell | TCode
+    public TerminalKeyRoute Route { get; set; } = TerminalKeyRoute.Shell;   // Shell | TKCode
 }
 ```
 
@@ -80,7 +80,7 @@ public sealed class TerminalKeyRoutingEventArgs : EventArgs
 
 ### 2.3 macOS 键表（终端获得焦点时）
 
-规则：所有 ⌘ 组合归 TCode；Ctrl、Option、Fn、无修饰交给 shell（research/05 §4.6）。`⌘Q / ⌘H / ⌘M` 由系统菜单处理，不经过视图 [推断]。
+规则：所有 ⌘ 组合归 TKCode；Ctrl、Option、Fn、无修饰交给 shell（research/05 §4.6）。`⌘Q / ⌘H / ⌘M` 由系统菜单处理，不经过视图 [推断]。
 
 | 按键 | 命令 id | 行为 |
 |---|---|---|
@@ -104,12 +104,12 @@ public sealed class TerminalKeyRoutingEventArgs : EventArgs
 | ⌘← / ⌘→ / ⌘⌫ | `terminal.sendText`：`^A` / `^E` / `^U` | Ghostty / VS Code 同样映射（research/05 §4.2）；kitty 键盘标志非 0 时不映射，原样编码 |
 | ⌥← / ⌥→ | 发送 `ESC b` / `ESC f` | 仅 `macOptionAsMeta=none` 且 kitty 标志为 0；Terminal.app / Ghostty 同 |
 | ⌥F2 | `terminal.accessibleView` | §10.3 |
-| ⌘N / ⌘B / ⌘, / ⇧⌘N / ⇧⌘E | TCode 全局（新会话、侧栏、设置、新项目、资源管理器） | 与现有一致 |
+| ⌘N / ⌘B / ⌘, / ⇧⌘N / ⇧⌘E | TKCode 全局（新会话、侧栏、设置、新项目、资源管理器） | 与现有一致 |
 | Ctrl+任意、⌥+任意（上面未列）、F1–F12、无修饰 | shell | |
 
 ### 2.4 Windows / Linux 键表
 
-规则：Ctrl+Shift 组合与登记的 F 键归 TCode；单独的 Ctrl+字母、Alt+字母交给 shell；AltGr 产生的字符永远是文本（research/05 §4.6）。
+规则：Ctrl+Shift 组合与登记的 F 键归 TKCode；单独的 Ctrl+字母、Alt+字母交给 shell；AltGr 产生的字符永远是文本（research/05 §4.6）。
 
 | 按键 | 命令 id | Windows | Linux |
 |---|---|---|---|
@@ -137,8 +137,8 @@ public sealed class TerminalKeyRoutingEventArgs : EventArgs
 | Ctrl+Shift+Home / End | 回滚到顶 / 底 | ✓（WT） | ✓ |
 | Ctrl+Shift+PgUp / PgDn | 上 / 下一个 prompt | ✓（Ghostty） | ✓ |
 | Alt+F2 | `terminal.accessibleView` | ✓ | ✓ |
-| Ctrl+, / Ctrl+Shift+N / Ctrl+Shift+E | TCode 全局 | ✓ | ✓ |
-| **Ctrl+K / Ctrl+N / Ctrl+B** | TCode 全局键 | **交给 shell**（readline kill-line、下一条历史、光标左移 / tmux 前缀） | 同左 |
+| Ctrl+, / Ctrl+Shift+N / Ctrl+Shift+E | TKCode 全局 | ✓ | ✓ |
+| **Ctrl+K / Ctrl+N / Ctrl+B** | TKCode 全局键 | **交给 shell**（readline kill-line、下一条历史、光标左移 / tmux 前缀） | 同左 |
 
 ### 2.5 ⌘K / Ctrl+Shift+K 清屏
 
@@ -151,14 +151,14 @@ public sealed class TerminalKeyRoutingEventArgs : EventArgs
 
 ### 2.6 被拦截按键的释放事件
 
-kitty 键盘协议开启 flag 2（报告事件类型）时，程序会收到释放事件。TCode 消费的按键（如 ⌘C），其释放事件也必须拦截，否则程序会收到"只有释放没有按下"的事件（research/03 §4.4 末尾的教训，源自 Codex 注释）。`TerminalInputController` 维护 `HashSet<PhysicalKey> _swallowed`：路由为 TCode 时加入；对应 KeyUp 到达时移除并 `Handled`，不编码。焦点离开时清空。
+kitty 键盘协议开启 flag 2（报告事件类型）时，程序会收到释放事件。TKCode 消费的按键（如 ⌘C），其释放事件也必须拦截，否则程序会收到"只有释放没有按下"的事件（research/03 §4.4 末尾的教训，源自 Codex 注释）。`TerminalInputController` 维护 `HashSet<PhysicalKey> _swallowed`：路由为 TKCode 时加入；对应 KeyUp 到达时移除并 `Handled`，不编码。焦点离开时清空。
 
 ### 2.7 设置项语义
 
 | 设置 | 语义 |
 |---|---|
-| `terminal.keyboard.skipShell: string[]` | 修改"终端获得焦点时仍归 TCode 的命令"集合。默认集合 = §2.3 / §2.4 表中归 TCode 的全部命令。`"-terminal.clear"` 表示从集合移除（⌘K 交给 shell）；`"workbench.toggleSidebar"` 表示加入（Win/Linux 上 Ctrl+B 也归 TCode）。语义同 VS Code `commandsToSkipShell`（[已核实 research/05 §4.6]） |
-| `terminal.keyboard.sendKeybindingsToShell: bool`（默认 false） | 为 true 时，默认集合缩小为"最小集"：命令面板、复制、粘贴、⌥F2/Alt+F2；其余全部交给 shell。用户在 `skipShell` 里**显式加入**的命令仍归 TCode |
+| `terminal.keyboard.skipShell: string[]` | 修改"终端获得焦点时仍归 TKCode 的命令"集合。默认集合 = §2.3 / §2.4 表中归 TKCode 的全部命令。`"-terminal.clear"` 表示从集合移除（⌘K 交给 shell）；`"workbench.toggleSidebar"` 表示加入（Win/Linux 上 Ctrl+B 也归 TKCode）。语义同 VS Code `commandsToSkipShell`（[已核实 research/05 §4.6]） |
+| `terminal.keyboard.sendKeybindingsToShell: bool`（默认 false） | 为 true 时，默认集合缩小为"最小集"：命令面板、复制、粘贴、⌥F2/Alt+F2；其余全部交给 shell。用户在 `skipShell` 里**显式加入**的命令仍归 TKCode |
 | 优先级 | 用户 `skipShell` 的显式加入 / 移除 > `sendKeybindingsToShell` > 平台默认 |
 | 不支持 | 多键序列（chord prefix），避免 VS Code `allowChords` 的前缀键吞键问题 |
 
@@ -173,7 +173,7 @@ OnKeyDown(e):
   1. e.Key == ImeProcessed 或 preedit 非空          → 返回（不 Handled）
   2. 更新修饰键左右状态；若按的是修饰键本身：
        kitty flags & 8 → 编码按下事件，Handled；否则返回
-  3. KeyRouting → Route == TCode                     → Handled，加入 _swallowed，返回
+  3. KeyRouting → Route == TKCode                     → Handled，加入 _swallowed，返回
   4. 计算 printable = KeySymbol 非空 且 首字符 ≥ 0x20 且 ≠ 0x7F
   5. 以下情况走"文本路径"（不 Handled，等 TextInput）：
        a. Windows：Ctrl 与 Alt 同时按下 且 printable 且 altGrAliasing      （AltGr）
@@ -196,7 +196,7 @@ OnTextInput(e):
 
 关键点：
 
-- 第 5 步保证死键、AltGr、Option 字符、IME 都由平台合成字符，TCode 不自己合成（research/05 §4.4）。
+- 第 5 步保证死键、AltGr、Option 字符、IME 都由平台合成字符，TKCode 不自己合成（research/05 §4.4）。
 - **Backspace、Enter、Tab、Esc 一律在 KeyDown 编码并 Handled**：Win32 上 Ctrl+Backspace 会产生 `WM_CHAR 0x7F`（≥0x20 不被过滤），不 Handled 会重复发送；macOS 上这些键的 KeySymbol 是控制字符 [已核实 `AvnView.mm:692-698` 注释]，第 4 步已排除。
 - Windows Alt+字母：`WM_SYSKEYDOWN` 的 KeySymbol 来自 `MapVirtualKey(MAPVK_VK_TO_CHAR)`（[已核实 `WindowImpl.AppWndProc.cs:1506-1511`]），字母为大写、不含 Shift 效果，并且没有 TextInput。所以 Alt 组合必须在 KeyDown 编码，基础字符由 §3.5 求出。
 
@@ -221,7 +221,7 @@ OnTextInput(e):
 
 ### 3.4 `KeyInput` → libghostty 键编码器
 
-`KeyInput`（TCode.Terminal.Core，01 §6.1 `EncodeKey(in KeyInput)` 的参数）：
+`KeyInput`（TKCode.Terminal.Core，01 §6.1 `EncodeKey(in KeyInput)` 的参数）：
 
 | 字段 | 类型 | 来源 | 写入 libghostty |
 |---|---|---|---|
@@ -278,9 +278,9 @@ Avalonia 不在 `KeyEventArgs` 中暴露 VK、扫描码和重复次数。Termina
 
 ### 3.7 win32-input-mode（9001）
 
-**libghostty-vt 现状**：模式表里没有 9001 [已核实 `src/terminal/modes.zig:362-416`]，未知 CSI 也不会交给 `UNKNOWN_SEQUENCE` 回调（只报 APC / OSC [已核实 `terminal.h:616-636`]）。所以 TCode 无法从核心得知 ConPTY 发来的 `CSI ? 9001 h`。方案：在 `native/ghostty` 的 overlay 补丁里给模式表加一项 `win32_input = 9001`（默认关，两份核心用同一构建，DECRQM 应答随之正确）。补丁打不上时的退路：UI 侧 actor 在 `vt_write` 前对字节流做一个只识别 `CSI ? 9001 h/l` 的小状态机 [推断]。这是对 01 / 02 的补充（见文末）。
+**libghostty-vt 现状**：模式表里没有 9001 [已核实 `src/terminal/modes.zig:362-416`]，未知 CSI 也不会交给 `UNKNOWN_SEQUENCE` 回调（只报 APC / OSC [已核实 `terminal.h:616-636`]）。所以 TKCode 无法从核心得知 ConPTY 发来的 `CSI ? 9001 h`。方案：在 `native/ghostty` 的 overlay 补丁里给模式表加一项 `win32_input = 9001`（默认关，两份核心用同一构建，DECRQM 应答随之正确）。补丁打不上时的退路：UI 侧 actor 在 `vt_write` 前对字节流做一个只识别 `CSI ? 9001 h/l` 的小状态机 [推断]。这是对 01 / 02 的补充（见文末）。
 
-**优先级**：WT 在 kitty 标志非 0 时优先 kitty，否则 9001 优先 [已核实 WT `terminalInput.cpp:224-234`]。ConPTY 当前强制关闭 KKP 转换（research/03 §4.5），所以 Windows 本地会话里实际总是 9001。TCode 采用 WT 的顺序。
+**优先级**：WT 在 kitty 标志非 0 时优先 kitty，否则 9001 优先 [已核实 WT `terminalInput.cpp:224-234`]。ConPTY 当前强制关闭 KKP 转换（research/03 §4.5），所以 Windows 本地会话里实际总是 9001。TKCode 采用 WT 的顺序。
 
 **编码**：`CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`，省略值取默认（Vk/Sc/Uc/Kd/Cs = 0，Rc = 1）（research/03 §4.5）。流程照搬 WT（[已核实 WT `Terminal.cpp:604-760`]）：
 
@@ -291,7 +291,7 @@ Avalonia 不在 `KeyEventArgs` 中暴露 VK、扫描码和重复次数。Termina
 | 产生字符的键按下（含死键、AltGr） | **不**编码、不 Handled；记下 `(Vk, Sc, Cs)` 为"待配对" |
 | TextInput（平台已合成的字符，含死键组合结果） | 每个 UTF-16 码元编码一个按下事件：Vk / Sc 取"待配对"记录（没有时 Vk 取 `VkKeyScanEx(ch)` 的低字节，Sc 由 `MapVirtualKey` 求；IME 提交没有对应按键时 Vk=`VK_PACKET`(0xE7)，Sc=0），Uc=码元 |
 | 任意键释放 | 编码释放（Kd=0），Uc 用 `ToUnicodeEx` 求 |
-| 被 TCode 拦截的键 | 按下与释放都不发 |
+| 被 TKCode 拦截的键 | 按下与释放都不发 |
 
 Rc 取 lParam 的重复次数（一般为 1）。焦点事件（1004）照常发。非 Windows 平台不注册钩子，9001 置位时也按普通路径编码 [推断：非 Windows 上没有程序会请求 9001]。
 
@@ -331,7 +331,7 @@ API 与签名 [已核实 `TextInputMethodClient.cs:5-117`；`InputElement.cs:134
 - 把预编辑字符串转成码点数组，按当前 `InputModes.GraphemeClusterMode`（2027）：
   - 开：循环调用 `ghostty_unicode_grapheme_width(cps + i, len - i, &w)`，累加；每个 grapheme 记录 1 或 2 列；
   - 关：逐码点 `ghostty_unicode_codepoint_width`，宽度 0 的码点并入前一个 grapheme。
-- 这两个函数是纯函数、无分配、线程安全 [已核实 `unicode.h:69, 70-144`]，UI 线程直接调用（通过 `TCode.Terminal.Core.TerminalUnicode` 静态包装）。
+- 这两个函数是纯函数、无分配、线程安全 [已核实 `unicode.h:69, 70-144`]，UI 线程直接调用（通过 `TKCode.Terminal.Core.TerminalUnicode` 静态包装）。
 - 结果 `CellWidths[]` 放进 `OverlayState.Preedit`，渲染见 05 §9.6。
 - 歧义宽度设置（`unicode.ambiguousWidth`）由核心决定；若核心配置为 wide，预测时对 East Asian Ambiguous 码点改为 2（与核心同一张表）[推断：需与 02 的宽度配置一致]。
 
@@ -349,7 +349,7 @@ UI 线程持有 `GhosttyMouseEncoder`，选项来自 `InputModes`：`EVENT`（�
 
 | 规则 | 说明 |
 |---|---|
-| 绕过上报 | 按住 `mouse.bypassReportingModifier`（默认 Shift，WT / VTE / Ghostty）时，鼠标事件交给 TCode（选区、链接），不上报 |
+| 绕过上报 | 按住 `mouse.bypassReportingModifier`（默认 Shift，WT / VTE / Ghostty）时，鼠标事件交给 TKCode（选区、链接），不上报 |
 | 上报内容 | 按下、释放、拖动（button / any 模式）、移动（any 模式）、滚轮（按钮 4–7） |
 | 捕获 | 按下时 `e.Pointer.Capture(this)`，拖出控件仍能收到移动与释放；坐标由 encoder 钳制在网格内 |
 | 激活窗口的点击 | 窗口在按下前 50 ms 内刚获得激活时，该次按下与对应释放都不上报 [推断：各终端常见做法，research/03 §5] |
@@ -432,7 +432,7 @@ actor 每次调用前设置的事件选项 [已核实 `selection.h:480-536`]：
 ### 6.3 Linux PRIMARY（进程内）
 
 - Avalonia 12.1.3 没有 `ClipboardType` / `PrimarySelection`，`TopLevel` 只有 `Clipboard` [已核实：源码中无 `PrimarySelection`；`TopLevel.cs:544`]；X11 PRIMARY 在 master 上才有，Wayland 后端没有（research/05 §5.2）。
-- `ITerminalClipboard` 抽象：`SetTextAsync(ClipboardTarget, string)`、`GetTextAsync(ClipboardTarget)`。`ClipboardTarget.Primary` 的 12.1.x 实现是 `InProcessPrimarySelection`（静态单例，保存最后一次选中的文本），只在 TCode 自己的控件之间生效。Desktop 可以让 `CodeView` 等控件也写入它。
+- `ITerminalClipboard` 抽象：`SetTextAsync(ClipboardTarget, string)`、`GetTextAsync(ClipboardTarget)`。`ClipboardTarget.Primary` 的 12.1.x 实现是 `InProcessPrimarySelection`（静态单例，保存最后一次选中的文本），只在 TKCode 自己的控件之间生效。Desktop 可以让 `CodeView` 等控件也写入它。
 - 升级到带 PRIMARY 的 Avalonia 后，只替换这一个实现（`TopLevel.TryGetClipboard(ClipboardType.PrimarySelection)`）。
 - OSC 52 的 `p` / `s` 目标映射到同一个 PRIMARY（`GHOSTTY_CLIPBOARD_LOCATION_PRIMARY/SELECTION` [已核实 `terminal.h:690-700`]）。
 
@@ -539,7 +539,7 @@ public sealed class TerminalLinkActivatedEventArgs : EventArgs
 }
 ```
 
-Desktop 处理：URL 按 `links.allowedSchemes` 交给 `TopLevel.Launcher`；OSC 8 先确认真实地址（显示文字与地址不一致时必须确认）；`file://` 无主机在 TCode 工作台打开，有主机拒绝；文件路径在工作台打开到行列（01 §7）。
+Desktop 处理：URL 按 `links.allowedSchemes` 交给 `TopLevel.Launcher`；OSC 8 先确认真实地址（显示文字与地址不一致时必须确认）；`file://` 无主机在 TKCode 工作台打开，有主机拒绝；文件路径在工作台打开到行列（01 §7）。
 
 ## 9. 搜索
 

@@ -5,20 +5,20 @@
 
 ## 1. 目标
 
-在 TCode 自带的 Agent 运行时之外，支持用用户本机已安装的 Agent 客户端作为运行时：Claude Code、Codex，以及原生支持 ACP 的 Agent（Gemini CLI、GitHub Copilot CLI、Cursor、OpenCode、Qwen Code、Kimi CLI、Goose、pi 等）。
+在 TKCode 自带的 Agent 运行时之外，支持用用户本机已安装的 Agent 客户端作为运行时：Claude Code、Codex，以及原生支持 ACP 的 Agent（Gemini CLI、GitHub Copilot CLI、Cursor、OpenCode、Qwen Code、Kimi CLI、Goose、pi 等）。
 
-- **默认免配置**：检测到已安装的客户端，就直接作为可用运行时加载。用户不需要做任何配置，TCode 也不经手凭据。
+- **默认免配置**：检测到已安装的客户端，就直接作为可用运行时加载。用户不需要做任何配置，TKCode 也不经手凭据。
 - **统一体验**：外部运行时与内置运行时共用同一套 UI、会话列表、`SessionEvent` 事件流和 `tool/approve` 审批。
-- **整个客户端保持 NativeAOT**：外部 CLI 是独立进程，TCode 只负责启动进程和解析 JSON，不引入任何 Node 或 SDK 依赖。
+- **整个客户端保持 NativeAOT**：外部 CLI 是独立进程，TKCode 只负责启动进程和解析 JSON，不引入任何 Node 或 SDK 依赖。
 
 ## 2. 已确认的决策
 
 | 维度 | 决策 | 说明 |
 |---|---|---|
 | 接入策略 | **原生协议为主，ACP 兜底** | Claude Code 走 `claude -p` 的 stream-json 双向流和 stdio 控制通道；Codex 走 `codex app-server`；通用 ACP 驱动只接原生支持 ACP 的 Agent，**不经过 npx 适配器** |
-| 审批 | **接入 TCode 审批** | 写文件、执行命令等操作默认弹出审批（允许一次 / 本会话允许 / 拒绝）；Codex 使用 `workspace-write` 沙箱；会话级可切换为自动放行；审批请求丢失时一律拒绝 |
-| 登录与条款 | **全部直接启用**（用户决策） | 检测到即启用，直接复用 CLI 已有的登录状态（订阅或 API Key），TCode 不读写凭据。见 §8 风险 |
-| 历史会话 | **先只显示 TCode 创建的会话** | TCode 用自己的 JSONL 记录转录，并保存原生会话 ID 用于恢复；导入 CLI 已有的历史留到后续版本 |
+| 审批 | **接入 TKCode 审批** | 写文件、执行命令等操作默认弹出审批（允许一次 / 本会话允许 / 拒绝）；Codex 使用 `workspace-write` 沙箱；会话级可切换为自动放行；审批请求丢失时一律拒绝 |
+| 登录与条款 | **全部直接启用**（用户决策） | 检测到即启用，直接复用 CLI 已有的登录状态（订阅或 API Key），TKCode 不读写凭据。见 §8 风险 |
+| 历史会话 | **先只显示 TKCode 创建的会话** | TKCode 用自己的 JSONL 记录转录，并保存原生会话 ID 用于恢复；导入 CLI 已有的历史留到后续版本 |
 | 命名 | 不在界面或产品中使用 "Claude Code" 名称 | Anthropic 品牌指南的要求；显示为 "Claude Agent"、"Codex" 等 |
 
 为什么不全部走 ACP：zeron（github.com/zeronsh/zeron）在 2026-08 把 Claude 和 Codex 改成通过 ACP 适配器接入，后来又改回原生协议，原因有三：
@@ -31,9 +31,9 @@
 ## 3. 架构
 
 ```
-TCode.Desktop ──JSON-RPC──▶ TCode.AgentHost
+TKCode.Desktop ──JSON-RPC──▶ TKCode.AgentHost
                                └─ IAgentRuntime（按会话选择）
-                                  ├─ BuiltinRuntime     TCode 自己的 Agent（Chat / Responses / Messages 适配器）
+                                  ├─ BuiltinRuntime     TKCode 自己的 Agent（Chat / Responses / Messages 适配器）
                                   ├─ ClaudeRuntime      claude -p（stream-json + control_request）
                                   ├─ CodexRuntime       codex app-server（JSON-RPC，按行分帧）
                                   └─ AcpRuntime         <agent> --acp（ACP v1，按行分帧）
@@ -46,14 +46,14 @@ TCode.Desktop ──JSON-RPC──▶ TCode.AgentHost
   - 新增 `runtimes/list`，返回每个运行时的安装状态、版本、认证方式和能力。
 - 每个活跃会话对应一个外部进程（Codex app-server 可以在一个进程里承载多个 thread）。
 
-### 3.1 运行时抽象（已实现，`src/TCode.Runtimes`）
+### 3.1 运行时抽象（已实现，`src/TKCode.Runtimes`）
 
 ```csharp
-// TCode.Agent：内置 Agent 与外部运行时共用的循环接口
+// TKCode.Agent：内置 Agent 与外部运行时共用的循环接口
 public interface IAgentLoop { Model; ThinkingLevel; FastMode; IsRunning; Messages; LoadHistory; Subscribe; PromptAsync; Steer; FollowUp; Abort; WaitForIdleAsync; }
 public interface IExternalAgentLoop : IAgentLoop, IAsyncDisposable { RuntimeId; NativeSessionId; event NativeSessionIdChanged; }
 
-// TCode.Runtimes
+// TKCode.Runtimes
 public interface IAgentRuntime
 {
     string Id { get; }                     // claude-code / codex / acp:<agent>，同时是其模型的 Provider 与 Api
@@ -71,7 +71,7 @@ public interface IRuntimeSession : IAsyncDisposable
     ValueTask<bool> SteerAsync(UserMessage message, CancellationToken ct);   // false → 调用方排队
 }
 
-public interface IRuntimeHost   // 会话 → TCode
+public interface IRuntimeHost   // 会话 → TKCode
 {
     ValueTask<ApprovalDecision> RequestApprovalAsync(RuntimeApprovalRequest request, CancellationToken ct);  // AllowOnce / AllowForSession / Deny / Cancel
     void OnNativeSessionId(string id);
@@ -90,7 +90,7 @@ public interface IRuntimeHost   // 会话 → TCode
   - 没有事先声明的工具调用会自动补上。
   - 轮次结束时，最后一条草稿带上整轮用量和停止原因（errors-as-messages）。
 - 因为事件与内置 Agent 完全一致，`AgentSession` 的持久化、`SessionManager` 的 RPC 映射和历史恢复都可以直接复用。
-- `RuntimeRegistry` 在后台并行探测所有运行时，完成后推送 `models/changed`。设置 `TCODE_EXTERNAL_RUNTIMES=0` 可以全部关闭（测试用）。
+- `RuntimeRegistry` 在后台并行探测所有运行时，完成后推送 `models/changed`。设置 `TKCODE_EXTERNAL_RUNTIMES=0` 可以全部关闭（测试用）。
 - 外部 CLI 一律通过 `CliProcess` 启动：
   - stderr 只保留最后 40 行。
   - 退出时先关闭 stdin，3 秒后对整个进程树执行 Kill。
@@ -109,7 +109,7 @@ public interface IRuntimeHost   // 会话 → TCode
 ## 4. 自动发现（免配置）
 
 查找顺序，参考 zeron 与官方 SDK 的实现：
-1. 环境变量覆盖：`TCODE_CLAUDE_PATH`、`TCODE_CODEX_PATH`。
+1. 环境变量覆盖：`TKCODE_CLAUDE_PATH`、`TKCODE_CODEX_PATH`。
 2. 当前进程的 `PATH`。
 3. **登录 shell 的 PATH 快照**。从 Finder 或 Dock 启动时继承不到 shell 的 PATH，需要启动一次 `$SHELL -ilc 'echo $PATH'`，缓存结果。
 4. 已知安装目录：
@@ -129,9 +129,9 @@ public interface IRuntimeHost   // 会话 → TCode
   - `model/list` 获取模型。
 - 子进程的 PATH 把可执行文件所在目录放在最前面，这样 `#!/usr/bin/env node` 一类的启动脚本在 GUI 启动时也能运行。
 
-## 5. 事件映射（映射到 TCode 已有的增量事件）
+## 5. 事件映射（映射到 TKCode 已有的增量事件）
 
-| TCode 事件 | Claude（stream-json） | Codex（app-server） | ACP v1 |
+| TKCode 事件 | Claude（stream-json） | Codex（app-server） | ACP v1 |
 |---|---|---|---|
 | agentStarted | `system/init`（记录 `session_id`；同一会话重复出现时去重） | `turn/started` | 发出 `session/prompt` 时生成 |
 | messageStarted / messageEnded | `stream_event` 的 `message_start` / `message_stop` | `agentMessage` 类型 item 的 `item/started` / `item/completed`（以 `item.text` 为准） | 由 chunk 类型切换时生成 |
@@ -171,7 +171,7 @@ public interface IRuntimeHost   // 会话 → TCode
 | 档位 | 内置 Agent | Claude Agent | Codex | ACP |
 |---|---|---|---|---|
 | **询问**（默认） | 非只读工具逐项审批 | `--permission-mode default`，`can_use_tool` 逐项审批 | `on-request` + `workspace-write`（不联网） | `request_permission` 逐项审批 |
-| **自动放行**（保留沙箱） | 全部允许 | `default`，TCode 自动允许审批（CLI 自身的 deny 规则仍生效） | `never` + `workspace-write` + 联网 | 自动选 allow_once |
+| **自动放行**（保留沙箱） | 全部允许 | `default`，TKCode 自动允许审批（CLI 自身的 deny 规则仍生效） | `never` + `workspace-write` + 联网 | 自动选 allow_once |
 | **完全授权**（无沙箱） | 全部允许 | `bypassPermissions`（启动时总带 `--allow-dangerously-skip-permissions`，以便中途用 `set_permission_mode` 切换） | `never` + `danger-full-access` | 同自动放行 |
 
 规则：
@@ -182,17 +182,17 @@ public interface IRuntimeHost   // 会话 → TCode
   - 选择器放在输入框底栏。
   - 每次切换到“完全授权”都要二次确认。
   - 按项目记住上次的档位（“完全授权”不沿用，新会话回到“询问”），由桌面端保存。
-- **Codex**：以 `thread/start` 响应中实际生效的 `approvalPolicy`、`sandbox`、`serviceTier` 为基线，每轮只在档位不同时显式覆盖。这样可以避免用户 `config.toml` 里的设置（例如 `service_tier = "priority"`）在 TCode 关闭对应选项时仍然生效。
+- **Codex**：以 `thread/start` 响应中实际生效的 `approvalPolicy`、`sandbox`、`serviceTier` 为基线，每轮只在档位不同时显式覆盖。这样可以避免用户 `config.toml` 里的设置（例如 `service_tier = "priority"`）在 TKCode 关闭对应选项时仍然生效。
 
 ## 7. 会话、恢复与持久化
 
-- TCode 自己的 JSONL 仍然是 UI 转录的唯一来源。会话头部新增 `{runtime, nativeSessionId, cwd}`。
+- TKCode 自己的 JSONL 仍然是 UI 转录的唯一来源。会话头部新增 `{runtime, nativeSessionId, cwd}`。
 - 恢复方式：
   - Claude：`--resume=<id>`；创建会话时用 `--session-id <uuid>` 指定 ID。
   - Codex：`thread/resume {threadId}`，失败时退回 `thread/start` 并在界面上提示。
   - ACP：有 `session/resume` 时用它，否则用 `session/load` 重放历史。
 - **只在同一个 cwd 下恢复**，因为 Claude 是按项目目录存放会话的。
-- 不把 TCode 的历史回放给外部 Agent，也不解析它们的存储文件（`~/.claude/projects`、Codex rollout）。
+- 不把 TKCode 的历史回放给外部 Agent，也不解析它们的存储文件（`~/.claude/projects`、Codex rollout）。
 
 ## 8. 风险与对策
 
@@ -200,10 +200,10 @@ public interface IRuntimeHost   // 会话 → TCode
 |---|---|
 | Claude 控制协议（`control_request` / `control_response`）**没有公开文档**，只能从官方 Python SDK 源码推断 | 实现前先整理规格 `docs/protocols/claude-code-stream-json.md`；锁定最低 CLI 版本；用录制的真实 JSONL 夹具做契约测试；解析时宽松处理，忽略未知的 `type`、`subtype` 和字段 |
 | Codex app-server 标为 experimental，大约每几天发一版，破坏性变更常见 | 用 `codex app-server generate-json-schema` 按锁定版本生成契约；检查 `userAgent` 版本；未知通知、未知 item 和错误变体全部容忍 |
-| **订阅条款**：Anthropic 明确不允许第三方产品提供 claude.ai 订阅登录或订阅额度（除非事先获批）；OpenAI 没有官方的第三方条款说明 | 用户已决定**全部直接启用**，风险由用户自行评估或与厂商确认。TCode 本身不提供登录、不读写凭据，只启动用户自己的 CLI |
+| **订阅条款**：Anthropic 明确不允许第三方产品提供 claude.ai 订阅登录或订阅额度（除非事先获批）；OpenAI 没有官方的第三方条款说明 | 用户已决定**全部直接启用**，风险由用户自行评估或与厂商确认。TKCode 本身不提供登录、不读写凭据，只启动用户自己的 CLI |
 | 两个 CLI 都在后台自动更新，版本随时可能变化 | 启动时探测版本；低于支持范围时在 UI 上提示，而不是静默失败 |
 | 进程管理：中断、清理、Windows 进程树 | 先发协议层中断，然后 SIGTERM，再 SIGKILL，作用于整个进程组（通过 `LibraryImport` 调用 `setsid`、`kill`，AOT 安全）；Windows 用 Job Object；持续读取 stderr，只保留最后几行并脱敏，用于错误提示 |
-| ACP v2 草案即将去掉 fs / terminal 方法 | 初始化时就声明 `fs:false, terminal:false`；TCode 自己的工具以 MCP 服务器的形式传给 Agent |
+| ACP v2 草案即将去掉 fs / terminal 方法 | 初始化时就声明 `fs:false, terminal:false`；TKCode 自己的工具以 MCP 服务器的形式传给 Agent |
 
 ## 9. 实施步骤（建议）
 
@@ -227,12 +227,12 @@ public interface IRuntimeHost   // 会话 → TCode
 | 部分 | 状态 | 位置 |
 |---|---|---|
 | 规格 | 完成：三份规格均带测试夹具，夹具已用 schema 校验 | `docs/protocols/{codex-app-server,claude-code-stream-json,acp-v1}.md` |
-| 公共基础 | 完成 | `src/TCode.Runtimes`：`IAgentRuntime` / `ExternalAgent` / `TurnWriter` / `RuntimeRegistry` / `ExecutableLocator` / `CliProcess` / `RuntimeCache` |
-| 连接层 | `JsonRpcConnection` 新增以下选项 | `src/TCode.Rpc.Contracts` |
+| 公共基础 | 完成 | `src/TKCode.Runtimes`：`IAgentRuntime` / `ExternalAgent` / `TurnWriter` / `RuntimeRegistry` / `ExecutableLocator` / `CliProcess` / `RuntimeCache` |
+| 连接层 | `JsonRpcConnection` 新增以下选项 | `src/TKCode.Rpc.Contracts` |
 | CodexRuntime | 完成：夹具 C-a…C-e 全部通过 | `Codex/` |
 | ClaudeRuntime（界面名 Claude Agent） | 完成：夹具 (a)–(e2) 全部通过 | `Claude/` |
 | AcpRuntime | 完成：夹具 A–G 全部通过 | `Acp/` |
-| Host 接入 | 完成：协议 v8，见下方说明 | `TCode.AgentHost` |
+| Host 接入 | 完成：协议 v8，见下方说明 | `TKCode.AgentHost` |
 | 界面 | 待做（a7 负责） | 运行时分组、"本会话允许"按钮、自动放行开关、运行时状态页、提问面板 |
 
 **连接层新增的选项**：
@@ -252,7 +252,7 @@ public interface IRuntimeHost   // 会话 → TCode
 - 会话文件中的 `runtimeSession` 记录。
 
 **ACP**：
-- 模型列表在第一个会话启动后才能得知，之后缓存到 `~/.tcode/cache/runtimes/`。
+- 模型列表在第一个会话启动后才能得知，之后缓存到 `~/.tkcode/cache/runtimes/`。
 - 首次只提供 “Default”。
 
 验证：
@@ -262,7 +262,7 @@ public interface IRuntimeHost   // 会话 → TCode
 
 已知限制：
 - 尚未用真实 CLI 跑过模型轮次，需要用户确认后再进行。
-- 提问已经接入问答面板（2026-10-18，[ask-user.md](ask-user.md)）。Codex 的 requestUserInput 只有在用户自己打开 `default_mode_request_user_input` 特性时才会出现；TCode 不开启 Codex 的实验接口（Plan 协作模式）。
+- 提问已经接入问答面板（2026-10-18，[ask-user.md](ask-user.md)）。Codex 的 requestUserInput 只有在用户自己打开 `default_mode_request_user_input` 特性时才会出现；TKCode 不开启 Codex 的实验接口（Plan 协作模式）。
 - 子 Agent 帧、后台唤醒轮次、计划 / 命令列表 / 上下文用量等状态类更新暂不展示。
 - 工具执行中的输出增量（`ToolExecutionUpdateEvent`）还没有映射到 SessionEvent。
 

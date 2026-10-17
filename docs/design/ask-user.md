@@ -14,7 +14,7 @@
 | 维度 | 决策 |
 |---|---|
 | 面板位置 | 待回答时，问答面板**占据输入框的位置**，键盘焦点在面板上。回答后，转录里留一张只读的问答卡片 |
-| 范围 | TCode 只给**内置 Agent** 加 `ask_user` 工具。外部运行时用它们自己的提问工具，TCode 只负责显示和回答，不改它们的工具，也不为 Codex 开实验接口 |
+| 范围 | TKCode 只给**内置 Agent** 加 `ask_user` 工具。外部运行时用它们自己的提问工具，TKCode 只负责显示和回答，不改它们的工具，也不为 Codex 开实验接口 |
 | 可用模式 | 所有主会话模式（Agent / Plan / ACP）都有这个工具；子 Agent 没有 |
 | 待回答时发消息 | **不允许**。必须先回答或拒绝回答（Esc），输入框才会回来 |
 
@@ -29,7 +29,7 @@
   - Esc 拒绝回答。Codex 例外，它的 Esc 会中断整轮。
 - **结果**：用一行自然语言回给模型，以问题原文为键，例如 `"问题"="答案"`。拒绝、未回答、用户自己写的答案，分别用不同的文本。
 - **范围**：子 Agent 一律不能用。Codex 只在 Plan 模式下可用；Claude 在所有模式下都可用，但计划审批走另一个工具。
-- **教训**：Cursor 把传输失败也当成"用户跳过"返回，模型因此误判。TCode 中止和连接失败用各自的文本，不和"拒绝回答"混用。
+- **教训**：Cursor 把传输失败也当成"用户跳过"返回，模型因此误判。TKCode 中止和连接失败用各自的文本，不和"拒绝回答"混用。
 
 外部协议的线格式见 §8，规格补充写进 `docs/protocols/`（§11 P4）。
 
@@ -111,9 +111,9 @@ ACP 第 2 步改为：
 2. If a choice would materially change scope or behavior and the code does not settle it, ask the user with ask_user before dispatching any work.
 ```
 
-composer.md §18.1 第 4 条改为："TCode 内置 Agent 用 `ask_user` 向用户提问；外部运行时的模式说明不提工具名（见 §18.8）。"
+composer.md §18.1 第 4 条改为："TKCode 内置 Agent 用 `ask_user` 向用户提问；外部运行时的模式说明不提工具名（见 §18.8）。"
 
-外部运行时的 ExternalPlan 和 ExternalAcp **不改**：它们不提 TCode 的工具名，现有措辞（"ask the user"）已经允许运行时使用自己的提问工具，而这些提问现在能正常显示了。
+外部运行时的 ExternalPlan 和 ExternalAcp **不改**：它们不提 TKCode 的工具名，现有措辞（"ask the user"）已经允许运行时使用自己的提问工具，而这些提问现在能正常显示了。
 
 ### 5.4 结果文本
 
@@ -144,7 +144,7 @@ record UserInputResponse(string Outcome /* answered | declined */, IReadOnlyList
 record UserAnswerDto(string QuestionId, IReadOnlyList<string> Selected, string? Text);
 ```
 
-- `Source` 取 `builtin`、`claude-code` 或 `codex`，决定面板标题（"TCode 提问"、"Claude Agent 提问"、"Codex 提问"），也决定回答如何回写（§8）。
+- `Source` 取 `builtin`、`claude-code` 或 `codex`，决定面板标题（"TKCode 提问"、"Claude Agent 提问"、"Codex 提问"），也决定回答如何回写（§8）。
 - `Options` 为空时，这个问题只有文本框（Codex 允许 `options: null`）。`IsSecret` 时文本框掩码显示。
 - **取消**：Host 取消请求时（Abort、Claude `control_cancel_request`、Codex `serverRequest/resolved`），JSON-RPC 的 `$/cancelRequest` 到达 UI，UI **必须移除面板**，恢复输入框（§10 修复项 1 的同一机制）。
 - **没有 UI**：Host 没有客户端时，内置工具返回 §4.2 的错误；外部运行时按 §8 中各自"拒绝"的方式回复。
@@ -157,7 +157,7 @@ record UserAnswerDto(string QuestionId, IReadOnlyList<string> Selected, string? 
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ? TCode 提问                         [数据库] [认证] [提交] │  标题 + 标签页（单个问题时没有标签页）
+│ ? TKCode 提问                         [数据库] [认证] [提交] │  标题 + 标签页（单个问题时没有标签页）
 │                                                          │
 │ 用哪个数据库？                                             │
 │ ┌──────────────────────────────────────────────────────┐ │
@@ -219,10 +219,10 @@ record UserAnswerDto(string QuestionId, IReadOnlyList<string> Selected, string? 
 
 补充说明：
 - **Claude**：
-  - `AskUserQuestion` 只在设置了 `--permission-prompt-tool stdio` 时启用（TCode 已经设置），在任何权限模式下都会经 `can_use_tool` 发来。
+  - `AskUserQuestion` 只在设置了 `--permission-prompt-tool stdio` 时启用（TKCode 已经设置），在任何权限模式下都会经 `can_use_tool` 发来。
   - 只回原 input 加 `answers`，不附加其他字段，这样在 CLI 的严格模式下也能通过。
   - 不开启 preview 和 extended 变体（相应的环境变量都不设）。
-- **Codex**：在 TCode 当前的设置下（`experimentalApi:false`、Default 协作模式），只有用户在自己的配置里打开了 `default_mode_request_user_input`，这个请求才会出现。我们照样接好，但不主动开启。
+- **Codex**：在 TKCode 当前的设置下（`experimentalApi:false`、Default 协作模式），只有用户在自己的配置里打开了 `default_mode_request_user_input`，这个请求才会出现。我们照样接好，但不主动开启。
 - **ACP**：
   - 在 `clientCapabilities` 中声明 `"elicitation":{"form":{}}`，不声明 `url`。
   - 表单卡片的标题来源从"MCP 服务器"扩展为"ACP 运行时"。
@@ -268,12 +268,12 @@ P1–P4 全部完成。代码位置：
 
 | 部分 | 位置 |
 |---|---|
-| 共用模型、回答编码、Details JSON | `src/TCode.Agent/Questions/UserQuestions.cs` |
-| `ask_user` 工具（描述、schema、校验、结果文本） | `src/TCode.Agent.Coding/Tools/Questions/AskUserTool.cs` |
-| Host：`IUserInputService`、`input/request`、ACP 表单转发 | `src/TCode.AgentHost/SessionManager.cs`（`RequestUserInputAsync`、`ElicitExternalAsync`） |
-| 运行时接口 | `src/TCode.Runtimes/IAgentRuntime.cs`（`RequestInputAsync`、`RequestElicitationAsync`）、`ExternalAgent.cs` |
+| 共用模型、回答编码、Details JSON | `src/TKCode.Agent/Questions/UserQuestions.cs` |
+| `ask_user` 工具（描述、schema、校验、结果文本） | `src/TKCode.Agent.Coding/Tools/Questions/AskUserTool.cs` |
+| Host：`IUserInputService`、`input/request`、ACP 表单转发 | `src/TKCode.AgentHost/SessionManager.cs`（`RequestUserInputAsync`、`ElicitExternalAsync`） |
+| 运行时接口 | `src/TKCode.Runtimes/IAgentRuntime.cs`（`RequestInputAsync`、`RequestElicitationAsync`）、`ExternalAgent.cs` |
 | Claude / Codex / ACP 映射 | `ClaudeSession.AskAsync`、`CodexSession.RequestUserInputAsync`、`AcpSession.ElicitAsync` |
-| 问答面板 | `src/TCode.Desktop/ViewModels/QuestionRequestViewModel.cs`、`Views/QuestionPanelView.axaml(.cs)` |
+| 问答面板 | `src/TKCode.Desktop/ViewModels/QuestionRequestViewModel.cs`、`Views/QuestionPanelView.axaml(.cs)` |
 | 转录问答卡片 | `ViewModels/QuestionCardViewModel.cs`、`Views/QuestionCardView.axaml`、`Controls/TranscriptAdapter.cs` |
 
 与设计的差异：
@@ -282,7 +282,7 @@ P1–P4 全部完成。代码位置：
 - ACP 的表单卡片标题使用运行时的显示名（“{运行时} 请求信息”）。
 
 测试：
-- `tests/TCode.Agent.Tests/AskUserToolTests.cs`：校验、编码、结果文本、Details。
-- `tests/TCode.AgentHost.Tests/AskUserTests.cs`：回答、拒绝、无客户端、中止、子 Agent 没有该工具。
-- `tests/TCode.Runtimes.Tests`：`ClaudeFixtureTests.AskUserQuestion_*`、`CodexFixtureTests.RequestUserInput_*`、`AcpFixtureTests.UnknownAgentRequests_*`（url 模式 -32602，form 模式经宿主回答）。
-- `tests/TCode.Desktop.Tests/QuestionPanelTests.cs`：真实 Host 加假模型的端到端测试，覆盖键盘回答、“其他”输入、提交页、草稿保留、侧边栏橙点、Esc 拒绝、Stop 收起。快照：`question-panel`、`question-panel-multi`、`question-panel-review`、`question-card`。
+- `tests/TKCode.Agent.Tests/AskUserToolTests.cs`：校验、编码、结果文本、Details。
+- `tests/TKCode.AgentHost.Tests/AskUserTests.cs`：回答、拒绝、无客户端、中止、子 Agent 没有该工具。
+- `tests/TKCode.Runtimes.Tests`：`ClaudeFixtureTests.AskUserQuestion_*`、`CodexFixtureTests.RequestUserInput_*`、`AcpFixtureTests.UnknownAgentRequests_*`（url 模式 -32602，form 模式经宿主回答）。
+- `tests/TKCode.Desktop.Tests/QuestionPanelTests.cs`：真实 Host 加假模型的端到端测试，覆盖键盘回答、“其他”输入、提交页、草稿保留、侧边栏橙点、Esc 拒绝、Stop 收起。快照：`question-panel`、`question-panel-multi`、`question-panel-review`、`question-card`。

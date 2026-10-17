@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <PublishAot>true</PublishAot>
+        <RootNamespace>TKCode.AgentHost</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TKCode.Agent.Coding\TKCode.Agent.Coding.csproj" />
+        <ProjectReference Include="..\TKCode.Rpc.Contracts\TKCode.Rpc.Contracts.csproj" />
+        <ProjectReference Include="..\TKCode.Config\TKCode.Config.csproj" />
+        <ProjectReference Include="..\TKCode.Runtimes\TKCode.Runtimes.csproj" />
+        <ProjectReference Include="..\TKCode.Mcp\TKCode.Mcp.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TKCode.AgentHost.Tests" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- 裁剪后的 models.dev 快照，由 tools/gen_catalog.py 生成 -->
+        <EmbeddedResource Include="Catalog\catalog.json" LogicalName="TKCode.AgentHost.catalog.json" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+    </ItemGroup>
+</Project>

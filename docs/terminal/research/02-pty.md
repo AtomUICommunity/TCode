@@ -36,7 +36,7 @@
 | CONPTY | NuGet Microsoft.Windows.Console.ConPTY | 1.25.260930003（stable） | 2026-10-02 |
 | local | 本机 macOS 26.6.2（25G83），.NET SDK 10.0.301，Xcode SDK 头文件 | — | 2026-10-16 |
 
-TCode 现状（已读）：`ProcessRunner.cs`、`BashTool.cs`、`ShellResolver.cs` 只用 `System.Diagnostics.Process` 以 `-c` 方式运行非交互命令，没有任何 PTY 代码。Desktop 与 AgentHost 两个进程都会用 `Process` 启动子进程。
+TKCode 现状（已读）：`ProcessRunner.cs`、`BashTool.cs`、`ShellResolver.cs` 只用 `System.Diagnostics.Process` 以 `-c` 方式运行非交互命令，没有任何 PTY 代码。Desktop 与 AgentHost 两个进程都会用 `Process` 启动子进程。
 
 ---
 
@@ -51,13 +51,13 @@ TCode 现状（已读）：`ProcessRunner.cs`、`BashTool.cs`、`ShellResolver.c
    - 例外：启动时 SIGCHLD 的原始处置为 `SIG_IGN`，或者进程是 pid 1（容器里），这时会 `waitpid(-1)` 回收所有子进程 [实 同上]。
    - 副作用：它用 `waitid(P_ALL, WNOWAIT)` 窥探。我们的子进程退出后如果迟迟不回收，每次 SIGCHLD 都会触发 .NET 扫描全部托管子进程 [实 ProcessWaitState.Unix.cs:622-640]。所以要**立即**用 `waitpid(pid)` 回收，且**永远不要** `waitpid(-1)`。
    - 退出通知：Linux 用 `pidfd_open`（5.3+）+ poll，macOS 用 kqueue `EVFILT_PROC` + `NOTE_EXIT|NOTE_EXITSTATUS`。RHEL 8（内核 4.18，.NET 10 仍支持）要回退为专用线程阻塞 `waitpid(pid)`。
-4. **.NET 会把 SIGPIPE 设为 `SIG_IGN`，`Process.Start` 启动的子进程会继承这个设置**（本机实测：`Process.Start` 启动的 perl 报告 `SIGPIPE=IGNORE`）[实 local；RT PalUnix.cpp:204-210、pal_process.c macOS posix_spawn 路径只重置"自定义处理器"]。在 shell 里会表现为 `yes | head` 之类的管道行为异常。PTY 启动时必须用 `POSIX_SPAWN_SETSIGDEF` 把**全部**信号重置为默认（node-pty 在 macOS 的 pty_posix_spawn 中用 `sigfillset` [实 NP pty.cc:740-866]）。TCode 现有的 BashTool 也有这个问题，见 §6 陷阱 U3。
+4. **.NET 会把 SIGPIPE 设为 `SIG_IGN`，`Process.Start` 启动的子进程会继承这个设置**（本机实测：`Process.Start` 启动的 perl 报告 `SIGPIPE=IGNORE`）[实 local；RT PalUnix.cpp:204-210、pal_process.c macOS posix_spawn 路径只重置"自定义处理器"]。在 shell 里会表现为 `yes | head` 之类的管道行为异常。PTY 启动时必须用 `POSIX_SPAWN_SETSIGDEF` 把**全部**信号重置为默认（node-pty 在 macOS 的 pty_posix_spawn 中用 `sigfillset` [实 NP pty.cc:740-866]）。TKCode 现有的 BashTool 也有这个问题，见 §6 陷阱 U3。
 5. **Apple arm64 上不能直接 P/Invoke 可变参数函数**（`ioctl`、`fcntl`、`open`）：可变参数走栈，固定参数走寄存器，结果参数错位 [实 dotnet/runtime#48752 已关闭，通用方案 #48796 仍为 Open/Future]。Porta.Pty 实测 `fcntl(F_SETFL)` 写入了垃圾标志 [实 PP porta_pty.c:363-375]，RoyalTerminal 的 resize 只好退化为调用 `stty` [实 RTM UnixPty.cs:197-214]。**所以 Unix 侧本来就需要一个 C shim**，"纯 C#"路线在 macOS 上并不纯。
 6. **Windows：随应用分发 `conpty.dll` + `OpenConsole.exe`，不依赖系统 conhost。**
    - 2024-08 ConPTY 重写（#17510）后，应用输出的 VT 序列**原样透传**，不再被"重新渲染"；`PASSTHROUGH_MODE`、`RESIZE_QUIRK`、`WIN32_INPUT_MODE` 三个 flag 已从源码删除 [实 WT PR #16954/#17510/#16916]。
    - Windows 10 的 inbox conhost 不再回移修复（DHowett，2024-06）；Windows 11 的 inbox 版本只在"大版本换代"时同步 OpenConsole，下一次可能是 26H2（lhecker，2025-10）[实 WT discussion #17608]。
    - NuGet 包 `Microsoft.Windows.Console.ConPTY` 1.25.260930003（2026-10-02，MIT）包含 x86/x64/arm64 的 `conpty.dll` 和 `OpenConsole.exe` [实 CONPTY]。VS Code（node-pty）、WezTerm、Alacritty、Zed、Porta.Pty 都在分发或支持加载它。
-7. **现有 .NET 库没有一个可以直接用**：AOT 安全性、fork 安全性、ConPTY 版本、维护状况至少有一项不达标（§8）。**推荐路线 B**：C# `LibraryImport` 加一个约 300 行的 C shim（`libtcodepty`）和约 40 行的 helper 可执行文件（`tcode-pty-spawn`），只在 4 个 Unix RID 上构建；Windows 不需要我们自己的原生代码。
+7. **现有 .NET 库没有一个可以直接用**：AOT 安全性、fork 安全性、ConPTY 版本、维护状况至少有一项不达标（§8）。**推荐路线 B**：C# `LibraryImport` 加一个约 300 行的 C shim（`libtkcodepty`）和约 40 行的 helper 可执行文件（`tkcode-pty-spawn`），只在 4 个 Unix RID 上构建；Windows 不需要我们自己的原生代码。
 
 ---
 
@@ -133,7 +133,7 @@ TCode 现状（已读）：`ProcessRunner.cs`、`BashTool.cs`、`ShellResolver.c
  8. 解锁；fcntl(master, F_SETFL, O_NONBLOCK)（在 C 里调用，见 §5 的可变参数问题）
  9. 注册退出监视（§2.5），返回 {master, pid}
 
-helper（tcode-pty-spawn，exec 后是一个全新的单线程进程，没有 async-signal-safe 的限制）
+helper（tkcode-pty-spawn，exec 后是一个全新的单线程进程，没有 async-signal-safe 的限制）
  a. ioctl(0, TIOCSCTTY, 0)          ; Linux 上自动获得的控制终端此调用直接成功，macOS 上则必需
  b. close_range(4, ~0U, 0)          ; Linux ≥5.9；否则遍历 /proc/self/fd；macOS 已由 CLOEXEC_DEFAULT 处理
  c. if cwd 非空: chdir(cwd)，失败则回退到 $HOME（与 Ghostty 一致，忽略错误继续 [GH Command.zig:212]）
@@ -156,8 +156,8 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
   - 用来覆盖"setsid 尚未执行时 pgid 还等于父进程"的窗口（`getpgid` 循环，Exec.zig:1213-1245）。采用 posix_spawn 后，`posix_spawn` 返回时 setsid 已经完成，这个窗口不存在 [推]。
   - Darwin 上 killpg 偶尔返回 `EPERM`，Ghostty 选择忽略 [实 Exec.zig:1186-1191]。
 - Alacritty 在 Drop 时只对子进程发 SIGHUP，再阻塞 `wait` [实 AL tty/unix.rs:309-319]。
-- **"杀进程树"不是系统终端的行为**，不作为默认做法。只有 TCode 自身退出时，才对所有仍存活的会话执行上面的 SIGHUP → SIGKILL 序列。
-- Linux 可选 `prctl(PR_SET_PDEATHSIG)`：需要在 helper 里设置，而且只作用于直接子进程（login 或 shell），作为 TCode 崩溃时的兜底 [推]。
+- **"杀进程树"不是系统终端的行为**，不作为默认做法。只有 TKCode 自身退出时，才对所有仍存活的会话执行上面的 SIGHUP → SIGKILL 序列。
+- Linux 可选 `prctl(PR_SET_PDEATHSIG)`：需要在 helper 里设置，而且只作用于直接子进程（login 或 shell），作为 TKCode 崩溃时的兜底 [推]。
 
 ### 2.5 退出码获取：与 .NET 运行时共存
 
@@ -188,7 +188,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
 
 建议做法：全进程**一个**退出监视线程（epoll/kqueue 上挂所有 pidfd 或 proc filter，再加一个唤醒管道），Porta.Pty 与 MiniPty 都是这样 [实 PP PtyReaper.cs；MP minipty_unix_exit.c]。读线程见 §2.7。
 
-**.NET 11 的新选项** [实 RT PR #128862，2026-06-30 合并，release/11.0 已含]：`UnixProcessStartArguments.Start(ProcessStartInfo, Func<UnixProcessStartArguments,int>)` 允许我们用自己的系统调用创建进程，再把 pid 交给 `Process` 跟踪。之后 `WaitForExitAsync`、`ExitCode`、`Kill` 都由运行时维护，SIGCHLD 的冲突从根本上消失。缺点：回调在内部的启动锁里执行；TCode 目前用 .NET 10，.NET 11 GA 预计在 2026-11 [推]。**建议 v1 用自研退出监视，抽象成 `IPtyExitWatcher`，升级到 .NET 11 后再评估切换。**
+**.NET 11 的新选项** [实 RT PR #128862，2026-06-30 合并，release/11.0 已含]：`UnixProcessStartArguments.Start(ProcessStartInfo, Func<UnixProcessStartArguments,int>)` 允许我们用自己的系统调用创建进程，再把 pid 交给 `Process` 跟踪。之后 `WaitForExitAsync`、`ExitCode`、`Kill` 都由运行时维护，SIGCHLD 的冲突从根本上消失。缺点：回调在内部的启动锁里执行；TKCode 目前用 .NET 10，.NET 11 GA 预计在 2026-11 [推]。**建议 v1 用自研退出监视，抽象成 `IPtyExitWatcher`，升级到 .NET 11 后再评估切换。**
 
 ### 2.6 termios 初始值
 
@@ -247,7 +247,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
 ### 2.10 环境变量
 
 - 由 C# 构造完整的 `envp`（`KEY=VALUE\0` 数组）传给 `posix_spawn`。**不要在子进程里 setenv**（Porta.Pty 的做法）。
-- PTY 层只负责传递，策略由 05 报告 §2 决定，例如 `TERM=xterm-256color`、`COLORTERM=truecolor`、`TERM_PROGRAM=TCode`，剔除 `TCODE_AGENT`、`VTE_VERSION`、`TMUX` 等。
+- PTY 层只负责传递，策略由 05 报告 §2 决定，例如 `TERM=xterm-256color`、`COLORTERM=truecolor`、`TERM_PROGRAM=TKCode`，剔除 `TKCODE_AGENT`、`VTE_VERSION`、`TMUX` 等。
 - `LANG` / `LC_*`：macOS 从 Dock 启动的程序常常没有 `LANG`。是否补 UTF-8 locale 由 05 报告决定。PTY 侧只保证 IUTF8 已经打开。
 
 ---
@@ -265,7 +265,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
 | `ClearPseudoConsole(HPCON, BOOL keepCursorRow)` | 不在公开文档里 | 有，带别名 | 用户执行"清除缓冲区"时同步清空 conhost 缓冲区（GH#1193） |
 | `ConptyShowHidePseudoConsole(HPCON, BOOL)` | — | 只有 Conpty 前缀的名字 | 同步伪窗口的最小化状态（GH#12515） |
 | `ConptyReparentPseudoConsole(HPCON, HWND)` | — | 只有 Conpty 前缀的名字 | 让 `GetConsoleWindow()` 返回宿主拥有的 HWND（GH#2988） |
-| `ConptyCreatePseudoConsoleAsUser`、`ConptyPackPseudoConsole` | — | 只有 Conpty 前缀的名字 | 以其他用户身份运行 / 接收 handoff 会话，TCode 用不到 |
+| `ConptyCreatePseudoConsoleAsUser`、`ConptyPackPseudoConsole` | — | 只有 Conpty 前缀的名字 | 以其他用户身份运行 / 接收 handoff 会话，TKCode 用不到 |
 
 来源 [实]：WT src/inc/conpty-static.h:26-49、src/winconpty/dll/winconpty.def、winconpty.cpp:430-622；Learn CreatePseudoConsole、ClosePseudoConsole、ReleasePseudoConsole 页面。
 
@@ -273,7 +273,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
 
 | flag | 值 | 现状 | 说明 |
 |---|---|---|---|
-| `PSEUDOCONSOLE_INHERIT_CURSOR` | `0x1` | 有效 | ConPTY 启动时先发 `ESC[6n`，**必须应答**，否则在旧版本中会卡住输入；文档也警告关闭时可能死锁。TCode **不使用** |
+| `PSEUDOCONSOLE_INHERIT_CURSOR` | `0x1` | 有效 | ConPTY 启动时先发 `ESC[6n`，**必须应答**，否则在旧版本中会卡住输入；文档也警告关闭时可能死锁。TKCode **不使用** |
 | `PSEUDOCONSOLE_RESIZE_QUIRK` | `0x2` | **已删除**（#17510，2024-08） | 旧 inbox 版本中用于改善 resize 重绘；新版本忽略 |
 | `PSEUDOCONSOLE_WIN32_INPUT_MODE` | `0x4` | **已删除**（#16916，2024-06）；现在 ConPTY 总是请求 9001 | — |
 | `PSEUDOCONSOLE_PASSTHROUGH_MODE` | `0x8` | **已删除**（#16954，2024-03） | **注意：0x8 和 0x10 已被重新用于字宽模式**。新版 conpty.dll 会把旧的 0x8 解释为 GLYPH_WIDTH_GRAPHEMES |
@@ -289,7 +289,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
   conpty = LoadLibraryExW(<appdir>\conpty.dll 绝对路径, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|…)
            失败 → 回退 kernel32（inbox，功能受限；按"降级模式"记录日志）
   通过 GetProcAddress 取函数指针（delegate* unmanaged[Stdcall]，AOT 安全）
-  job = CreateJobObject(); SetInformationJobObject(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)  ; TCode 崩溃时兜底
+  job = CreateJobObject(); SetInformationJobObject(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)  ; TKCode 崩溃时兜底
 
 每个会话：
  1. CreatePipe(&inRead, &inWrite) ; CreatePipe(&outRead, &outWrite)   ; 匿名、同步、不可继承
@@ -303,7 +303,7 @@ macOS 的 login shell：05 报告建议用 `/usr/bin/login -flp <user> /bin/bash
     UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, lpValue = hpc（HPCON 值本身，不是 &hpc）, sizeof(HPCON))
     UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_JOB_LIST, &job, sizeof(HANDLE))   ; Win10+
  5. STARTUPINFOEXW si = {cb = sizeof}; si.dwFlags = STARTF_USESTDHANDLES; hStd* = NULL
-      （显式置空，防止 TCode 自身被重定向的 stdio 被子进程继承；WZ pseudocon.rs:114-123、NP conpty.cc:396-401）
+      （显式置空，防止 TKCode 自身被重定向的 stdio 被子进程继承；WZ pseudocon.rs:114-123、NP conpty.cc:396-401）
     CreateProcessW(NULL, cmdline（可写缓冲区）, NULL, NULL, bInheritHandles = FALSE,
                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
                    envBlock, cwd, &si, &pi)
@@ -328,7 +328,7 @@ resize：ResizePseudoConsole（UI 侧去抖）
 
 | 维度 | inbox conhost | 随包 `conpty.dll` + `OpenConsole.exe` |
 |---|---|---|
-| 版本 | 跟随 OS。Windows 10 不再回移修复；Windows 11 只在大版本换代时同步（下一次可能是 26H2）[实 WT discussion #17608] | 由 TCode 锁定版本，跨 Windows 10 1809 到 11 26H1 行为一致 |
+| 版本 | 跟随 OS。Windows 10 不再回移修复；Windows 11 只在大版本换代时同步（下一次可能是 26H2）[实 WT discussion #17608] | 由 TKCode 锁定版本，跨 Windows 10 1809 到 11 26H1 行为一致 |
 | VT 原样透传、OSC 透传、同步输出等 | 取决于 OS 构建 [推：24H2/25H2 是否已含 #17510 未核实] | 1.22 起具备（WT 1.22 发行说明 [实 devblogs 2024-08-27]） |
 | `ReleasePseudoConsole`、不阻塞的 Close | 26100+ | 全部 Windows 版本 |
 | Kitty 键盘协议、不等待 DA1 | 否 | 1.25（#19817、#20536）[实] |
@@ -367,8 +367,8 @@ resize：ResizePseudoConsole（UI 侧去抖）
 | W6 | **旧版 inbox 的"重新渲染"**：#17510 之前，ConPTY 把屏幕当作渲染目标重新生成 VT，会改写或丢弃未知序列和 OSC，resize 时整屏重绘，清屏会出现奇怪的回滚 [实 PR #17510 说明] | 随包 conpty.dll；用户执行"清除缓冲区"时同时调用 ClearPseudoConsole，否则下一次重绘会把旧内容画回来（GH#1193）|
 | W7 | resize 后 ConPTY 会重新获取光标位置：1.24 之后的版本会在 resize 后发 `ESC[6n`（#19535）[实 WT VtIo.cpp:747] | 模拟器任何时候都要应答 CPR |
 | W8 | 编码：ConPTY 的输入和输出都是 UTF-8 + VT [实 Learn]。客户端程序的控制台代码页（例如 936）只影响程序自己的 `WriteFile` 字节如何解码，ConPTY 交给我们的总是 UTF-8 | 宿主端不需要 chcp；`ReadFile` 的结果直接按 UTF-8 增量解码（处理跨块截断）[推：中文 Windows 上用 `cmd /c type gbk.txt` 实测] |
-| W9 | 句柄泄漏：`bInheritHandles=TRUE` 会把 TCode 的可继承句柄泄漏给 shell | 固定传 FALSE（node-pty 注释："VERY IMPORTANT"，NP conpty.cc:434）|
-| W10 | 进程树：Close 后，挂在这个控制台上的客户端收到 CTRL_CLOSE_EVENT；脱离控制台的进程（GUI、`start` 出去的进程）不受影响 | 与 WT 一致，接受。Job 只用于 TCode 退出或崩溃时兜底。注意：KILL_ON_JOB_CLOSE 会连"用户在终端里 `start` 出去的 GUI 程序"一起杀掉，需要决定是否设置 `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` [推] |
+| W9 | 句柄泄漏：`bInheritHandles=TRUE` 会把 TKCode 的可继承句柄泄漏给 shell | 固定传 FALSE（node-pty 注释："VERY IMPORTANT"，NP conpty.cc:434）|
+| W10 | 进程树：Close 后，挂在这个控制台上的客户端收到 CTRL_CLOSE_EVENT；脱离控制台的进程（GUI、`start` 出去的进程）不受影响 | 与 WT 一致，接受。Job 只用于 TKCode 退出或崩溃时兜底。注意：KILL_ON_JOB_CLOSE 会连"用户在终端里 `start` 出去的 GUI 程序"一起杀掉，需要决定是否设置 `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` [推] |
 | W11 | 前台进程和 cwd：Windows 没有 tcgetpgrp。`GetConsoleProcessList` 需要先 AttachConsole，而一个进程只能附加一个控制台，所以 node-pty 专门 fork 一个进程来查 [实 NP conpty_console_list.cc、conpty_console_list_agent.ts] | 用 Toolhelp32 遍历以 shell 为根的进程树判断"是否在运行"（VS Code、WezTerm 的做法，见 05 §8.1）；cwd 只取 shell 集成的 OSC 7 / OSC 9;9 |
 | W12 | DLL 劫持 / 误绑定：裸名 `conpty.dll` 可能解析到其他位置 | 只用绝对路径 `LoadLibraryExW`；无法加载时明确降级为 kernel32 并记录日志 |
 
@@ -380,7 +380,7 @@ resize：ResizePseudoConsole（UI 侧去抖）
 |---|---|---|---|
 | U1 | 托管代码中 fork、子进程运行托管代码、CoreCLR 信号处理器把信号转发给父进程 | 只用 posix_spawn；子进程逻辑全部在 helper 里 | §1.1 |
 | U2 | `waitpid(-1)` 抢走 `Process` 的退出状态；不及时回收导致 .NET 反复全量扫描 | 只 `waitpid(pid)`，收到通知立即回收 | §2.5 |
-| U3 | **SIGPIPE 继承为 SIG_IGN** | `SETSIGDEF` 用全集；**另外建议修复 TCode 现有的 BashTool**（`Process.Start` 启动的 bash 继承了 SIG_IGN，`… \| head` 的上游不会被 SIGPIPE 终止，只会收到 EPIPE）| 本机实测 [实] |
+| U3 | **SIGPIPE 继承为 SIG_IGN** | `SETSIGDEF` 用全集；**另外建议修复 TKCode 现有的 BashTool**（`Process.Start` 启动的 bash 继承了 SIG_IGN，`… \| head` 的上游不会被 SIGPIPE 终止，只会收到 EPIPE）| 本机实测 [实] |
 | U4 | 可变参数函数（ioctl、fcntl、open）在 Apple arm64 上 P/Invoke 后参数错位，而且**静默成功** | 全部放进 C shim | dotnet/runtime#48752/#48796；PP porta_pty.c:363-375 [实] |
 | U5 | 父进程没有关闭 slave → 永远读不到 EOF | spawn 后立即关闭 | — |
 | U6 | master 或 slave 泄漏给其他子进程（包括 AgentHost、`Process` 启动的工具进程） | 全部用 `O_CLOEXEC` 打开；macOS 用 `CLOEXEC_DEFAULT`，Linux 由 helper 执行 `close_range` | GH pty.zig:156-170；WZ unix.rs:139-180（GNOME/mutter 会给子进程泄漏 fd）[实] |
@@ -391,7 +391,7 @@ resize：ResizePseudoConsole（UI 侧去抖）
 | U11 | resize 不传像素尺寸 | 传 xpixel / ypixel | §2.8 |
 | U12 | 写入阻塞 UI | 专用写线程 + channel | §2.7 |
 | U13 | helper 被 NuGet 解压后丢失可执行位；macOS 需要签名和公证 | 构建和打包时 `chmod +x`；放在 `Contents/MacOS/` 或 `Contents/Helpers/` 并用 hardened runtime 签名 [推]；RoyalTerminal 在运行时补设 `UserExecute` [实 RTM UnixPtyProcess.cs:112-115] | — |
-| U14 | 在 PTY 会话里 `Process` 又启动了带终端的子进程？不会：TCode 自己的 stdin 不是这个 pty，.NET 的 `ConfigureTerminalForChildProcesses` 只作用于 TCode 自身的控制终端 | 无需处理 [推] | RT SafeProcessHandle.Unix.cs:297-310 |
+| U14 | 在 PTY 会话里 `Process` 又启动了带终端的子进程？不会：TKCode 自己的 stdin 不是这个 pty，.NET 的 `ConfigureTerminalForChildProcesses` 只作用于 TKCode 自身的控制终端 | 无需处理 [推] | RT SafeProcessHandle.Unix.cs:297-310 |
 
 ---
 
@@ -400,13 +400,13 @@ resize：ResizePseudoConsole（UI 侧去抖）
 1. **全部用 `[LibraryImport]`，参数只用 blittable 类型**：`int`、`nint`、指针、`[StructLayout(Sequential)]` 的纯值类型。字符串用 `StringMarshalling.Utf8` / `Utf16` 或手动 `byte*`；程序集上加 `[assembly: DisableRuntimeMarshalling]`。不使用 `StringBuilder`、`[MarshalAs]` 等运行时封送。
 2. **动态加载的 conpty.dll 用函数指针**：`NativeLibrary.Load(absolutePath)` + `NativeLibrary.GetExport` → `delegate* unmanaged[Stdcall]<COORD, nint, nint, uint, nint*, int>`。不用 `Marshal.GetDelegateForFunctionPointer`（它依赖运行时生成代码）。
 3. **C shim 的加载方式**：
-   - 默认按名称 `libtcodepty` 懒绑定，文件放在 `runtimes/<rid>/native/`，发布时平铺到输出目录；
-   - 可选 `<DirectPInvoke Include="libtcodepty" />` + `<NativeLibrary Include="libtcodepty.a" />` **静态链接进 AOT 可执行文件**，少一个文件，调用也更快 [实 Learn native-aot/interop]。代价是需要为每个 RID 提供 `.a`，而且 JIT（Debug）构建仍然需要 `.so` / `.dylib`；
+   - 默认按名称 `libtkcodepty` 懒绑定，文件放在 `runtimes/<rid>/native/`，发布时平铺到输出目录；
+   - 可选 `<DirectPInvoke Include="libtkcodepty" />` + `<NativeLibrary Include="libtkcodepty.a" />` **静态链接进 AOT 可执行文件**，少一个文件，调用也更快 [实 Learn native-aot/interop]。代价是需要为每个 RID 提供 `.a`，而且 JIT（Debug）构建仍然需要 `.so` / `.dylib`；
    - helper 可执行文件无论如何都是单独的文件。
 4. **Windows 侧不需要我们自己的原生代码**：所有 Win32 API 都是固定参数（非可变参数）的 stdcall，可以全部 `LibraryImport`（或使用 CsWin32 源生成，Porta.Pty 的做法）。`STARTUPINFOEXW`、`PROCESS_INFORMATION`、`COORD` 都是 blittable 类型。
 5. **线程**：读、写和退出监视都用 `new Thread { IsBackground = true }`，不在线程池里阻塞。回调回 UI 时通过 `Dispatcher` 投递，不在原生线程上调用托管回调，因此不需要 `UnmanagedCallersOnly`。
 6. **fd 和句柄所有权**：用 `SafeHandle` 子类包装 master fd、HPCON、进程句柄，`ReleaseHandle` 里调用 `close` / `ClosePseudoConsole`。注意 W1：`ClosePseudoConsole` 不能在终结器线程上同步执行。
-7. 验证：按 TCode 的规则跑 `dotnet publish -r <rid> -p:PublishAot=true`，要求 0 个 IL2xxx/IL3xxx 警告，再运行 AOT 二进制做一次 PTY 往返冒烟测试（StreamMark 的 aot-smoke 模式）。
+7. 验证：按 TKCode 的规则跑 `dotnet publish -r <rid> -p:PublishAot=true`，要求 0 个 IL2xxx/IL3xxx 警告，再运行 AOT 二进制做一次 PTY 往返冒烟测试（StreamMark 的 aot-smoke 模式）。
 
 ---
 
@@ -418,7 +418,7 @@ resize：ResizePseudoConsole（UI 侧去抖）
 | b. AgentHost 进程内 | 经 JSON-RPC 转发字节流 | 多一跳，而且 JSON 不适合传二进制（要 base64，约 33% 开销）；好处是 Agent 的 bash 工具以后可以复用同一个 PTY |
 | c. 独立的 pty-host 进程（VS Code 的 ptyHost 模式） | UI 重启或崩溃时终端会话仍然存活 | 复杂度最高；需要二进制帧协议 |
 
-PTY 库本身与进程无关（独立库 `TCode.Terminal.Pty`，未来 SSH 也实现同一个 `ITerminalTransport` 接口）。**v1 建议选 a** [推]，这个选择不影响库的设计。
+PTY 库本身与进程无关（独立库 `TKCode.Terminal.Pty`，未来 SSH 也实现同一个 `ITerminalTransport` 接口）。**v1 建议选 a** [推]，这个选择不影响库的设计。
 
 ---
 
@@ -451,7 +451,7 @@ PTY 库本身与进程无关（独立库 `TCode.Terminal.Pty`，未来 SSH 也�
 | 路线 | 内容 | 优点 | 缺点 | 评估 |
 |---|---|---|---|---|
 | **A. 纯 C# LibraryImport** | Unix：C# 直接调 openpty、posix_spawn、waitpid、kqueue / pidfd；Windows：C# 调 ConPTY | 没有自研原生代码，也不需要 CI 构建原生产物 | **macOS 做不到**：拿不到控制终端（需要 helper），Apple arm64 上可变参数的 ioctl/fcntl 不安全（resize、非阻塞都受影响）；termios 结构体要按平台镜像；RHEL 8 上没有 addchdir_np | 只有 Linux 和 Windows 能完全满足，不能作为整体方案 |
-| **B. C# + 极小的 C shim 和 helper（推荐）** | `libtcodepty`（约 300 行：openpty + termios、spawn、resize、fg pgrp/名称/cwd、exit watch、set_nonblock）+ `tcode-pty-spawn`（约 40 行）。Windows 侧纯 C#，加上 ConPTY NuGet 的二进制 | 所有 fork/exec、可变参数调用、结构体差异都在 C 里一次处理好；子进程逻辑运行在 exec 后的干净进程中；与 StreamMark RaTeX 的 6 RID CI 先例一致（这里只需 4 个 Unix RID）；完全由我们掌控 | 需要维护少量 C 代码和 CI；helper 要随包分发并签名 | **推荐** |
+| **B. C# + 极小的 C shim 和 helper（推荐）** | `libtkcodepty`（约 300 行：openpty + termios、spawn、resize、fg pgrp/名称/cwd、exit watch、set_nonblock）+ `tkcode-pty-spawn`（约 40 行）。Windows 侧纯 C#，加上 ConPTY NuGet 的二进制 | 所有 fork/exec、可变参数调用、结构体差异都在 C 里一次处理好；子进程逻辑运行在 exec 后的干净进程中；与 StreamMark RaTeX 的 6 RID CI 先例一致（这里只需 4 个 Unix RID）；完全由我们掌控 | 需要维护少量 C 代码和 CI；helper 要随包分发并签名 | **推荐** |
 | C. 通过 FFI 复用 Rust portable-pty | cdylib 包一层 C ABI | 有现成的跨平台实现 | Unix 走 fork + pre_exec，`close_random_fds` 会分配内存，回到 U1 风险；退出监视和 SIGPIPE 要自己补；Windows flags 过时；crate 最后发布于 2025-02；需要引入 Rust 工具链和 6 RID 构建 | 不推荐 |
 | D. 直接引用现有 .NET 库 | 首选 Porta.Pty 2.2.3 | 马上能用，22.7 万下载，正在维护 | 子进程里调用 setenv/execvp；ConPTY 版本被锁定在 1.24；仍有 DllImport；单人维护；不传像素尺寸；无法插入 login 和 helper 的定制 | 原型阶段可用；产品阶段建议 fork 后改造，实质上就回到了 B |
 
@@ -459,7 +459,7 @@ PTY 库本身与进程无关（独立库 `TCode.Terminal.Pty`，未来 SSH 也�
 
 ## 9. 推荐
 
-**路线 B**，建议以独立库 `TCode.Terminal.Pty` 的形式实现，未来 SSH 共用 `ITerminalTransport`：
+**路线 B**，建议以独立库 `TKCode.Terminal.Pty` 的形式实现，未来 SSH 共用 `ITerminalTransport`：
 
 1. **Unix**：
    - posix_spawn 启动 helper，由 helper 执行 TIOCSCTTY、close_range、chdir、execve；Linux 和 macOS 用同一套代码；
@@ -469,9 +469,9 @@ PTY 库本身与进程无关（独立库 `TCode.Terminal.Pty`，未来 SSH 也�
 2. **Windows**：
    - 随包分发 `Microsoft.Windows.Console.ConPTY` **1.25.260930003** 的 conpty.dll 和 OpenConsole.exe，按绝对路径加载；加载失败时降级为 kernel32；
    - flags 设为 0，或与模拟器字宽一致的 GLYPH_WIDTH_*；
-   - 读写各一个线程；Release 可用时立即调用；在读线程以外关闭；Job 只用于 TCode 退出时兜底；
+   - 读写各一个线程；Release 可用时立即调用；在读线程以外关闭；Job 只用于 TKCode 退出时兜底；
    - 模拟器必须支持 DA1、CPR、9001、1004。
-3. **顺带修复**：TCode 现有的 BashTool 启动的子进程继承了 `SIGPIPE=SIG_IGN`（U3）。可以在 `-c` 前面加 `trap - PIPE;`，或者以后统一走新的 spawn 路径。
+3. **顺带修复**：TKCode 现有的 BashTool 启动的子进程继承了 `SIGPIPE=SIG_IGN`（U3）。可以在 `-c` 前面加 `trap - PIPE;`，或者以后统一走新的 spawn 路径。
 4. **.NET 11 升级后**：评估用 `UnixProcessStartArguments` / `WindowsProcessStartArguments` 回调接入 `Process` 的退出跟踪，替换自研的 exit watch。
 
 实施里程碑建议：

@@ -5,11 +5,11 @@
 
 ## 1. 目标
 
-- 用 GitHub Releases（`AtomUICommunity/TCode`）发布 TCode。
+- 用 GitHub Releases（`AtomUICommunity/TKCode`）发布 TKCode。
 - 程序启动约 60 秒后在后台检查一次更新，之后每 6 小时检查一次。发现新版本时以非模态方式提醒用户，不打断正在进行的工作。
 - 「设置 → 关于」页提供手动「检查更新」，并可切换更新通道、开关自动检查。
-- 用户点击更新后在后台下载**安装程序**。下载并校验完成后提示「安装并重启」，点击后 TCode 启动安装程序，然后自己退出，由安装程序完成替换并重新启动 TCode。
-- **不新增更新器进程或项目**：Windows 的文件替换交给安装程序；macOS 和 Linux 由 TCode 在退出前自己替换（§7.2、§7.3）。
+- 用户点击更新后在后台下载**安装程序**。下载并校验完成后提示「安装并重启」，点击后 TKCode 启动安装程序，然后自己退出，由安装程序完成替换并重新启动 TKCode。
+- **不新增更新器进程或项目**：Windows 的文件替换交给安装程序；macOS 和 Linux 由 TKCode 在退出前自己替换（§7.2、§7.3）。
 - 整个链路保持 NativeAOT：不引入运行时代码生成或反射序列化。
 
 ## 2. 已确认的决策
@@ -27,7 +27,7 @@
 现状：`Directory.Build.props` 写死 `<Version>0.1.0</Version>`，`tools/package_macos_app.sh` 的 Info.plist 里又写死了一份。
 
 - **唯一来源是 git tag**：`v1.2.0` 是稳定版，`v1.2.0-beta.1` / `-rc.1` 是预览版。发布 CI 用 `-p:Version=<tag 去掉 v>` 构建，Info.plist 和 Inno Setup 脚本的版本都从同一个变量生成。
-- `Directory.Build.props` 的默认值改为 `0.0.0-dev`。本地开发构建**不做自动检查**，手动检查时显示“开发版本不支持自动更新”。如需测试，可通过 `TCODE_UPDATE_FEED` 指定本地源（见 §10）。
+- `Directory.Build.props` 的默认值改为 `0.0.0-dev`。本地开发构建**不做自动检查**，手动检查时显示“开发版本不支持自动更新”。如需测试，可通过 `TKCODE_UPDATE_FEED` 指定本地源（见 §10）。
 - 运行时从 `AssemblyInformationalVersionAttribute` 读取版本（去掉 `+commit` 后缀）。关于页显示 `1.2.0 (abc1234)`。
 - 版本比较遵循 SemVer 2.0 优先级规则，自己实现一个约 80 行的 `SemVersion`，不引入依赖。
 
@@ -35,19 +35,19 @@
 
 | 资产 | 首次安装 | 应用内更新 |
 |---|---|---|
-| `TCode-<ver>-osx-arm64.dmg` / `-osx-x64.dmg` | ✓（拖到「应用程序」） | |
-| `TCode-<ver>-osx-arm64.zip` / `-osx-x64.zip` | | ✓ |
-| `TCode-<ver>-win-x64-setup.exe` | ✓ | ✓ |
-| `TCode-<ver>-linux-x64.tar.gz` | ✓ | ✓ |
+| `TKCode-<ver>-osx-arm64.dmg` / `-osx-x64.dmg` | ✓（拖到「应用程序」） | |
+| `TKCode-<ver>-osx-arm64.zip` / `-osx-x64.zip` | | ✓ |
+| `TKCode-<ver>-win-x64-setup.exe` | ✓ | ✓ |
+| `TKCode-<ver>-linux-x64.tar.gz` | ✓ | ✓ |
 | `manifest.json` + `manifest.json.sig` | | 更新清单及其签名 |
 
 各平台的安装程序：
 
 - **macOS**：
-  - 签名后的 TCode.app 先公证并 staple，再用 `ditto -c -k --keepParent` 打成 zip（顶层是 `TCode.app`，用于应用内更新），并用 hdiutil 打成 dmg（签名、公证、staple，用于首次安装）。
+  - 签名后的 TKCode.app 先公证并 staple，再用 `ditto -c -k --keepParent` 打成 zip（顶层是 `TKCode.app`，用于应用内更新），并用 hdiutil 打成 dmg（签名、公证、staple，用于首次安装）。
   - 不打 pkg：pkg 需要额外的 Developer ID Installer 证书，更新时还要求管理员密码；与 electron-builder / Squirrel.Mac 一样，由应用自己替换 .app（§7.2）。
 - **Windows**：
-  - 用 Inno Setup 生成，按用户安装到 `%LocalAppData%\Programs\TCode`，`PrivilegesRequired=lowest`，**不需要 UAC**。
+  - 用 Inno Setup 生成，按用户安装到 `%LocalAppData%\Programs\TKCode`，`PrivilegesRequired=lowest`，**不需要 UAC**。
   - 首次安装和更新使用同一个 setup.exe：首次安装走完整向导，更新时用静默参数启动（§7.1）。
 - **Linux**：只提供 tar.gz（解压即用的目录），保留可执行权限位。
 
@@ -59,12 +59,12 @@
   "version": "1.2.0",
   "channel": "stable",                    // stable | preview，与 prerelease 标志一致
   "publishedAt": "2026-11-01T08:00:00Z",
-  "notesUrl": "https://github.com/AtomUICommunity/TCode/releases/tag/v1.2.0",
+  "notesUrl": "https://github.com/AtomUICommunity/TKCode/releases/tag/v1.2.0",
   "assets": {
-    "osx-arm64": { "name": "TCode-1.2.0-osx-arm64.zip", "size": 48213456, "sha256": "…", "minOs": "11.0" },
-    "osx-x64":   { "name": "TCode-1.2.0-osx-x64.zip", "size": 0, "sha256": "…", "minOs": "11.0" },
-    "win-x64":   { "name": "TCode-1.2.0-win-x64-setup.exe", "size": 0, "sha256": "…" },
-    "linux-x64": { "name": "TCode-1.2.0-linux-x64.tar.gz", "size": 0, "sha256": "…" }
+    "osx-arm64": { "name": "TKCode-1.2.0-osx-arm64.zip", "size": 48213456, "sha256": "…", "minOs": "11.0" },
+    "osx-x64":   { "name": "TKCode-1.2.0-osx-x64.zip", "size": 0, "sha256": "…", "minOs": "11.0" },
+    "win-x64":   { "name": "TKCode-1.2.0-win-x64-setup.exe", "size": 0, "sha256": "…" },
+    "linux-x64": { "name": "TKCode-1.2.0-linux-x64.tar.gz", "size": 0, "sha256": "…" }
   }
 }
 ```
@@ -73,7 +73,7 @@
 - **清单签名**：使用 ECDSA P-256 + SHA-256（.NET 内置，AOT 安全，三个平台都可用）。私钥只存在 CI secret `UPDATE_SIGNING_KEY` 中，公钥编译进客户端。验签失败时整个更新视为不可用，并记录日志。
   - 为什么在 HTTPS 之外还要签名：GitHub token 泄露或者 Release 被篡改时，单靠 HTTPS 和 SHA-256 拦不住，因为攻击者可以连同清单一起改；签名私钥不在 GitHub 上，可以拦住这种情况。
   - 公钥支持数组，方便将来轮换密钥：新版本同时带上新旧两个公钥，过渡一个版本后再停用旧钥。
-- **Windows 安装程序暂不签名**：启动前只依靠清单签名和 SHA-256 保证完整性。TCode 自己下载的文件不会被打上 MOTW 标记，因此静默运行时不会触发 SmartScreen。
+- **Windows 安装程序暂不签名**：启动前只依靠清单签名和 SHA-256 保证完整性。TKCode 自己下载的文件不会被打上 MOTW 标记，因此静默运行时不会触发 SmartScreen。
 
 ## 5. 检查流程
 
@@ -88,15 +88,15 @@ UpdateService（Desktop，单例）
 
 **查询方式**
 
-- 调用 `GET https://api.github.com/repos/AtomUICommunity/TCode/releases?per_page=20`，请求带 `If-None-Match`（ETag 存在 state.json 中）。返回 304 时不计入未认证请求的配额（每 IP 每小时 60 次）。
+- 调用 `GET https://api.github.com/repos/AtomUICommunity/TKCode/releases?per_page=20`，请求带 `If-None-Match`（ETag 存在 state.json 中）。返回 304 时不计入未认证请求的配额（每 IP 每小时 60 次）。
 - 过滤规则：
   - 跳过 draft；
   - stable 通道只看 `prerelease == false` 的版本；preview 通道两者都看，取最高版本；
   - 必须带有 `manifest.json` 资产；
   - 版本号必须大于当前版本。
-- API 被限流（403/429）时回退到 `https://github.com/AtomUICommunity/TCode/releases/latest/download/manifest.json`。这个地址不走 API 配额，但只能获取稳定版。
+- API 被限流（403/429）时回退到 `https://github.com/AtomUICommunity/TKCode/releases/latest/download/manifest.json`。这个地址不走 API 配额，但只能获取稳定版。
 - 选出候选版本后，下载 `manifest.json` 和 `.sig` 并验签，再检查清单中的 `version` 与 tag 一致、本平台 RID 存在、`minOs` 满足。
-- HttpClient 使用 `SocketsHttpHandler`，遵循系统代理，单次请求超时 30 秒，User-Agent 为 `TCode/<ver> (<rid>)`。
+- HttpClient 使用 `SocketsHttpHandler`，遵循系统代理，单次请求超时 30 秒，User-Agent 为 `TKCode/<ver> (<rid>)`。
 
 **状态机**（`UpdateState`）
 
@@ -114,12 +114,12 @@ Idle ─check─▶ Checking ─┬─▶ UpToDate
 
 ## 6. 下载与校验
 
-- 暂存目录为 `~/.tcode/updates/<ver>/`（遵循 `TCODE_HOME`）。先下载到 `<asset>.partial`，下载过程中计算 SHA-256；完成后校验大小和哈希，再改名为正式文件名。
+- 暂存目录为 `~/.tkcode/updates/<ver>/`（遵循 `TKCODE_HOME`）。先下载到 `<asset>.partial`，下载过程中计算 SHA-256；完成后校验大小和哈希，再改名为正式文件名。
 - 断点续传：`.partial` 已存在时发送 `Range` 请求；服务器返回 200 而不是 206 时从头下载。GitHub 资产会 302 跳转到 objects.githubusercontent.com，这个跳转是支持 Range 的。
 - 平台附加校验（通过后才进入 `Ready`）：
-  - **macOS**：用 `ditto -x -k` 解压到 .app **旁边**的 `TCode.app.new/`（顶层必须是一个 `.app`）。当前应用已签名时：`codesign --verify --strict --deep` 必须通过，签名者的 Team ID 必须与当前运行的应用相同，`spctl -a -t exec` 必须认可为 `Notarized Developer ID`（用户关闭了 Gatekeeper 时接受 `security disabled`）。然后与 Linux 一样检查三个可执行文件（在 `Contents/MacOS/` 下）并运行 pty host 自检。
+  - **macOS**：用 `ditto -x -k` 解压到 .app **旁边**的 `TKCode.app.new/`（顶层必须是一个 `.app`）。当前应用已签名时：`codesign --verify --strict --deep` 必须通过，签名者的 Team ID 必须与当前运行的应用相同，`spctl -a -t exec` 必须认可为 `Notarized Developer ID`（用户关闭了 Gatekeeper 时接受 `security disabled`）。然后与 Linux 一样检查三个可执行文件（在 `Contents/MacOS/` 下）并运行 pty host 自检。
   - **Windows**：只依靠清单签名和 SHA-256（安装程序暂未签名）。
-  - **Linux**：解压到安装目录**旁边**的 `<安装目录>.new/`（保证在同一个文件系统上，§7.3 才能用 rename 替换）。解压后检查 `TCode`、`agenthost/TCode.AgentHost`、`ptyhost/tcode-ptyhost` 三个可执行文件都在，并运行 `tcode-ptyhost --self-test`（返回 0 才算通过）。
+  - **Linux**：解压到安装目录**旁边**的 `<安装目录>.new/`（保证在同一个文件系统上，§7.3 才能用 rename 替换）。解压后检查 `TKCode`、`agenthost/TKCode.AgentHost`、`ptyhost/tkcode-ptyhost` 三个可执行文件都在，并运行 `tkcode-ptyhost --self-test`（返回 0 才算通过）。
 - 每次启动时清理除当前候选版本以外的旧暂存目录，以及残留的 `.old`、`.new` 目录。
 
 ## 7. 安装：启动安装程序后退出
@@ -132,30 +132,30 @@ Idle ─check─▶ Checking ─┬─▶ UpToDate
 
 ### 7.1 Windows（Inno Setup）
 
-- 启动命令：`TCode-<ver>-win-x64-setup.exe /SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE=1`。
+- 启动命令：`TKCode-<ver>-win-x64-setup.exe /SILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE=1`。
   - `/SILENT` 不显示向导，只显示安装进度窗口，让用户知道正在更新。
 - 安装脚本：
-  - `[Code] InitializeSetup` 中检测 TCode 的 mutex（`AppMutex` 同名），最多等 30 秒，等 Desktop 和 AgentHost 完全退出；超时则提示失败并退出。安装程序没有修改任何文件，所以旧版本完好。
+  - `[Code] InitializeSetup` 中检测 TKCode 的 mutex（`AppMutex` 同名），最多等 30 秒，等 Desktop 和 AgentHost 完全退出；超时则提示失败并退出。安装程序没有修改任何文件，所以旧版本完好。
   - `CloseApplications=yes` 作为兜底，在仍有进程占用文件时让 Restart Manager 关闭它们。
-  - `[Run]` 中启动 TCode 的条目带 `Check: IsUpdate`，即带 `/UPDATE=1` 参数时安装完成后自动启动 TCode，并附带 `--updated-from <oldver>`。
+  - `[Run]` 中启动 TKCode 的条目带 `Check: IsUpdate`，即带 `/UPDATE=1` 参数时安装完成后自动启动 TKCode，并附带 `--updated-from <oldver>`。
 - 失败处理：Inno Setup 自带回滚，复制失败时会恢复旧文件。
 
-### 7.2 macOS（zip，由 TCode 自己替换 .app）
+### 7.2 macOS（zip，由 TKCode 自己替换 .app）
 
 做法与 Linux（§7.3）相同，不需要管理员密码，也没有安装界面：
 
-1. 将 `TCode.app` 改名为 `TCode.app.old`，再将 `TCode.app.new` 改名为 `TCode.app`。
-2. 用 `open -n TCode.app` 启动新版本（`-n`：旧进程还没退出，不加只会激活旧进程）。失败时反向改名恢复。
+1. 将 `TKCode.app` 改名为 `TKCode.app.old`，再将 `TKCode.app.new` 改名为 `TKCode.app`。
+2. 用 `open -n TKCode.app` 启动新版本（`-n`：旧进程还没退出，不加只会激活旧进程）。失败时反向改名恢复。
 3. Desktop 退出。新版本启动后删除 `.old`。
 
-TCode 自己下载的 zip 不带 quarantine 属性，新的 .app 首次启动不会弹 Gatekeeper 确认；签名与公证已在 §6 校验。
+TKCode 自己下载的 zip 不带 quarantine 属性，新的 .app 首次启动不会弹 Gatekeeper 确认；签名与公证已在 §6 校验。
 
-### 7.3 Linux（tar.gz，由 TCode 自己替换）
+### 7.3 Linux（tar.gz，由 TKCode 自己替换）
 
 Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（旧的 inode 仍然有效），所以 Desktop 可以在退出前自己完成替换，不需要额外进程：
 
 1. 将 `<安装目录>` 改名为 `<安装目录>.old`，再将 `<安装目录>.new` 改名为 `<安装目录>`。两次都是同一文件系统上的 rename。
-2. 用 `Process.Start` 启动新版本的 `TCode --updated-from <oldver>`。启动失败时把两次改名反向执行，恢复旧目录，并显示错误。
+2. 用 `Process.Start` 启动新版本的 `TKCode --updated-from <oldver>`。启动失败时把两次改名反向执行，恢复旧目录，并显示错误。
 3. Desktop 退出。新版本启动后删除 `.old` 目录。
 
 ### 7.4 安装方式检测（是否支持应用内安装）
@@ -169,15 +169,15 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 | Windows：便携方式运行（解压 zip 后直接运行） | `ManualOnly` |
 | Linux：安装目录及其上级目录都可写（tar.gz 解压到 home 下） | 自己替换目录 |
 | Linux：目录不可写（例如 `/opt`、`/usr`，或者由系统包管理器安装） | `ManualOnly` |
-| 开发构建（`0.0.0-dev`）或者设置了 `TCODE_NO_UPDATE=1` | 不做自动检查 |
+| 开发构建（`0.0.0-dev`）或者设置了 `TKCODE_NO_UPDATE=1` | 不做自动检查 |
 
 ### 7.5 安装后
 
 - 新版本带 `--updated-from <oldver>` 启动时：
   - 提醒卡片显示「已更新到 1.2.0」，附「查看更新说明」链接；
-  - 清理 `~/.tcode/updates/` 和残留的 `.old` 目录；
+  - 清理 `~/.tkcode/updates/` 和残留的 `.old` 目录；
   - 清空 state.json 中的 `pendingVersion`。
-- 如果用户在安装程序中取消或安装失败，TCode 不会被重新启动。用户手动打开 TCode 时，发现 `pendingVersion` 仍然存在，而当前版本仍是旧版本，就提示「上次更新未完成」，并提供「重试」按钮。
+- 如果用户在安装程序中取消或安装失败，TKCode 不会被重新启动。用户手动打开 TKCode 时，发现 `pendingVersion` 仍然存在，而当前版本仍是旧版本，就提示「上次更新未完成」，并提供「重试」按钮。
 
 ## 8. 设置与状态
 
@@ -196,7 +196,7 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 ## 9. UI
 
 - **提醒卡片**（`Views/UpdateCardView.axaml`，自绘，便于放按钮与进度条）：位于窗口右下角，不自动消失。卡片内容：
-  - 标题：「TCode 1.2.0 可用」（预览版加上「预览」标签）；
+  - 标题：「TKCode 1.2.0 可用」（预览版加上「预览」标签）；
   - 正文：更新说明前几行，以及「查看完整说明」链接，点击后打开关于页的说明面板；
   - 按钮：**更新** / 稍后 / 跳过此版本；
   - 下载过程中卡片显示进度条；下载完成后变为 **安装并重启** / 稍后。
@@ -215,7 +215,7 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 ### 9.1 系统托盘
 
 - `Services/AppTray.cs`：Avalonia `TrayIcon`（Windows 通知区域、macOS 菜单栏、Linux StatusNotifier）。
-- 菜单：显示 TCode / 更新项 / 打开设置 / 退出 TCode。更新项随状态变化：「检查更新」→「下载 TCode x」→「正在下载 …」（禁用）→「安装 TCode x 并重启」；不支持应用内安装时为「TCode x 可用」（打开窗口）。
+- 菜单：显示 TKCode / 更新项 / 打开设置 / 退出 TKCode。更新项随状态变化：「检查更新」→「下载 TKCode x」→「正在下载 …」（禁用）→「安装 TKCode x 并重启」；不支持应用内安装时为「TKCode x 可用」（打开窗口）。
 - 关闭窗口：只拦截 `WindowCloseReason.WindowClosing`（关闭按钮、Alt+F4、⌘W），隐藏窗口；退出程序（`Shutdown`）、系统关机照常关闭。macOS 点 Dock 图标（`ActivationKind.Reopen`）重新显示窗口。
 - 设置 › 通用：「关闭窗口时保留在托盘」（默认开启）。
 
@@ -234,9 +234,9 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
   - Linux 的目录替换和回滚在临时目录中做集成测试；
   - Inno Setup 静默安装在 CI 的 Windows runner 上实跑：先装 0.9.0，再用 `/SILENT /UPDATE=1` 装 0.9.1，检查文件版本和自动启动；
   - macOS 的 zip 解压与 .app 替换在临时目录中做集成测试（`ditto` 打包，与发布脚本相同）。
-- **端到端测试**：设置 `TCODE_UPDATE_FEED=file:///…` 或 `http://localhost:…`，指向本地生成的清单和测试密钥签名（测试构建才接受测试公钥），在本机从 0.9.0 真实更新到 0.9.1，检查重启后的版本号。
+- **端到端测试**：设置 `TKCODE_UPDATE_FEED=file:///…` 或 `http://localhost:…`，指向本地生成的清单和测试密钥签名（测试构建才接受测试公钥），在本机从 0.9.0 真实更新到 0.9.1，检查重启后的版本号。
 - **UI**：用 headless 快照测试覆盖提醒卡片的各种状态和关于页「更新」一节的每个状态，不使用模拟输入。
-- **AOT**：`TCode.Desktop` 的 AOT 发布要 0 个 IL 警告，并且实际运行发布出来的二进制：`TCode --smoke` 在进程内启动一个假的 GitHub（临时密钥签名），检查 `update.check`（列表、清单验签）、`update.notes`（StreamMark 渲染）、`update.download`（下载与 SHA-256）。`TCode --version` 输出版本与 commit，发布 CI 用它做冒烟检查。
+- **AOT**：`TKCode.Desktop` 的 AOT 发布要 0 个 IL 警告，并且实际运行发布出来的二进制：`TKCode --smoke` 在进程内启动一个假的 GitHub（临时密钥签名），检查 `update.check`（列表、清单验签）、`update.notes`（StreamMark 渲染）、`update.download`（下载与 SHA-256）。`TKCode --version` 输出版本与 commit，发布 CI 用它做冒烟检查。
 
 ## 11. 发布 CI（`.github/workflows/release.yml`）
 
@@ -244,20 +244,20 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 
 **StreamMark**（`AtomUICommunity/StreamMark`，子模块 `external/StreamMark`）以本地 NuGet 包引用：`streammark-native` 在各 RID 的原生 runner 上构建 RaTeX 动态库，`streammark-pack` 汇总后打包，各平台构建任务下载这些包。
 
-**没有配置 macOS 证书与公证凭据时跳过 macOS**（StreamMark 与 TCode 的 macOS 任务都不运行），只发布 Windows 与 Linux；凭据就绪后重新发布即可带上 macOS。
+**没有配置 macOS 证书与公证凭据时跳过 macOS**（StreamMark 与 TKCode 的 macOS 任务都不运行），只发布 Windows 与 Linux；凭据就绪后重新发布即可带上 macOS。
 
 步骤：
 
 1. **build（矩阵）**：macos-14 (osx-arm64)、macos-13 (osx-x64)、windows-latest (win-x64)、ubuntu-22.04 (linux-x64)。
-   - 复用 terminal.yml 中构建 libghostty-vt 和 libtcodepty 的步骤；
+   - 复用 terminal.yml 中构建 libghostty-vt 和 libtkcodepty 的步骤；
    - 执行 `dotnet publish -p:Version=…`，发布到 publish 目录（包含 agenthost/、ptyhost/）；
-   - 运行冒烟测试：`--version` 和 `tcode-ptyhost --self-test`。
+   - 运行冒烟测试：`--version` 和 `tkcode-ptyhost --self-test`。
 2. **macOS**：
    - 从 secrets 导入 Developer ID Application 证书到临时 keychain；
-   - **由内向外**逐个签名所有 Mach-O 文件（dylib、tcode-ptyhost、tcode-pty-spawn、TCode.AgentHost），最后签整个 `.app`；全部加上 `--options runtime --timestamp`，**不使用 `--deep`**；
+   - **由内向外**逐个签名所有 Mach-O 文件（dylib、tkcode-ptyhost、tkcode-pty-spawn、TKCode.AgentHost），最后签整个 `.app`；全部加上 `--options runtime --timestamp`，**不使用 `--deep`**；
    - `tools/release/package-macos.sh`：.app 用 `xcrun notarytool submit --wait`（Apple ID + App 专用密码）公证并 staple，再生成 zip 和 dmg；dmg 签名后同样公证并 staple；
    - 需要先验证：AOT 程序在 hardened runtime 下是否需要额外的 entitlements（预期不需要 JIT 相关权限）。
-3. **Windows**：用 `iscc` 编译 `packaging/windows/TCode.iss`，生成 setup.exe。签名步骤预留开关，有 secret 时才执行。
+3. **Windows**：用 `iscc` 编译 `packaging/windows/TKCode.iss`，生成 setup.exe。签名步骤预留开关，有 secret 时才执行。
 4. **Linux**：打包 tar.gz，保留可执行权限位。
 5. **release**：汇总所有产物，生成 `manifest.json`（大小、SHA-256），用 `UPDATE_SIGNING_KEY` 签名，用 `gh release create` 上传（预发布版本加 `--prerelease`；tag 触发时加 `--draft`，由人工检查后再点 Publish，发布前客户端看不到 draft 版本）。
 
@@ -279,7 +279,7 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 ## 13. 待确认 / 风险
 
 1. **macOS 标准用户**：`/Applications` 对非管理员不可写，此时只提醒、打开下载页面（§7.4）。2026-10-17 由 pkg 改为自己替换 .app：少一张 Installer 证书，管理员用户更新也不再要输密码。
-2. **Windows 未签名**：首次安装会被 SmartScreen 拦截（需要点「仍要运行」）。应用内更新由 TCode 自己下载，不会带上 MOTW 标记，因此不受影响。
+2. **Windows 未签名**：首次安装会被 SmartScreen 拦截（需要点「仍要运行」）。应用内更新由 TKCode 自己下载，不会带上 MOTW 标记，因此不受影响。
 3. **Linux 只提供 tar.gz**：不做 AppImage、deb、rpm，被包管理器安装的情况只提醒用户手动更新。
 4. **签名密钥保管**：`UPDATE_SIGNING_KEY` 一旦丢失，旧客户端就无法验证新版本，只能让用户手动重装。私钥需要离线备份。
 5. **更新前关闭终端**：更新前终端统一按 `revive` 方式退出，保持运行（keepAlive）的终端会被关闭。新版本启动后会从快照恢复界面，但正在运行的前台进程会被终止。确认框里要明确提示这一点。

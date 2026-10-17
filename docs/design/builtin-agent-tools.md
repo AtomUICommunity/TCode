@@ -3,7 +3,7 @@
 状态：已实现（2026-10-16，P1–P7）；与原设计的差异见 §12
 关联文档：[architecture.md](../architecture.md)、[external-agent-runtimes.md](external-agent-runtimes.md)
 
-本文只描述**内置 Agent**（`TCode.Agent.Agent`）。外部运行时（Claude Agent / Codex / ACP）的 system prompt 和工具由各自的 CLI 管理，不在本文范围内。
+本文只描述**内置 Agent**（`TKCode.Agent.Agent`）。外部运行时（Claude Agent / Codex / ACP）的 system prompt 和工具由各自的 CLI 管理，不在本文范围内。
 
 ## 1. 现状与目标
 
@@ -39,11 +39,11 @@ system prompt 由若干有名字的节组成。每节是一段纯文本，渲染
 
 | 节 | 内容 | 是否变化 |
 |---|---|---|
-| `identity` | “You are TCode, an expert coding assistant …” | 固定 |
+| `identity` | “You are TKCode, an expert coding assistant …” | 固定 |
 | `tools` | 每个启用的工具一行：`- name: PromptSnippet`，没有 snippet 的工具不列 | 工具集变化时 |
 | `rules` | 去重后的规则：先是通用规则（简洁、展示路径、不回滚别人的改动、不执行破坏性 git 命令……），再是各工具的 `PromptGuidelines` | 工具集变化时 |
 | `environment` | 平台、OS 版本、shell、是否 git 仓库、当前分支、今天日期、模型名 | 日期或分支变化时 |
-| `project_context` | 全局 `~/.tcode/AGENTS.md` 加上从项目根到 cwd 各级的上下文文件，每个文件包成 `<project_instructions path>` | 文件变化时 |
+| `project_context` | 全局 `~/.tkcode/AGENTS.md` 加上从项目根到 cwd 各级的上下文文件，每个文件包成 `<project_instructions path>` | 文件变化时 |
 | `cwd` | 工作目录（统一用 `/`），以及额外加入的工作区根目录 | 加目录时 |
 
 **上下文文件的发现规则：**
@@ -64,7 +64,7 @@ system prompt 由若干有名字的节组成。每节是一段纯文本，渲染
 - 适配器已经支持中途发送 `SystemMessage`：模型或接口不支持时，会降级为 `<system-reminder>`。
 - 工具集变化时，`tools` 节的补丁要和新的工具定义一起生效。由于 Anthropic 的工具列表也是缓存前缀的一部分，**原则上只在会话开始时确定工具集**；目前只有 web_search 会在配置变化后动态增删。
 
-## 4. 工具契约 v2（TCode.Agent）
+## 4. 工具契约 v2（TKCode.Agent）
 
 ```csharp
 public interface IAgentTool
@@ -83,7 +83,7 @@ public interface IAgentTool
 public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IProgress<AgentToolResult>? Progress = null);
 ```
 
-- **`ToolContext`**（`TCode.Agent.Coding.Tools`）：每个会话一份，由 `AgentSession` 创建并注入各工具的构造函数，因此 `TCode.Agent` 不依赖编码层类型。目前包含 `WorkspaceRoots` 和 `FileMutationQueue`；`FileStateTracker`、`BackgroundTaskManager`、`TaskList`、`AgentCoordinator`、`HttpClient` 在后续阶段加入。
+- **`ToolContext`**（`TKCode.Agent.Coding.Tools`）：每个会话一份，由 `AgentSession` 创建并注入各工具的构造函数，因此 `TKCode.Agent` 不依赖编码层类型。目前包含 `WorkspaceRoots` 和 `FileMutationQueue`；`FileStateTracker`、`BackgroundTaskManager`、`TaskList`、`AgentCoordinator`、`HttpClient` 在后续阶段加入。
 - **`AgentToolResult.Details`**：用 JSON 文本表示，与外部运行时现有的 details 保持一致。内置工具用源生成上下文序列化自己的 Details 类型。Details 保存在 `ToolResultMessage.Details` 里，写入 JSONL，通过 RPC 推给 UI（`ToolExecutionEnded.DetailsJson`，历史记录里是 `HistoryToolResult.DetailsJson`），但**不发给模型**。
 - **审批钩子**：`BeforeToolCallContext` 带上 `ToolPermission`。Host 用 `PermissionPolicy.Evaluate` 判定是否放行；需要询问时，把 `Kind`/`Title`/`CanAllowForSession` 填进 `tool/approve`；用户选择“本会话允许”时，把对应的 `SessionKey` 记入 `AgentSession.Approvals`。没有 UI 连接时一律拒绝。
 - **并发**（结合 Codex 的 RwLock 门控和 pi 的 mutation queue）：
@@ -131,7 +131,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 
 | 工具 | 参数 | 要点 |
 |---|---|---|
-| `bash` | `command`, `description?`, `timeout?`（毫秒，默认 120000，最大 600000）, `run_in_background?` | Unix 上依次尝试 `$SHELL`（限 bash 或 zsh）、`/bin/bash`、`sh`；Windows 上依次尝试 Git Bash、PowerShell。子进程放在独立的进程组里，abort 或超时时终止整个进程树。输出保留尾部 2000 行或 50KB，完整输出写入 `~/.tcode/tmp/<session>/<id>.log`，并在结果末尾附上路径。退出码非 0 时 `IsError=true`。执行过程中通过 `ToolExecutionUpdated` 推送输出 |
+| `bash` | `command`, `description?`, `timeout?`（毫秒，默认 120000，最大 600000）, `run_in_background?` | Unix 上依次尝试 `$SHELL`（限 bash 或 zsh）、`/bin/bash`、`sh`；Windows 上依次尝试 Git Bash、PowerShell。子进程放在独立的进程组里，abort 或超时时终止整个进程树。输出保留尾部 2000 行或 50KB，完整输出写入 `~/.tkcode/tmp/<session>/<id>.log`，并在结果末尾附上路径。退出码非 0 时 `IsError=true`。执行过程中通过 `ToolExecutionUpdated` 推送输出 |
 | （后台运行） | `run_in_background:true` | 立即返回 `task id` 和输出文件路径。进程结束时，向会话追加一条 `<task-notification>`（类型为 SystemMessage，内容包括状态、退出码和输出路径）。会话空闲时，这条通知会开启新的一轮 |
 | `task_stop` | `task_id` | 终止后台任务或后台子 Agent |
 
@@ -184,7 +184,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
   - `model?`。
   - `run_in_background?`。
   - `name?`：起了名字之后，可以用 send_message 按名字寻址。
-- **子 Agent 的会话**：是一个新的 `AgentSession`，与父会话共用 cwd、工作区根目录和权限档位，审批同样经由父会话转给 UI。它的 JSONL 存放在 `~/.tcode/sessions/<cwd>/<parent>/subagents/<id>.jsonl`，不出现在会话列表里。
+- **子 Agent 的会话**：是一个新的 `AgentSession`，与父会话共用 cwd、工作区根目录和权限档位，审批同样经由父会话转给 UI。它的 JSONL 存放在 `~/.tkcode/sessions/<cwd>/<parent>/subagents/<id>.jsonl`，不出现在会话列表里。
 - **类型决定工具集和 system 的追加内容**：
   - `explore` 只有只读工具，加上 web 工具。
   - `plan` 只读，并且要求输出一份计划。
@@ -198,7 +198,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 - **`list_agents`**：列出当前可以发消息的对象，包括：
   - 本会话派生的子 Agent；
   - 同一个 Host 里的其他会话；
-  - 本机其他 TCode Host 进程里的会话。
+  - 本机其他 TKCode Host 进程里的会话。
 
   每行显示 `name [ref]`、类型、cwd、标题，以及忙碌还是空闲。
 - **`send_message`**：参数为 `to`、`message`、`summary?`。
@@ -206,7 +206,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
   - **包装**：消息作为 `UserMessage` 注入，正文包在 `<session-message from="<发送方地址>" from-name="…">…</session-message>` 里。回复时把 `from` 填为 `to`。
   - **子 Agent 向父会话回报**：使用 `to:"main"`。
 - **跨进程**：
-  - 每个 Host 启动时监听一个 Unix domain socket：`~/.tcode/sockets/<pid>.sock`。.NET 在 Windows 10 及以上同样支持 UDS。
+  - 每个 Host 启动时监听一个 Unix domain socket：`~/.tkcode/sockets/<pid>.sock`。.NET 在 Windows 10 及以上同样支持 UDS。
   - 同时写一个注册文件 `<pid>.json`，内容为会话列表和名字。`list_agents` 扫描这个目录，并剔除已经退出的进程。
   - 帧格式沿用 `JsonRpcConnection`，方法为 `peer/list` 和 `peer/send`。
 - **安全规则**（写进 rules 节，并由系统强制执行）：
@@ -220,7 +220,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 ## 10. 工作区边界与审批
 
 - **工作区根目录**：cwd，加上会话中追加的目录（`session/addDirectory`，后续版本提供 UI 入口），以及 settings 中的 `permissions.additionalDirectories`。
-- **路径判定**：先取真实路径（解析符号链接），再判断是否落在某个根目录之内。`~/.tcode` 下的 `settings.json` 和 `state.json` 一律视为敏感文件：即使在工作区内，读取也要审批。
+- **路径判定**：先取真实路径（解析符号链接），再判断是否落在某个根目录之内。`~/.tkcode` 下的 `settings.json` 和 `state.json` 一律视为敏感文件：即使在工作区内，读取也要审批。
 
 | 操作 | Ask | AutoApprove | FullAccess |
 |---|---|---|---|
@@ -254,20 +254,20 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 ## 12. 实现说明（与上文的差异与补充）
 
 - **代码位置**：
-  - `TCode.Agent.Coding/Prompt/`：系统提示的分节、补丁与快照。
+  - `TKCode.Agent.Coding/Prompt/`：系统提示的分节、补丁与快照。
   - `Workspace/`：工作区边界、审批策略、只读命令判定、同文件写入队列。
   - `Tools/`：`Files`、`Search`、`Shell`、`Tasks`、`Web`、`Agents` 六组工具，以及 `ToolContext`、`ToolServices`、`BuiltinTools`、`BackgroundTasks`。
   - Host 端：`AgentCoordinator`（子 Agent 与消息）、`Peers/PeerDirectory`（跨进程通信）。
 - **web_search 的工具集**：在会话创建时确定，不在会话中途增删。修改 settings 后，新建的会话才会带上或去掉 `web_search`。
-- **子 Agent 转录**：保存在 `~/.tcode/subagents/<父会话 id>/` 下，不放在会话目录里，因此不会出现在会话列表中。父会话关闭时一并关闭它的子 Agent。
+- **子 Agent 转录**：保存在 `~/.tkcode/subagents/<父会话 id>/` 下，不放在会话目录里，因此不会出现在会话列表中。父会话关闭时一并关闭它的子 Agent。
 - **子 Agent 的审批**：子 Agent 与父会话共用工作区、后台任务、任务清单和“本会话允许”记录。权限档位实时跟随父会话。审批以父会话的名义发给 UI，标题前缀为 `[子 Agent 名]`。
 - **非用户输入的消息**：`UserMessage.Source`（`task-notification` / `session-message`）随 RPC 的 `MessageStarted.Source` 和历史记录的 `HistoryMessageDto.Source` 传给 UI。UI 显示为一行可展开的通知，不计入会话标题。
 - **排队消息的投递**：一次运行收尾时，如果仍有 steer 或 followUp 消息在排队，就自动开始下一次运行，避免后台任务的完成通知丢失。`WaitForIdleAsync` 会等到这些后续运行也结束。
 - **跨进程通信**：
-  - socket 默认放在 `~/.tcode/sockets/<pid>.sock`。数据目录路径过长（超过 macOS sun_path 的 104 字节上限）时，改放到系统临时目录。
-  - 注册文件放在 `~/.tcode/peers/<pid>.json`。设置 `TCODE_DISABLE_PEERS=1` 可以关闭跨进程通信。
-- **测试数据目录**：Agent 和 Host 两个测试程序集在模块初始化时设置临时的 `TCODE_HOME`，测试产生的文件不会写进用户的 `~/.tcode`。
-- **AOT 自检**：`TCode.AgentHost --self-test` 在 AOT 二进制中实际执行 AngleSharp 解析、源生成 JSON、diff、模糊匹配编辑和内置 grep。2026-10-16 验证结果：
+  - socket 默认放在 `~/.tkcode/sockets/<pid>.sock`。数据目录路径过长（超过 macOS sun_path 的 104 字节上限）时，改放到系统临时目录。
+  - 注册文件放在 `~/.tkcode/peers/<pid>.json`。设置 `TKCODE_DISABLE_PEERS=1` 可以关闭跨进程通信。
+- **测试数据目录**：Agent 和 Host 两个测试程序集在模块初始化时设置临时的 `TKCODE_HOME`，测试产生的文件不会写进用户的 `~/.tkcode`。
+- **AOT 自检**：`TKCode.AgentHost --self-test` 在 AOT 二进制中实际执行 AngleSharp 解析、源生成 JSON、diff、模糊匹配编辑和内置 grep。2026-10-16 验证结果：
   - Host 和 Desktop 的 AOT 发布均为 0 个 IL/AOT 警告（Host 约 18 MB，其中 AngleSharp 约增加 5 MB）；
   - self-test 通过；
   - AOT Host 通过 RPC 端到端测试。
@@ -275,15 +275,15 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 
 ## 13. 完成核对（2026-10-16）
 
-每一项都列出实现位置和验证方式。测试文件位于 `tests/`；“AOT”指在 NativeAOT 二进制中执行 `TCode.AgentHost --self-test`，或用 AOT Host 跑 `RpcEndToEndTests`。
+每一项都列出实现位置和验证方式。测试文件位于 `tests/`；“AOT”指在 NativeAOT 二进制中执行 `TKCode.AgentHost --self-test`，或用 AOT Host 跑 `RpcEndToEndTests`。
 
 | 阶段 | 项目 | 实现 | 验证 |
 |---|---|---|---|
-| P1 | 工具契约 v2、并发（Exclusive）、进度有序、Details 持久化 | `TCode.Agent/AgentTool.cs`、`Agent.cs` | `ToolExecutionTests`（4 项） |
+| P1 | 工具契约 v2、并发（Exclusive）、进度有序、Details 持久化 | `TKCode.Agent/AgentTool.cs`、`Agent.cs` | `ToolExecutionTests`（4 项） |
 | P1 | 系统提示分节、冻结开头、追加 SystemMessage 补丁、`systemPrompt` 快照与恢复 | `Agent.Coding/Prompt/*`、`SessionStore` | `SystemPromptTests`（4 项） |
 | P1 | 上下文文件（override > AGENTS > CLAUDE，止于仓库根，去重，32KiB） | `SystemPromptBuilder.LoadContextFiles` | `SystemPromptTests.ContextFiles_*` |
 | P1 | 工作区边界（符号链接）、审批策略、本会话允许、只读命令白名单 | `Workspace/PermissionPolicy.cs`、`ReadOnlyCommands.cs` | `PermissionPolicyTests`（20 项） |
-| P1 | RPC v13：`DetailsJson`、`ToolExecutionUpdated`、`Source` | `TCode.Rpc.Contracts`、`SessionManager.Map` | `RpcEndToEndTests`（含 AOT Host）、Desktop 端到端测试 |
+| P1 | RPC v13：`DetailsJson`、`ToolExecutionUpdated`、`Source` | `TKCode.Rpc.Contracts`、`SessionManager.Map` | `RpcEndToEndTests`（含 AOT Host）、Desktop 端到端测试 |
 | P2 | read：行号、分页、图片、二进制、目录 | `Tools/Files/ReadTool.cs` | `FileToolTests.Read_*` |
 | P2 | write：先读后改、新建与 diff | `WriteTool.cs` | `FileToolTests.Write_*` |
 | P2 | edit：多段、唯一、重叠、归一化容错、保留 BOM 与 CRLF、过期检测、参数容错 | `EditTool.cs`、`FileStateTracker.cs` | `FileToolTests.Edit_*`、`Apply_*`、`ParseEdits_*`，AOT |
@@ -294,7 +294,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 | P4 | task_create / get / list / update、依赖、持久化与恢复 | `Tools/Tasks/*`、`TasksEntry` | `TaskAndWebToolTests.TaskTools_*`、`Tasks_ArePersisted*` |
 | P5 | HTML 转 Markdown、正文提取 | `Tools/Web/HtmlToMarkdown.cs`、`ReadabilityExtractor.cs` | `TaskAndWebToolTests.HtmlToMarkdown_*`、`Readability_*`，AOT |
 | P5 | web_fetch：SSRF、http 升级、同站 / 跨站重定向、分页、缓存 | `WebFetcher.cs`、`WebFetchTool.cs` | `Fetcher_*`（7 项）、`WebFetch_*`（2 项） |
-| P5 | web_search：四种后端、域名过滤、settings 配置 | `WebSearch.cs`、`WebSearchTool.cs`、`TCode.Config` | `WebSearch_*`、`Tavily_*`、`Exa_*`、`Searxng_*`、`Providers_*`：四种后端都用桩 HTTP 验证了请求（地址、认证头、请求体或查询参数、域名过滤）和响应解析，并覆盖 SearXNG 未开启 JSON 时的提示。没有 API Key，所以没有连真实服务 |
+| P5 | web_search：四种后端、域名过滤、settings 配置 | `WebSearch.cs`、`WebSearchTool.cs`、`TKCode.Config` | `WebSearch_*`、`Tavily_*`、`Exa_*`、`Searxng_*`、`Providers_*`：四种后端都用桩 HTTP 验证了请求（地址、认证头、请求体或查询参数、域名过滤）和响应解析，并覆盖 SearXNG 未开启 JSON 时的提示。没有 API Key，所以没有连真实服务 |
 | P6 | 子 Agent（类型、工具集、共享状态、审批转发、追问后通知） | `AgentCoordinator.cs`、`Tools/Agents/*` | `AgentCoordinatorTests.Subagent_*` |
 | P6 | send_message / list_agents（同一 Host） | `AgentCoordinator.SendAsync/ListAsync` | `AgentCoordinatorTests.SendMessage_*` |
 | P6 | 跨进程（UDS 加注册目录） | `Peers/PeerDirectory.cs`、`PeerHostService` | `AgentCoordinatorTests.Peers_*` |

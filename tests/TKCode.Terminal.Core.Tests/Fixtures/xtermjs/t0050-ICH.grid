@@ -1,0 +1,34 @@
+tkcode-grid 1
+size 80x25 cell 8x16
+cursor 0,24 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+rows
+   0 |abcdefghijklmnopqrstu                                                           | s0
+   1 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567                 89 | s0
+   2 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567                  89| s0
+   3 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567                   8| s0
+   4 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567                    | s0
+   5 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567                    | s0
+   6 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdefghijklmnop | s0
+   7 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdefghijklmnop | s0
+   8 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW     XYZ01234567890abcdefghijkl| s0
+   9 |ICH at end:                                                                     | s0
+  10 |                                                                                | s0
+  11 |abcdefghijklmnopqrstu!@#            vwxyz                                       | s0
+  12 |abcdefghijklmnopqrstu!@#                                                        | s0
+  13 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567!@#              89 | s0
+  14 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567!@#               89| s0
+  15 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567!@#                8| s0
+  16 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567!@#                 | s0
+  17 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567!@#                 | s0
+  18 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdefghijklmnop!| s0  wrap
+  19 |@#                                                                              | s0
+  20 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdefghijklmnop!| s0  wrap
+  21 |@#                                                                              | s0
+  22 |abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW!@#  XYZ01234567890abcdefghijkl| s0
+  23 |ICH at end:!@#                                                                  | s0
+  24 |                                                                                | s0

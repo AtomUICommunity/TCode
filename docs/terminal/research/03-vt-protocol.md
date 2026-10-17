@@ -1,6 +1,6 @@
 # 终端协议与兼容性规格（VT / xterm 及现代扩展）
 
-> 用途：TCode 终端组件（Avalonia 12.1.3 + .NET 10，NativeAOT，6 个桌面 RID）的**协议规格书**。实现解析器、屏幕模型、输入编码、查询应答与安全策略时以本文为准。
+> 用途：TKCode 终端组件（Avalonia 12.1.3 + .NET 10，NativeAOT，6 个桌面 RID）的**协议规格书**。实现解析器、屏幕模型、输入编码、查询应答与安全策略时以本文为准。
 > 编写日期：2026-10-16。序列、模式号、API 名保留原文。
 > 目标：默认启动系统 shell，vim / neovim / tmux / htop / less / fzf / Claude Code / Codex 等 TUI 的行为必须与主流终端一致；以后要支持 SSH（远端未必有我们的 terminfo）。
 
@@ -50,7 +50,7 @@
 
 ### 1.1 基本模型
 
-TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xterm 及现代终端公认的扩展。Alacritty `vte`、WezTerm `vtparse`、Ghostty `Parser.zig`、Windows Terminal `stateMachine.cpp` 都是这样做的 [已核实：各仓库文件头注释]。
+TKCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xterm 及现代终端公认的扩展。Alacritty `vte`、WezTerm `vtparse`、Ghostty `Parser.zig`、Windows Terminal `stateMachine.cpp` 都是这样做的 [已核实：各仓库文件头注释]。
 
 状态（14 个，不含 UTF-8 子状态）：
 
@@ -67,7 +67,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 | `dcs_passthrough` | | 00–17、19、1C–7E → **put**；7F 忽略；以 ST / CAN / SUB / ESC 结束 → **unhook** |
 | `dcs_ignore` | DCS 头部格式错误 | 一律忽略，直到 ST |
 | `osc_string` | `ESC ]` / 9D | entry 执行 osc_start；20–7F → osc_put；**BEL(07) 结束 OSC**（xterm 扩展）；其他 C0 忽略；exit 执行 osc_end |
-| `sos_pm_apc_string` | `ESC X` / `ESC ^` / `ESC _` | Williams 规定全部忽略；**TCode 必须把 APC 内容交给处理器**（kitty 图形协议用 `ESC _G…ESC \`），SOS / PM 照旧忽略 |
+| `sos_pm_apc_string` | `ESC X` / `ESC ^` / `ESC _` | Williams 规定全部忽略；**TKCode 必须把 APC 内容交给处理器**（kitty 图形协议用 `ESC _G…ESC \`），SOS / PM 照旧忽略 |
 
 "anywhere"转换，在任何状态下优先生效 [Williams §anywhere；ghostty `parse_table.zig:56-85`]：
 
@@ -81,7 +81,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 | 偏离 | 理由与来源 |
 |---|---|
-| CSI 参数里的 `:`（3A）作为**子参数分隔符**，不再进入 ignore | ECMA-48 §5.4.2(b) 允许 3/10 作为参数子串内的分隔；xterm 支持 `38:2:Pi:R:G:B`、`4:3` 等 [ctlseqs §CSI Pm m]；kitty 键盘协议的应答也用冒号 [kitty-kbd]。Ghostty 只对 `m` 接受冒号，其他 final 带冒号就丢弃整个序列（`Parser.zig` csi_dispatch，`warnCsiSepMismatch`）。WT 用白名单 `_CanSeqAcceptSubParam` [`OutputStateMachineEngine.hpp:251`]。**TCode 做法**：解析层保留每个参数的子参数，由 dispatch 决定；`m`、`=u`、`>4:Nm`（XTMODKEYS）、`48t` 之外的 final 带了冒号就丢弃 |
+| CSI 参数里的 `:`（3A）作为**子参数分隔符**，不再进入 ignore | ECMA-48 §5.4.2(b) 允许 3/10 作为参数子串内的分隔；xterm 支持 `38:2:Pi:R:G:B`、`4:3` 等 [ctlseqs §CSI Pm m]；kitty 键盘协议的应答也用冒号 [kitty-kbd]。Ghostty 只对 `m` 接受冒号，其他 final 带冒号就丢弃整个序列（`Parser.zig` csi_dispatch，`warnCsiSepMismatch`）。WT 用白名单 `_CanSeqAcceptSubParam` [`OutputStateMachineEngine.hpp:251`]。**TKCode 做法**：解析层保留每个参数的子参数，由 dispatch 决定；`m`、`=u`、`>4:Nm`（XTMODKEYS）、`48t` 之外的 final 带了冒号就丢弃 |
 | OSC 可以用 BEL 结束 | [ctlseqs §Operating System Commands]："XTerm accepts either BEL or ST… uses the same terminator used in a query"。**应答必须沿用请求的结束符** |
 | ground 与 OSC 中接收 UTF-8 | 见 §1.3 |
 | APC 内容不再丢弃 | kitty 图形协议（Tier 2）。即使暂不实现，也要能**正确跳过任意长度的 APC** |
@@ -91,9 +91,9 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 结论 [已核实 ctlseqs §Control Bytes；ghostty `stream.zig:1213-1240` 及其测试 `stream.zig:3360-3450`；dgl-2023 建议"Do not implement C1 control characters in UTF-8"]：
 
-1. **字节流始终按 UTF-8 解码**。TCode 不支持 ISO-8859 等非 UTF-8 编码，也不支持 `ESC % @`。
+1. **字节流始终按 UTF-8 解码**。TKCode 不支持 ISO-8859 等非 UTF-8 编码，也不支持 `ESC % @`。
 2. **原始 8 位 C1 字节（80–9F）在 ground 中视为非法 UTF-8**，输出 U+FFFD，**不当作控制符**。xterm 原文的说明："It is not possible to use a C1 control obtained from decoding the UTF-8 text, because that would require reprocessing the data."
-3. **UTF-8 解码得到的 U+0080–U+009F 码点直接丢弃**，既不打印也不执行（与 xterm、Ghostty 一致）。差异提醒：WezTerm 会把解码出的 C1 当控制符执行（`vtparse/src/lib.rs` `next_utf8` 的"Slightly gross special cases"），Alacritty vte 也会执行（`lib.rs` `ground_dispatch`）。TCode 跟随 xterm / Ghostty，这条在安全上更稳妥。
+3. **UTF-8 解码得到的 U+0080–U+009F 码点直接丢弃**，既不打印也不执行（与 xterm、Ghostty 一致）。差异提醒：WezTerm 会把解码出的 C1 当控制符执行（`vtparse/src/lib.rs` `next_utf8` 的"Slightly gross special cases"），Alacritty vte 也会执行（`lib.rs` `ground_dispatch`）。TKCode 跟随 xterm / Ghostty，这条在安全上更稳妥。
 4. 在 escape / CSI / DCS 头部，高位字节只可能来自 C1 或垃圾数据。CSI 参数区只接受 7 位字节。不接受 8 位 C1 引导符（9B / 9D / 90），也就不需要 S8C1T。**`ESC SP G`（S8C1T）直接忽略，应答永远用 7 位形式** [推断：xterm 默认 7 位输出；VT510 S8C1T 页]。
 5. OSC 载荷按 UTF-8 收集，例如标题、URL、`OSC 52` 的 base64。CAN / SUB / ESC 能打断它。
 6. **UTF-8 解码器状态独立于 VT 状态机**。块边界上被截断的多字节序列要跨 `Feed()` 调用保存（Alacritty `partial_utf8`）。多字节序列被 ESC 打断时，先输出 U+FFFD，再处理 ESC（alacritty-vte `lib.rs` `advance_ground` 的 "Process bytes cut off by escape"）。
@@ -111,11 +111,11 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 | CR 0D | 回到行首；DECOM / DECLRMM 时回到左边距 | |
 | SO 0E / SI 0F | LS1 / LS0 切换 GL | 用于 G1 线框字符集 |
 | 其他 C0 | 忽略 | |
-| DEL 7F | 忽略 | 只在 96 字符集映射到 GL 时可打印 [Williams §ground]，TCode 不支持 96 字符集 |
+| DEL 7F | 忽略 | 只在 96 字符集映射到 GL 时可打印 [Williams §ground]，TKCode 不支持 96 字符集 |
 
 ### 1.5 参数与上限
 
-| 项 | 规范说法 | 各实现 | **TCode 规格** |
+| 项 | 规范说法 | 各实现 | **TKCode 规格** |
 |---|---|---|---|
 | 参数个数 | VT510 / Williams：16 个，多余的静默忽略 [VT510 §4.3.3；Williams §param] | xterm.js 32 [`Params.ts:78`]；WT 32 [`stateMachine.hpp:32`]；alacritty-vte 32 [`params.rs:5`]；Ghostty 24（因为 Kakoune 发过 17 个参数的 SGR）[`Parser.zig:196-209`]；WezTerm 256；kitty 256 [`vt-parser.c:22`]；iTerm2 feature-reporting 要求 SGR / DECSET 至少支持 15 个 [iterm2-feat §Parsing] | **32 个参数 + 共 256 个子参数槽**。超出部分丢弃，但仍要识别 final 并跳过整个序列。**不要**因为参数溢出就把整个 SGR 作废，前 32 个照常执行（Alacritty 会作废，那是反例） |
 | 单个子参数个数 | 无规定 | WT 每个参数最多 6 个 [`stateMachine.hpp:35`]；xterm.js 共 32 个 | 每个参数最多 8 个。`38:2::R:G:B` 需要 5 个 |
@@ -167,11 +167,11 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 | 制表位 | `HTS ESC H`、`TBC CSI g`（0 / 3）、`CHT CSI I`、`CBT CSI Z`、`DECST8C CSI ? 5 W` | 初始每 8 列一个。缩小窗口不丢失制表位，**放大后新增的列也按 8 列间隔补齐** [推断：xterm / ghostty 行为]。TBC 只认 0 和 3 [ctlseqs CSI Ps g] | 全部 ✅ |
 | 字符集 | `ESC ( 0` / `ESC ( B` / `ESC ) 0`，SO / SI，`ESC ( A`（英国） | 只需支持 **ASCII、DEC Special Graphics（`0`）和 UK**。DEC 线框映射表见 ghostty `charsets.zig:53-87`（0x60–0x7E 映射到 U+25C6 … U+00B7）。tmux、ncurses 在 `acsc` 里用到它，terminfo 中 `smacs=\E(0`、`rmacs=\E(B`。G2 / G3 和 SS2 / SS3、LS2 / LS3 解析后归入 Tier 1 | 全部 ✅ |
 | REP | `CSI n b` | 重复**前一个可打印字符**。前一个是控制符时不起作用 [ECMA-48 §8.3.103]。n 要钳制。ncurses 的 `rep` 能力会用到（xterm-new 包含 `ansi+rep`）[ncurses] | Gh ✅ Wz ✅ WT ✅ xjs ✅ iT2 ✅ kit ✅ Ala ✅ |
-| 软复位 / 硬复位 | `DECSTR CSI ! p` / `RIS ESC c` | DECSTR 的复位项见 [VT510 DECSTR 表 5-9]：DECTCEM 开、IRM 关、DECOM 关、**DECAWM 关**（DEC 原文如此；xterm 实际保持开启。**TCode 跟 xterm 一样复位为开**，因为 terminfo `rs2` 中 `\E[!p` 之后不会再开 DECAWM [推断]）、DECCKM 关、DECSTBM 全屏、SGR 0、字符集默认、保存的光标回原点。RIS 额外清屏、清 scrollback，并重置调色板、标题、所有模式、kitty 键盘栈、2027 | 全部 ✅ |
+| 软复位 / 硬复位 | `DECSTR CSI ! p` / `RIS ESC c` | DECSTR 的复位项见 [VT510 DECSTR 表 5-9]：DECTCEM 开、IRM 关、DECOM 关、**DECAWM 关**（DEC 原文如此；xterm 实际保持开启。**TKCode 跟 xterm 一样复位为开**，因为 terminfo `rs2` 中 `\E[!p` 之后不会再开 DECAWM [推断]）、DECCKM 关、DECSTBM 全屏、SGR 0、字符集默认、保存的光标回原点。RIS 额外清屏、清 scrollback，并重置调色板、标题、所有模式、kitty 键盘栈、2027 | 全部 ✅ |
 | 括号粘贴 | `CSI ? 2004 h/l` | 粘贴内容用 `ESC[200~ … ESC[201~` 包裹 [ctlseqs §Bracketed Paste Mode]。安全处理见 §8.4 | 全部 ✅ |
 | 焦点事件 | `CSI ? 1004 h/l` | 获得焦点发 `CSI I`，失去焦点发 `CSI O` [ctlseqs §FocusIn/FocusOut]。ConPTY 启动时会主动开启 1004（§4.5） | 全部 ✅ |
 | 鼠标 | 9 / 1000 / 1002 / 1003 + 1006 | 见 §5 | 全部 ✅ |
-| 光标形状 DECSCUSR | `CSI Ps SP q`：0 / 1 闪烁块，2 稳定块，3 / 4 下划线，5 / 6 竖线 | xterm 中 0 等于 1，`7` 恢复为配置值 [ctlseqs]。iTerm2 和 Ghostty 把 0 当作"恢复用户默认"（`Se=\E[0 q` / `\E[2 q`）[iterm2-esc §DECSCUSR 0；ghostty-terminfo]。**TCode：0 = 用户默认形状**（vim / neovim 退出时会发 `Se`）。同时支持 `CSI ? 12 h/l`（闪烁） | 全部 ✅ |
+| 光标形状 DECSCUSR | `CSI Ps SP q`：0 / 1 闪烁块，2 稳定块，3 / 4 下划线，5 / 6 竖线 | xterm 中 0 等于 1，`7` 恢复为配置值 [ctlseqs]。iTerm2 和 Ghostty 把 0 当作"恢复用户默认"（`Se=\E[0 q` / `\E[2 q`）[iterm2-esc §DECSCUSR 0；ghostty-terminfo]。**TKCode：0 = 用户默认形状**（vim / neovim 退出时会发 `Se`）。同时支持 `CSI ? 12 h/l`（闪烁） | 全部 ✅ |
 | 设备查询 | DA1 / DA2 / DSR 5 / DSR 6（CPR）/ DECRQM | 应答内容见 §3。vim、neovim、tmux、Emacs、Codex 启动时都会发出查询（§7.3）。**没有应答会导致这些程序超时**，例如 Codex 每次探测等 250 ms [`terminal_probe.rs:21`] | 全部 ✅ |
 | 窗口标题 | `OSC 0` / `OSC 2`（标题），`OSC 1`（图标名，可以忽略） | 标题按 UTF-8 解析，截断到 4 KiB，**去掉控制字符**（iTerm2 先把控制字符转成脱字符表示 [`VT100Terminal.m:2721-2731`]）。标题栈见 Tier 1 | 全部 ✅ |
 | 超链接 OSC 8 | `OSC 8 ; params ; URI ST` … `OSC 8 ; ; ST` | 超链接是每个格子的一项属性，类似颜色。`id=` 用来把分离的格子连成一个链接。URI 只允许 32–126 范围的字节。安全要求见 §8.3 [osc8] | Gh ✅ Wz ✅ WT ✅ xjs ✅ iT2 ✅ kit ✅ Ala ✅ |
@@ -182,7 +182,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 | 功能 | 序列 | 语义要点与边界 | Gh / Wz / WT / xjs / iT2 / kit / Ala |
 |---|---|---|---|
-| 同步输出 2026 | `CSI ? 2026 h`（BSU）/ `l`（ESU）；用 `CSI ? 2026 $ p` 探测 | 置位期间渲染器继续显示上一帧，解析照常进行。复位时再取最新状态渲染。**必须有超时**：Ghostty 1000 ms [`termio/Thread.zig:38`]，kitty 默认 2000 ms [`screen.c:3842`]，WT 100 ms [`renderer.cpp:576`]。**TCode 取 1000 ms**。DECRPM 应答 1 / 2 [sync]。neovim 和 tmux 会先探测再使用 [`tui.c:575-605`；`tty.c:413-430`] | ✅ ✅ ✅ ✅ ✅ ✅ ✅ |
+| 同步输出 2026 | `CSI ? 2026 h`（BSU）/ `l`（ESU）；用 `CSI ? 2026 $ p` 探测 | 置位期间渲染器继续显示上一帧，解析照常进行。复位时再取最新状态渲染。**必须有超时**：Ghostty 1000 ms [`termio/Thread.zig:38`]，kitty 默认 2000 ms [`screen.c:3842`]，WT 100 ms [`renderer.cpp:576`]。**TKCode 取 1000 ms**。DECRPM 应答 1 / 2 [sync]。neovim 和 tmux 会先探测再使用 [`tui.c:575-605`；`tty.c:413-430`] | ✅ ✅ ✅ ✅ ✅ ✅ ✅ |
 | DECRQM / DECRPM | `CSI Ps $ p`、`CSI ? Ps $ p` → `CSI [?]Ps;Pm $ y` | Pm：0 = 不认识，1 = 置位，2 = 复位，3 = 永久置位，4 = 永久复位 [VT510 DECRPM]。**每次只查一个模式**。所有已实现的模式都必须如实应答，否则 neovim / kitty 生态的探测会失败 | ✅ ✅ ✅ ✅ ✅ ✅ ✅ |
 | SGR 下划线样式 | `4:0` `4:1` `4:2` `4:3`（波浪）`4:4`（点）`4:5`（虚线），`21`（双下划线） | [kitty-ul] terminfo 扩展能力 `Smulx=\E[4:%p1%dm`。**`4:` 之后的子参数不能被误读成 SGR 4 + 下一个参数**。只出现 `4` 时表示单下划线 | ✅ ✅ ◐（单 / 双 [`adaptDispatchGraphics.cpp:247-253`]）✅ ✅ ✅ ✅ |
 | 下划线颜色 | `58:2::r:g:b`、`58:5:n`、`58;5;n`、`58;2;r;g;b`、`59` | 语法同 38 / 48 [kitty-ul]。反显时不反转下划线颜色（未设色时跟随前景）。terminfo 扩展能力 `Setulc`、`Su` | ✅ ✅ ✅ ✅ ✅ ✅ ✅ |
@@ -204,7 +204,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 | 2027 字形簇模式 | `CSI ? 2027 h/l` | 见 §6 | ✅（可改）◐（永久置位）◐（永久置位）❌ ◐（永久复位）❌ ❌（据 [ucs-detect] data/*.yaml） |
 | XTVERSION | `CSI > q` / `CSI > 0 q` → `DCS > | name version ST` | tmux 靠它识别外层终端 [`tty-keys.c` extended DA] | ✅ ✅ ❌ ✅ ✅ ✅ ❌ |
 | XTGETTCAP | `DCS + q hex;hex ST` → 每项 `DCS 1 + r hex=hex ST`，未知项 `DCS 0 + r hex ST` | 见 §3.6 | ✅ ✅ ❌ ❌ ✅ ✅ ❌ |
-| DECRQSS | `DCS $ q Pt ST` → `DCS 1 $ r … ST` 或 `DCS 0 $ r ST` | **xterm 的有效 / 无效码和 VT510 手册正好相反**（ctlseqs §Further reading："the documented code for a valid or invalid response to DECRQSS was reversed"）。**TCode 按 xterm：1 = 有效**。需要支持：`m`、`r`、`s`、`SP q`、`" q` | ✅（m / SP q / r / s）✅ ✅ ? ✅ ✅ ❌ |
+| DECRQSS | `DCS $ q Pt ST` → `DCS 1 $ r … ST` 或 `DCS 0 $ r ST` | **xterm 的有效 / 无效码和 VT510 手册正好相反**（ctlseqs §Further reading："the documented code for a valid or invalid response to DECRQSS was reversed"）。**TKCode 按 xterm：1 = 有效**。需要支持：`m`、`r`、`s`、`SP q`、`" q` | ✅（m / SP q / r / s）✅ ✅ ? ✅ ✅ ❌ |
 | XTWINOPS 子集 | `CSI 14 t`（文本区像素 → `CSI 4;h;w t`）、`CSI 16 t`（格子像素 → `CSI 6;h;w t`）、`CSI 18 t`（行列 → `CSI 8;rows;cols t`）、`CSI 22;0|1|2 t` 和 `CSI 23;… t`（标题栈） | 其他操作（1–11、13、15、19–21、24+）**默认禁用**。xterm 默认也禁用 GetWinTitle 等 [xterm-man disallowedWindowOps]。只支持 18 t 的话 esctest 的部分用例跑不了（§9） | Gh ◐ / Wz ◐（栈只解析不生效 [`mod.rs:2215-2217`]）/ WT ◐（只有 1,2,7,8,14,16,18 [`DispatchTypes.hpp:584-594`]）/ xjs ◐（可配置）/ iT2 ✅ / kit ✅ / Ala ◐（14,18,22,23） |
 | 标题栈 | `CSI 22 ; 0|1|2 t` / `CSI 23 ; … t` | vim 和 neovim 用 terminfo 的 `XT` 推断后会使用。栈深上限 10 [ctlseqs XTWINOPS 说明] | ✅ ❌ ❌ ◐ ✅ ✅ ✅ |
 | 左右边距 | `CSI ? 69 h/l`（DECLRMM）、`CSI l;r s`（DECSLRM） | 69 置位时 `CSI s` 不再是 SCOSC。影响 ICH / DCH / IL / DL / 滚动 / CR / 换行。neovim 探测到后用它加速局部滚动 [`tui.c:575-605`]；tmux 有 `margins` 特性 | ✅ ✅ ✅ ❌ ✅ ❌ ❌ |
@@ -237,7 +237,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 ### 2.4 OSC 133 / 633 详细规格
 
-**FinalTerm 原始定义** [FinalTerm `TerminalStream.vala:542-549`]：`133;A` 提示开始，`B` 命令输入开始，`C` 命令执行（输出开始），`D` 命令结束，`E` / `F` 文本菜单，`G` 进度，`H` 执行命令。**E–H 现代终端都不实现，TCode 必须忽略**（尤其 `H` 是安全隐患）。
+**FinalTerm 原始定义** [FinalTerm `TerminalStream.vala:542-549`]：`133;A` 提示开始，`B` 命令输入开始，`C` 命令执行（输出开始），`D` 命令结束，`E` / `F` 文本菜单，`G` 进度，`H` 执行命令。**E–H 现代终端都不实现，TKCode 必须忽略**（尤其 `H` 是安全隐患）。
 
 **iTerm2 的约定** [iterm2-esc §Shell Integration/FinalTerm]：
 - `D;Ps` 的 Ps 是 0–255 的退出码。
@@ -260,7 +260,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 **VS Code OSC 633** [vscode-si]：`A B C D` 与 133 相同；`E ; <cmdline> [; nonce]` 中命令行用 `\xAB` 转义，**分号和 0x20 以下字符必须转义**；`P ; Cwd=…`、`IsWindows=`、`HasRichCommandDetection=`。只有 nonce 与本会话一致时，才把 `E` 的内容当作可信命令行。WT 已实现 633（`OscActionCodes::VsCodeAction`）。
 
-**TCode 规格**：
+**TKCode 规格**：
 - 解析 133 的 A / B / C / D / L / N / P / I，以及 633 的 A / B / C / D / E / P(Cwd)。在行模型上打语义标记，用于命令块、跳转到上一个提示、退出码徽标、"复制输出"等 UI。
 - 光标位于输入区内时，**调整窗口大小时不要 reflow 该区域**（semprompt §Window re-size 的建议）。
 - `cl` 点击移动光标属于 Tier 2；实现时必须先检查 shell 是否声明了 `cl=`，未声明不得注入方向键。
@@ -318,7 +318,7 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 逐项理由：
 - vim [`term.c:5176-5390`]：
-  - 版本 ≥ 141 时会用 XTGETTCAP 请求按键码（TCode 支持）；
+  - 版本 ≥ 141 时会用 XTGETTCAP 请求按键码（TKCode 支持）；
   - ≥ 277 时设置 `ttymouse=sgr`（窗口超过 223 列时必须）；
   - ≥ 279 时认为可以查询光标样式（我们支持 DECRQSS `SP q`）；
   - ≥ 2500 时启用下划线颜色 `t_8u`。
@@ -334,14 +334,14 @@ TCode 的解析器以 **[Williams] 的 DEC ANSI 状态机**为骨架，叠加 xt
 
 ### 3.5 XTVERSION：`CSI > q` / `CSI > 0 q`
 
-- 应答 `DCS > | TCode <semver> ST`，例如 `ESC P > | TCode 0.9.0 ESC \`。参数不为 0 时不应答 [xterm.js `InputHandler.ts:1772-1777`]。
+- 应答 `DCS > | TKCode <semver> ST`，例如 `ESC P > | TKCode 0.9.0 ESC \`。参数不为 0 时不应答 [xterm.js `InputHandler.ts:1772-1777`]。
 - 格式参照 iTerm2 和 Ghostty：名称 + 空格 + 版本。只用 ASCII 可打印字符。
 - 理由：这是**最可靠的终端识别方式，通过 SSH 也能用**（"XTVERSION is the most reliable, supported by 21 terminals" [quast-2026]）。tmux 按前缀匹配一张已知终端表；不认识的名字不会出错，只是拿不到默认特性，需要依赖 DA1 或 `terminal-features` [tmux `tty-features.c:593-730`]。
 
 ### 3.6 XTGETTCAP：`DCS + q <hex>[;<hex>…] ST`
 
 - 每个名字单独应答一条 `DCS 1 + r <hexname>=<hexvalue> ST`。无值的布尔能力写成 `DCS 1 + r <hexname> ST`（kitty [`terminfo.py:529-537`]）。未知名字应答 `DCS 0 + r <hexname> ST`。
-- xterm 原文说"An invalid name … ends processing of the list"[ctlseqs §DCS + q]，kitty 和 WezTerm 则对每个名字逐一应答。**TCode 逐一应答**，大多数客户端（neovim `vim.tty.query`）都能处理。
+- xterm 原文说"An invalid name … ends processing of the list"[ctlseqs §DCS + q]，kitty 和 WezTerm 则对每个名字逐一应答。**TKCode 逐一应答**，大多数客户端（neovim `vim.tty.query`）都能处理。
 - 能力表（编译期常量，不读系统 terminfo）：
   - `TN` / `name`：**与 TERM 一致**，即 `xterm-256color`（§7）。
   - `Co` / `colors`：`256`。
@@ -433,7 +433,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - Backspace 默认发 **DEL 0x7F**。Ctrl+Backspace 发 **BS 0x08**，Alt+Backspace 发 `ESC 7F`。
   - 依据：kitty 表 [kitty-kbd §Legacy functional keys：Backspace 0x7f，Ctrl 0x8]；WT 的 Backspace 在 DECBKM 复位时发 DEL、Ctrl 反转 [`terminalInput.cpp:909-921`]；Ghostty 的 terminfo 为 `kbs=^?`。
   - 支持 `?67` DECBKM（置位时 Backspace 发 BS）。
-- **注意系统差异**：[本机] macOS 自带的 `xterm-256color` 条目是 `kbs=^H`（ncurses 2015 版），而终端实际发 0x7F。readline 和 zsh 以 `stty erase`（通常是 `^?`）为准，所以一般没问题。只依赖 terminfo `kbs` 的程序可能出错。这是所有使用 xterm-256color 的终端共同的已知问题（ncurses 的 `xterm+kbs` 注释："people who cannot agree on what the backspace key should send"）。**TCode 跟随主流，发 0x7F**。
+- **注意系统差异**：[本机] macOS 自带的 `xterm-256color` 条目是 `kbs=^H`（ncurses 2015 版），而终端实际发 0x7F。readline 和 zsh 以 `stty erase`（通常是 `^?`）为准，所以一般没问题。只依赖 terminfo `kbs` 的程序可能出错。这是所有使用 xterm-256color 的终端共同的已知问题（ncurses 的 `xterm+kbs` 注释："people who cannot agree on what the backspace key should send"）。**TKCode 跟随主流，发 0x7F**。
 - Delete 键发 `CSI 3~`（`?1037` 控制是否改发 DEL，默认不改）。
 
 **Ctrl 映射**：按 kitty 给出的表 [kitty-kbd §Legacy ctrl mapping]：
@@ -445,7 +445,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - macOS 上 Option 默认用于输入字符（例如 Option+b 得到 ∫）。提供 `option_as_alt = left|right|both|none` 配置，默认值可以像 Ghostty 一样按键盘布局决定：美式布局默认开 [ghostty `Config.zig` `macos-option-as-alt`]。
 - 组合后不产生可打印字符的情况（如 Option+Ctrl+a）一律按 Alt 处理。
 
-**AltGr（Windows）**：Windows 上 AltGr 表现为 LeftCtrl + RightAlt。WT 的判断办法：带有效图形码点时视为 AltGr；否则在 50 ms 窗口内用时间差区分"真 Ctrl" [`terminalInput.cpp:364-395`]。TCode 在 Avalonia 层得到文本输入事件时，**优先使用 TextInput 的文本**；只有没有文本输入时才走按键编码。这样 AltGr 输入的字符不会被误判为 Ctrl+Alt 组合。
+**AltGr（Windows）**：Windows 上 AltGr 表现为 LeftCtrl + RightAlt。WT 的判断办法：带有效图形码点时视为 AltGr；否则在 50 ms 窗口内用时间差区分"真 Ctrl" [`terminalInput.cpp:364-395`]。TKCode 在 Avalonia 层得到文本输入事件时，**优先使用 TextInput 的文本**；只有没有文本输入时才走按键编码。这样 AltGr 输入的字符不会被误判为 Ctrl+Alt 组合。
 
 **IME**：组字（preedit）期间不发送任何字节；提交（commit）时把文本以 UTF-8 发出。如果处于括号粘贴模式，**提交文本不加括号粘贴包裹**，它不是粘贴 [推断：Ghostty 的 `paste.Source.text` 也与剪贴板粘贴分开处理]。
 
@@ -500,13 +500,13 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - 修饰值 = 1 + 位掩码：shift 1、alt 2、ctrl 4、super 8、hyper 16、meta 32、caps_lock 64、num_lock 128。
 - 功能键使用规范中的表：方向键 `CSI 1;m A`；F1 `CSI 1;m P` 或 `CSI 11~`；F3 只能用 `CSI 13~`；F13 及以后、媒体键、左右修饰键用 PUA 码 57344–63743。
 - 修饰键自身的事件（如 LEFT_SHIFT 57441）只在 flag 8 下报告。按下修饰键时，该修饰键的位要包含在本次事件里；释放时要清除。
-- **探测**：应用发 `CSI ? u` 加 `CSI c`。TCode 必须按顺序先应答 `CSI ? flags u`，再应答 DA1。
+- **探测**：应用发 `CSI ? u` 加 `CSI c`。TKCode 必须按顺序先应答 `CSI ? flags u`，再应答 DA1。
 
 **各程序的实际使用**：
 - neovim：`CSI >3u`（1 | 2）[`tui.c:316-325`]。
 - Codex：基础为 1 | 4；在 Ghostty / iTerm2 上不加 2，原因是"can leak shortcut release events"[`keyboard_modes.rs:242-259`]；入栈用 `CSI >5u` / `CSI >7u`。
 - Claude Code：靠"回应 kitty 键盘查询"获得 Shift+Enter 等能力（changelog："terminals that answer the kitty keyboard query (such as foot and Alacritty 0.16+) now get Shift+Enter"）。
-- **教训**：开启 flag 2 时，**TCode 自身消费的快捷键（例如 Cmd+C 复制）不得把释放事件发给应用**。按下事件被终端拦截时，对应的释放事件也要一并拦截 [推断，源自 Codex 的注释]。
+- **教训**：开启 flag 2 时，**TKCode 自身消费的快捷键（例如 Cmd+C 复制）不得把释放事件发给应用**。按下事件被终端拦截时，对应的释放事件也要一并拦截 [推断，源自 Codex 的注释]。
 
 ### 4.5 Windows：ConPTY 与 win32-input-mode
 
@@ -528,7 +528,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - **ConPTY 内部当前强制关闭 KKP 转换**（`ForceDisableKittyKeyboardProtocol(true)`，TODO GH#19847 [`VtIo.cpp:125-131`]），并且在 ConPTY 下忽略 `CSI = u` 等序列 [`adaptDispatch.cpp:2079-2103`]。
 - 所以在 Windows 下，**宿主终端只有支持 9001，原生控制台程序（PowerShell / PSReadLine、cmd、Far）才能收到 Ctrl+Space、Shift+Enter、修饰键单独按下等事件** [wt-4999 §Abstract 列出的问题]。
 - 要注意的是，WSL / ssh 内的 Linux TUI 发出的 kitty 键盘请求，经过 ConPTY 后不会传到我们这里。ConPTY 会把 win32 事件重新编码成该程序请求的 VT 格式（spec 中 "WT → conpty → wsl" 的场景）。
-- **TCode 规格（Windows）**：
+- **TKCode 规格（Windows）**：
   - 支持 `?9001`。置位时**所有键盘输入**都按 win32 格式发送（包括 IME 提交的字符：Vk = 0 或 VK_PACKET，Uc = 码元）。
   - Avalonia 的 KeyEventArgs 要还原出 Vk、扫描码、`dwControlKeyState`（含 NUMLOCK_ON、ENHANCED_KEY 等位）。这需要 Win32 原生消息信息，属于 AOT 安全的 P/Invoke 范围，由平台层负责（参见 05 号报告）。
   - 焦点事件（1004）照常发送。
@@ -555,10 +555,10 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 | 模式 | 格式 | 结论 |
 |---|---|---|
 | 默认 X10 | `CSI M Cb Cx Cy`，三个值都 +32 编码成单字节 | 坐标上限 223（255 − 32）。超出时**不发送该事件**（xterm 不发）[推断] |
-| `?1005` UTF-8 | 把 Cx、Cy（及 Cb）按 UTF-8 编码，上限 2015 | 会混淆非 UTF-8 应用。xterm.js 已移除。**TCode：解析后忽略，DECRPM 应答 4** |
+| `?1005` UTF-8 | 把 Cx、Cy（及 Cb）按 UTF-8 编码，上限 2015 | 会混淆非 UTF-8 应用。xterm.js 已移除。**TKCode：解析后忽略，DECRPM 应答 4** |
 | `?1006` SGR | `CSI < Cb ; Px ; Py M`（按下 / 移动）/ `m`（释放） | Cb 不加 32；释放时保留按钮号。**主力编码** |
-| `?1015` urxvt | `CSI Cb ; Px ; Py M`，Cb 加 32 | 与 DL（`CSI M`）冲突，ctlseqs 明确不推荐。xterm.js 已移除。TCode 忽略 |
-| `?1016` SGR-Pixels | 同 1006，但 Px、Py 为像素坐标 | 1 起算还是 0 起算：xterm 以文本区左上角为 (1,1) [推断]。TCode 跟随 Ghostty / kitty 的实现，测试时用 kitty 的 `kitten show-key`、ucs-detect 校准 |
+| `?1015` urxvt | `CSI Cb ; Px ; Py M`，Cb 加 32 | 与 DL（`CSI M`）冲突，ctlseqs 明确不推荐。xterm.js 已移除。TKCode 忽略 |
+| `?1016` SGR-Pixels | 同 1006，但 Px、Py 为像素坐标 | 1 起算还是 0 起算：xterm 以文本区左上角为 (1,1) [推断]。TKCode 跟随 Ghostty / kitty 的实现，测试时用 kitty 的 `kitten show-key`、ucs-detect 校准 |
 
 **Cb 位定义**：
 - 低 2 位：0 左键，1 中键，2 右键，3 释放（只在非 SGR 编码中使用）。
@@ -650,7 +650,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - fish：提供 `fish_emoji_width`（默认 2）和 `fish_ambiguous_width` 两个变量，让用户与终端对齐 [fish 4.x 文档]。
 - iTerm2：`OSC 1337 ; UnicodeVersion=8|9` 用来切换宽度表 [iterm2-esc]。
 
-### 6.3 TCode 建议策略
+### 6.3 TKCode 建议策略
 
 1. **两套宽度模式**：
    - **兼容模式（默认，2027 复位）**：逐码点计算宽度，组合字符（宽度 0）附着在前一个格子上；**VS16 不改变宽度**，**ZWJ 不合并**（每个 emoji 各占 2 格）；区域指示符各宽 1 或 2，按 wcwidth 表。
@@ -658,13 +658,13 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
    - 依据：主流 shell（bash / readline、zsh）仍逐码点计算；neovim 会**主动探测并开启 2027**（`tui.c:254-258`：模式处于复位状态时会置位它），fish 4 和 Claude Code 自己处理字形簇。默认选兼容模式，能最大限度避免 shell 光标错位；需要的程序可以自己开启。**这是决策点**（见第 2 个决策），备选是像 Ghostty 一样默认使用 unicode。
 2. **宽度表随 Unicode 版本更新**。在 NativeAOT 下由源码生成器从 UCD 18.0 的 `EastAsianWidth.txt`、`emoji-data.txt`、`DerivedCoreProperties.txt`、`GraphemeBreakProperty.txt`、`IndicSyllabicCategory`（InCB）生成静态表，**不依赖 .NET 运行时的 `StringInfo`**，因为其 Unicode 版本跟随运行时、不可控 [推断]。
 3. **歧义宽度**：默认窄（1），符合 UAX #11 的建议，与 WezTerm、WT 默认一致（`treat_east_asian_ambiguous_width_as_wide = false`；WT `compatibility.ambiguousWidth = Narrow`）。提供"宽"选项，供使用 CJK 遗留软件的用户，并提示需要与 shell / locale 同时调整。私用区默认 1；Nerd Font 图标靠字体溢出显示，宽度仍算 1。
-4. **CPR 必须与网格一致**：宽度测量完全以 TCode 的网格为准，ucs-detect 正是靠 CPR 来测的。
+4. **CPR 必须与网格一致**：宽度测量完全以 TKCode 的网格为准，ucs-detect 正是靠 CPR 来测的。
 5. **DECRPM 2027**：可切换，应答 1 或 2。
 6. **渲染与宽度解耦**：字体测得的字形宽度不改变格子宽度。宽度为 1 的格子里放了宽字形时，允许溢出到右侧格子，或按比例缩放（属于渲染层，参见 04 号报告）。
 
 ### 6.4 字形簇存储上限
 
-- 每个格子的字形簇码点数设上限。Ghostty 是 64 [`page.zig:92`]，超出的码点静默丢弃。TCode 取 **32 个码点**，能覆盖最长的 ZWJ emoji（约 10 个码点）和梵文合字，又能防止 `e + 10000 个组合符` 一类攻击 [推断]。
+- 每个格子的字形簇码点数设上限。Ghostty 是 64 [`page.zig:92`]，超出的码点静默丢弃。TKCode 取 **32 个码点**，能覆盖最长的 ZWJ emoji（约 10 个码点）和梵文合字，又能防止 `e + 10000 个组合符` 一类攻击 [推断]。
 - 兼容模式下组合符同样受此上限约束。
 
 ---
@@ -688,10 +688,10 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 2. **环境变量**：`TERM_PROGRAM` / `TERM_PROGRAM_VERSION`（neovim 用它识别 WezTerm 版本 [`tui.c:525-551`]；VS Code 文档建议据此发送 633）；`COLORTERM=truecolor|24bit`（neovim 据此直接开启 termguicolors [`defaults.lua:1014-1018`]）。**这些变量默认不会通过 SSH 传递**，需要 `SendEnv` / `AcceptEnv`。
 3. **TERM / terminfo**：vim 用 `keyprotocol` 按 TERM 名选择 kitty 协议或 mok2；neovim 按 terminfo 族名判断 `xterm-kitty`、`xterm-ghostty` [`tui.c:2180-2205`]。
 
-### 7.3 TCode 推荐策略
+### 7.3 TKCode 推荐策略
 
 **本地（启动系统 shell）**：
-- `TERM=xterm-256color`，`COLORTERM=truecolor`，`TERM_PROGRAM=TCode`（建议与 XTVERSION 名称一致），`TERM_PROGRAM_VERSION=<semver>`。
+- `TERM=xterm-256color`，`COLORTERM=truecolor`，`TERM_PROGRAM=TKCode`（建议与 XTVERSION 名称一致），`TERM_PROGRAM_VERSION=<semver>`。
 - 清除继承来的 `VTE_VERSION`、`KITTY_WINDOW_ID`、`WT_SESSION`、`ITERM_SESSION_ID`、`TERMINFO` 等可能误导程序的变量（Ghostty 的做法）[推断 + `Exec.zig`]。
 - 设置 `LANG` / `LC_CTYPE` 保证 UTF-8（参见 05 号报告）。
 - **v1 不发布自定义 terminfo**。理由：
@@ -699,7 +699,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
   - (b) 现代能力（样式下划线、同步输出、kitty 键盘、真彩色）已经可以通过 §7.2 的查询方式探测，neovim、Codex、Claude Code、fish、tmux 都会主动查询；
   - (c) Ghostty 和 kitty 为自有 terminfo 付出了大量 SSH / sudo / tcell 兼容成本（Ghostty 注释提到 tcell 要求 terminfo 主名必须等于 TERM [`terminfo/ghostty.zig:6-16`]）。
 - **代价**：xterm-256color 没有 `Smulx` / `Setulc` / `Sync` / `Su` / `Tc`，只看 terminfo 的程序（例如未做探测的 ncurses 应用）用不到这些能力。可以用 XTGETTCAP 部分弥补，vim 和 neovim 会查询。
-- **v2 可选**：提供 `xterm-tcode` 条目（`use=xterm-256color` + 扩展能力），作为用户主动选择的选项。参照 Ghostty `ssh-terminfo` 的办法自动安装。
+- **v2 可选**：提供 `xterm-tkcode` 条目（`use=xterm-256color` + 扩展能力），作为用户主动选择的选项。参照 Ghostty `ssh-terminfo` 的办法自动安装。
 
 **SSH（以后内建 SSH 客户端时）**：
 - 远端 `TERM=xterm-256color`。通过 SSH 的 env 请求发送 `COLORTERM`、`TERM_PROGRAM`、`TERM_PROGRAM_VERSION`；远端拒绝时静默跳过。
@@ -708,9 +708,9 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 - 远端发来的 OSC 7 / OSC 8 `file://` 带远端主机名，**不得当作本地路径打开**（§8.3、§8.5）。
 
 **tmux 兼容性**：
-- 在 TCode 里运行 tmux 时，tmux 会查询 XTVERSION。名字 "TCode" 不在 tmux 的表中，会落到 DA1 + `xterm*` 的默认特性：clipboard、ccolour、cstyle、focus、title，再加上 2026 探测到的 sync。RGB 需要用户设置 `terminal-features` 或 `Tc`。
-- **建议**：TCode 文档提示 `set -as terminal-features ',xterm-256color:RGB:hyperlinks:usstyle:extkeys'`。长期可以向 tmux 提交 PR，把 TCode 加入 `tty_default_features` 表 [推断]。
-- tmux 内部的 TUI 需要 `allow-passthrough` 才能把 OSC 9 / 1337 等透传给 TCode（Claude Code changelog："reach the outer terminal when running inside tmux with `set -g allow-passthrough on`"）。
+- 在 TKCode 里运行 tmux 时，tmux 会查询 XTVERSION。名字 "TKCode" 不在 tmux 的表中，会落到 DA1 + `xterm*` 的默认特性：clipboard、ccolour、cstyle、focus、title，再加上 2026 探测到的 sync。RGB 需要用户设置 `terminal-features` 或 `Tc`。
+- **建议**：TKCode 文档提示 `set -as terminal-features ',xterm-256color:RGB:hyperlinks:usstyle:extkeys'`。长期可以向 tmux 提交 PR，把 TKCode 加入 `tty_default_features` 表 [推断]。
+- tmux 内部的 TUI 需要 `allow-passthrough` 才能把 OSC 9 / 1337 等透传给 TKCode（Claude Code changelog："reach the outer terminal when running inside tmux with `set -g allow-passthrough on`"）。
 
 ---
 
@@ -769,7 +769,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
   - 依据：Ghostty `isSafe` / `isSafeWith` [`input/paste.zig:180-199`]；`clipboard-paste-protection = true`、`clipboard-paste-bracketed-safe = true` 为默认值。
 - 未开启括号粘贴时，`\n` 转换为 `\r`（xterm 行为）[ghostty paste.zig 注释]。
 - 也可以提供"总是确认多行粘贴"选项，供更谨慎的用户使用。
-- Agent 场景（TCode 特有）：Agent 工具向终端写入输入时**也走同一套过滤**，并且永远不走括号粘贴之外的原始写入 [推断：TCode 设计需要；与 05 号报告一致]。
+- Agent 场景（TKCode 特有）：Agent 工具向终端写入输入时**也走同一套过滤**，并且永远不走括号粘贴之外的原始写入 [推断：TKCode 设计需要；与 05 号报告一致]。
 
 ### 8.5 其他输入信道
 
@@ -790,8 +790,8 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 
 | 套件 | 性质 | 用法 |
 |---|---|---|
-| **vttest** 2.7（20251205） | 交互式、菜单驱动，覆盖 VT100–VT520、xterm 扩展、鼠标、字符集、键盘 | `vttest -l` 记录日志，`-c` 回放（键盘和鼠标测试仍需人工）[vttest.1]。用于人工验收和录制回放：在 TCode 中运行 vttest，同时录制 PTY 输出流，用作 §9.2 的黄金样本。**不要用合成的 GUI 输入去驱动**（遵守项目的 UI 验证约定） |
-| **esctest2**（George Nachman / Thomas Dickey） | 全自动，80 个测试文件，"xterm, but without bugs in George's opinion" | 依赖 **DECRQCRA** 读格子内容（`escutil.AssertScreenCharsInRectEqual` 逐格求校验和）、`CSI 18 t` 读尺寸、CPR、DECRQSS、XTGETTCAP（`Co`）。`--expected-terminal` 只认 xterm / iTerm2；`--max-vt-level`。**做法**：TCode 提供"测试模式"开关，开启 DECRQCRA 和 XTWINOPS 全集；用无头 PTY 宿主（不需要 GUI）把 esctest 当子进程运行，CI 中跑 `--expected-terminal=xterm`，失败的用例维护一份 known-bugs 列表。这一项**只读运行 Python 脚本，没有构建步骤** |
+| **vttest** 2.7（20251205） | 交互式、菜单驱动，覆盖 VT100–VT520、xterm 扩展、鼠标、字符集、键盘 | `vttest -l` 记录日志，`-c` 回放（键盘和鼠标测试仍需人工）[vttest.1]。用于人工验收和录制回放：在 TKCode 中运行 vttest，同时录制 PTY 输出流，用作 §9.2 的黄金样本。**不要用合成的 GUI 输入去驱动**（遵守项目的 UI 验证约定） |
+| **esctest2**（George Nachman / Thomas Dickey） | 全自动，80 个测试文件，"xterm, but without bugs in George's opinion" | 依赖 **DECRQCRA** 读格子内容（`escutil.AssertScreenCharsInRectEqual` 逐格求校验和）、`CSI 18 t` 读尺寸、CPR、DECRQSS、XTGETTCAP（`Co`）。`--expected-terminal` 只认 xterm / iTerm2；`--max-vt-level`。**做法**：TKCode 提供"测试模式"开关，开启 DECRQCRA 和 XTWINOPS 全集；用无头 PTY 宿主（不需要 GUI）把 esctest 当子进程运行，CI 中跑 `--expected-terminal=xterm`，失败的用例维护一份 known-bugs 列表。这一项**只读运行 Python 脚本，没有构建步骤** |
 | **ucs-detect** 2.3.x | 通过 CPR 测宽度，并探测 2026 / 2027 / 2031 / 2048 / 5522、kitty 键盘、OSC 52、XTGETTCAP、DECRQSS 等，输出 YAML | 每个发布版本跑一次 `ucs-detect --save-yaml`，与 Ghostty 等的 data/*.yaml 对照；目标是 WIDE / ZWJ / VS16 / VS15 在 2027 模式下 ≥ 98%。可以把结果提交给上游 data 目录 |
 | xterm.js 回归素材 | `test/fixtures/escape_sequence_files/*.in` + `.text`（80×25，由 xterm 生成期望值），约 80 对，覆盖 CUP / IND / RI / DECSTBM / IRM / alt screen / SGR / vttest / vim | MIT 许可，可以直接作为黄金样本（需要按 NOTES 处理末尾空行）[xterm.js `test/fixtures/escape_sequence_files/NOTES`] |
 | Alacritty ref tests | `alacritty_terminal/tests/ref/<name>/{alacritty.recording, grid.json, size.json, config.json}`，45 个（含 tmux_htop、vim_simple_edit、zsh_tab_completion、vttest_*） | Apache-2.0 / MIT。recording 就是原始字节流；grid.json 是期望网格（需要写转换器读成我们的快照格式）。很适合作为"真实 TUI 字节流 → 网格"的黄金样本 |
@@ -809,7 +809,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
    - 解码得到的 C1 被忽略；原始 0x9B 输出 U+FFFD。
 2. **屏幕模型快照**：用 `.in`（原始字节）+ `.snap`（文本 + 每格属性 + 光标 + 模式 + 滚动区 + 应答字节的规范化文本）构成黄金样本对，覆盖：
    - xterm.js 与 Alacritty 的素材（转换后入库，注明来源和许可）；
-   - 自行录制的真实程序：用 `script -q` / asciinema 在 TCode 或其他终端里录制 vim 打开文件并编辑、htop 刷新 3 帧、tmux 分屏、less 翻页、fzf 过滤、Claude Code 和 Codex 一轮对话（**不发起真实的模型调用，可以用各自的离线 / mock 模式或录制回放**）；
+   - 自行录制的真实程序：用 `script -q` / asciinema 在 TKCode 或其他终端里录制 vim 打开文件并编辑、htop 刷新 3 帧、tmux 分屏、less 翻页、fzf 过滤、Claude Code 和 Codex 一轮对话（**不发起真实的模型调用，可以用各自的离线 / mock 模式或录制回放**）；
    - 宽度：ucs-detect 的 `docs/ucs_example_files` 素材。
    - 快照在 Windows / macOS / Linux 上必须**逐字节一致**，确保与平台无关。
 3. **应答测试**：断言查询序列的应答字节，例如 DA1、`CSI ? u` + DA1 的顺序、DECRPM 全表、XTGETTCAP、DECRQSS 回读 SGR（模拟 neovim 的探测）。
@@ -828,7 +828,7 @@ ANSI 模式 2（KAM）、12（SRM）按 xterm 应答：SRM 永久置位 3（Ghos
 
 ---
 
-## 附录 A：控制序列速查（TCode 实现清单）
+## 附录 A：控制序列速查（TKCode 实现清单）
 
 ESC 序列：
 - `ESC 7` / `8`、`ESC D` / `E` / `H` / `M`、`ESC c`、`ESC =` / `>`

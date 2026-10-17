@@ -1,6 +1,6 @@
-# Anthropic Messages API 协议规范（TCode 实现用）
+# Anthropic Messages API 协议规范（TKCode 实现用）
 
-> 适用：TCode 直接用 `HttpClient` + SSE 实现 `POST /v1/messages`（不使用官方 SDK）。
+> 适用：TKCode 直接用 `HttpClient` + SSE 实现 `POST /v1/messages`（不使用官方 SDK）。
 > 编写日期：2026-10-16。字段名、事件名、错误类型一律保留英文原文。
 
 ## 0. 来源与可信度标注
@@ -83,7 +83,7 @@ GET  {base_url}/v1/models/{id}          # 查询模型 capabilities（context、
 | `max_tokens` | int | ✔ | 输出上限，**thinking 也计入**。允许为 `0`，表示只预热缓存（见 8.6） |
 | `messages` | MessageParam[] | ✔ | 见 2.3 |
 | `system` | string \| TextBlockParam[] | | 顶层 system prompt。用 block 数组时可以加 `cache_control` |
-| `stream` | bool | | TCode 应**始终为 `true`** |
+| `stream` | bool | | TKCode 应**始终为 `true`** |
 | `thinking` | ThinkingConfig | | 见第 5 节，规则按模型不同 |
 | `output_config` | `{effort?, format?, task_budget?(beta)}` | | 见 2.6 |
 | `tools` | ToolUnion[] | | 见 2.5 |
@@ -94,7 +94,7 @@ GET  {base_url}/v1/models/{id}          # 查询模型 capabilities（context、
 | `service_tier` | `"auto"` \| `"standard_only"` | | priority 容量选择 |
 | `speed` | `"standard"` \| `"fast"` | | fast mode。部分模型需要 `fast-mode-2026-02-01` beta [SDK] |
 | `inference_geo` | string | | 推理地域 |
-| `container` | object | | code execution 容器复用，TCode 一般不用 |
+| `container` | object | | code execution 容器复用，TKCode 一般不用 |
 | `diagnostics` | `{previous_message_id}` | | 缓存未命中诊断，需要配合 `cache-diagnosis-2026-04-07` beta [Skill:prompt-caching.md] |
 | `temperature` / `top_p` / `top_k` | number | | **SDK v1.x 已从方法签名中删除**，API 只对旧模型还接受。新模型发送会 400，见 2.7 [SDK:MIGRATION.md] |
 
@@ -103,7 +103,7 @@ beta-only 字段（必须配合 `anthropic-beta`）：`context_management`、`mc
 ### 2.2 `system`
 
 ```json
-"system": "You are TCode..."
+"system": "You are TKCode..."
 ```
 或
 ```json
@@ -124,8 +124,8 @@ beta-only 字段（必须配合 `anthropic-beta`）：`context_management`、`mc
 
 1. `content` 为 string 时，等价于 `[{"type":"text","text":...}]`。
 2. **第一条必须是 `user`。** 首条为 `assistant` 返回 400；首条为 `system` 也不行，初始 system prompt 用顶层 `system`。[Skill:error-codes.md, prompt-caching.md]
-3. **user 和 assistant 交替。** 官方 SDK docstring 说连续的同角色消息会被合并成一个 turn [SDK:message_create_params.py]，但 error-codes 里也有 `roles must alternate` 的 400 示例。**TCode 发送前必须自己合并相邻的同角色消息**，不要依赖服务端行为。
-4. **Prefill（最后一条是 assistant）：** Opus 4.6+、Sonnet 4.6+、所有 Fable/Mythos、Haiku 5.5 上返回 400。TCode **永远以 user（或 system）消息结尾**。唯一例外是 `pause_turn` 续写：原样回传以 server tool 结尾的 assistant 消息（见 7.3）。[Skill:model-migration.md]
+3. **user 和 assistant 交替。** 官方 SDK docstring 说连续的同角色消息会被合并成一个 turn [SDK:message_create_params.py]，但 error-codes 里也有 `roles must alternate` 的 400 示例。**TKCode 发送前必须自己合并相邻的同角色消息**，不要依赖服务端行为。
+4. **Prefill（最后一条是 assistant）：** Opus 4.6+、Sonnet 4.6+、所有 Fable/Mythos、Haiku 5.5 上返回 400。TKCode **永远以 user（或 system）消息结尾**。唯一例外是 `pause_turn` 续写：原样回传以 server tool 结尾的 assistant 消息（见 7.3）。[Skill:model-migration.md]
 5. `role:"system"` 消息（mid-conversation system messages）的规则见 2.4。
 
 ### 2.4 Mid-conversation system messages（`role:"system"`）
@@ -206,7 +206,7 @@ beta-only 字段（必须配合 `anthropic-beta`）：`context_management`、`mc
 ```
 SDK 原文：“Thinking blocks must be passed back unmodified and in their original order; a modified block results in a 400 `invalid_request_error`.” [SDK:types/thinking_block_param.py]
 
-**其他：** `search_result`、`server_tool_use`、`web_search_tool_result`、`web_fetch_tool_result`、`code_execution_tool_result`、`container_upload` 等。对 TCode 的要求是：**无法识别的 assistant block 也必须原样回放**（按 `JsonElement` 透传）。
+**其他：** `search_result`、`server_tool_use`、`web_search_tool_result`、`web_fetch_tool_result`、`code_execution_tool_result`、`container_upload` 等。对 TKCode 的要求是：**无法识别的 assistant block 也必须原样回放**（按 `JsonElement` 透传）。
 
 ### 2.6 `tools`
 
@@ -241,7 +241,7 @@ Anthropic 定义的 schema-less 工具（只写 `type`+`name`，**不能带 `inp
 - `auto`、`any`、`tool` 都可以加 `disable_parallel_tool_use: true`：配合 `auto` 时表示“至多一个”调用，配合 `any`/`tool` 时表示“恰好一个”。[SDK:tool_choice_*_param.py]
 - **以下模型对 `any` 和 `tool` 返回 400：** Fable 5.1、Mythos 5.1、Opus 5.5、Sonnet 5.5。错误为 `tool_choice: type "tool" and "any" are not supported for this model.`，`count_tokens` 和 Batches 同样适用。Fable 5 和 Opus 5 仍然接受。Haiku 5.5 接受，但强制调用时会跳过 thinking。[Skill:tool-use-concepts.md, model-migration.md]
 - 老模型使用 manual extended thinking（`enabled`）时，`any`/`tool` 与 thinking 不兼容 [记忆·待核实]。Bedrock 上的 Sonnet 5 使用强制 tool_choice 时必须 `thinking: disabled`。
-- **TCode 策略：只发送 `auto` 或 `none`。** 需要强制调用时在 prompt 里明确要求，并检查实际是否调用。
+- **TKCode 策略：只发送 `auto` 或 `none`。** 需要强制调用时在 prompt 里明确要求，并检查实际是否调用。
 
 ### 2.8 `output_config`
 
@@ -279,7 +279,7 @@ effort 默认值与支持情况（**以 `GET /v1/models/{id}` 的 `capabilities.
 
 [Skill:error-codes.md, model-migration.md；SDK:MIGRATION.md]
 
-**TCode 策略：默认不发送；只有用户显式配置，并且模型在允许列表里时才发送。**
+**TKCode 策略：默认不发送；只有用户显式配置，并且模型在允许列表里时才发送。**
 
 ---
 
@@ -334,7 +334,7 @@ effort 默认值与支持情况（**以 `GET /v1/models/{id}` 的 `capabilities.
     {"type":"tool_use","id":"toolu_02","name":"list_dir","input":{"path":"."}}
   ]},
   {"role":"user","content":[
-    {"type":"tool_result","tool_use_id":"toolu_01","content":"# TCode ..."},
+    {"type":"tool_result","tool_use_id":"toolu_01","content":"# TKCode ..."},
     {"type":"tool_result","tool_use_id":"toolu_02","content":"permission denied","is_error":true},
     {"type":"text","text":"<system-reminder>…</system-reminder>"}
   ]}
@@ -376,14 +376,14 @@ effort 默认值与支持情况（**以 `GET /v1/models/{id}` 的 `capabilities.
 
 [Skill:curl/examples.md §Extended Thinking, error-codes.md, models.md, model-migration.md]
 
-**TCode 策略：** 按模型族建立能力表，或者运行时查询 `/v1/models/{id}` 的 `capabilities.thinking.types.*.supported` 和 `capabilities.effort.*`。新模型（Opus 5.5、Fable、Sonnet 5.5、Haiku 5.5）**省略 `thinking`**，或发送 `{"type":"adaptive","display":"summarized"}`；只用 effort 控制思考深度。
+**TKCode 策略：** 按模型族建立能力表，或者运行时查询 `/v1/models/{id}` 的 `capabilities.thinking.types.*.supported` 和 `capabilities.effort.*`。新模型（Opus 5.5、Fable、Sonnet 5.5、Haiku 5.5）**省略 `thinking`**，或发送 `{"type":"adaptive","display":"summarized"}`；只用 effort 控制思考深度。
 
 ### 5.3 display 模式
 
 - `omitted`：thinking block **照常返回**，但 `thinking` 字段是**空串**，只带 `signature`。流式时表现为一段长时间的沉默。
 - `summarized`：返回可读的摘要（从来不是原始 CoT；Opus 5+ 和 Fable 从不返回原始思维）。
 - `updates`（beta `thinking-display-updates-2026-08-18`，Fable 5/5.1、Mythos、Opus 5.5、Sonnet 5.5）：只返回工具调用之间的“进度更新”文本，reasoning 仍然隐藏。规则：**任何非空的 thinking block 都是进度更新**，渲染成状态行；空 block 不渲染。一次响应里可能有 0 个或多个，每次 tool_use 前至多一个。截断时最后一个 block 的文本可能恰好是 `This part of the response was interrupted before it finished.`
-- **注意：** Opus 5.5、Sonnet 5.5、Fable 5.1 会把“工具调用之间的较长说明”放进 thinking block 而不是 text block。只渲染 text 的 UI 会长时间无输出，所以 TCode 要渲染非空 thinking。
+- **注意：** Opus 5.5、Sonnet 5.5、Fable 5.1 会把“工具调用之间的较长说明”放进 thinking block 而不是 text block。只渲染 text 的 UI 会长时间无输出，所以 TKCode 要渲染非空 thinking。
 - `display` 只影响可见性，计费完全相同。**序列化时不能跳过空 thinking block。**
 
 [Skill:model-migration.md §Opus 4.7 silent changes, Fable 5.1 §New API features 3, Opus 5.5 §Text between tool calls]
@@ -413,7 +413,7 @@ effort 默认值与支持情况（**以 `GET /v1/models/{id}` 的 `capabilities.
 
    [Skill:model-migration.md §Migrating to Claude Fable 5.1 from Claude Fable 5 Breaking change 2/3, §Opus 5.5 Breaking change 3, §Sonnet 5.5 Breaking change 3；SDK:beta_thinking_*]
 6. **账户绑定：** Haiku 5.5 的 block，以及 Bedrock/Vertex 上 Sonnet 5.5 的 block，只在产生它的账户（或关联账户）内有效，其他账户会丢弃。
-7. **跨厂商：** 来自 DeepSeek、Kimi 等第三方的 thinking block，签名对 Anthropic 无效。按“不可解密签名总是 400”这一规则推断，**切换到 Anthropic 时必须剥离其他厂商产生的 thinking block**；反过来切换时同理 [推断·待测试]。TCode 应在每个 thinking block 上记录 `provider` 和 `model` 来源。
+7. **跨厂商：** 来自 DeepSeek、Kimi 等第三方的 thinking block，签名对 Anthropic 无效。按“不可解密签名总是 400”这一规则推断，**切换到 Anthropic 时必须剥离其他厂商产生的 thinking block**；反过来切换时同理 [推断·待测试]。TKCode 应在每个 thinking block 上记录 `provider` 和 `model` 来源。
 
 ---
 
@@ -528,20 +528,20 @@ data: {"type":"message_stop"}
 
 取值 [SDK:types/stop_reason.py]：`end_turn`、`max_tokens`、`stop_sequence`、`tool_use`、`pause_turn`、`refusal`、`model_context_window_exceeded`。在流中，`stop_reason` 在 `message_start` 里为 null，在 `message_delta` 里给出。
 
-| stop_reason | 含义 | TCode 处理 |
+| stop_reason | 含义 | TKCode 处理 |
 |---|---|---|
 | `end_turn` | 自然结束 | turn 结束，等待用户 |
 | `tool_use` | 发起了一个或多个工具调用 | 执行所有 tool_use，然后回传 tool_result（第 4 节） |
 | `max_tokens` | 达到 `max_tokens` 或模型上限 | 已有 text 标记为截断。**存在 tool_use 时不执行**。可以提高 `max_tokens` 后重试，或者追加 user 消息要求“继续”。thinking 可能耗尽预算，导致只有 thinking 没有 text。`max_tokens:0` 的预热请求也返回这个值 |
 | `stop_sequence` | 命中自定义停止序列 | 读取 `stop_sequence` |
-| `pause_turn` | **server tool**（web_search、code_execution 等）的服务端循环达到上限（默认 10 次）后暂停 | 把 assistant content **原样**追加到历史，**不要添加 "continue" 之类的 user 消息**，直接再发请求，服务端检测到末尾的 `server_tool_use` 会自动续跑。设置最大续跑次数（例如 5）。只用 client tools 的 TCode 一般遇不到，但必须处理 [Skill:tool-use-concepts.md] |
+| `pause_turn` | **server tool**（web_search、code_execution 等）的服务端循环达到上限（默认 10 次）后暂停 | 把 assistant content **原样**追加到历史，**不要添加 "continue" 之类的 user 消息**，直接再发请求，服务端检测到末尾的 `server_tool_use` 会自动续跑。设置最大续跑次数（例如 5）。只用 client tools 的 TKCode 一般遇不到，但必须处理 [Skill:tool-use-concepts.md] |
 | `refusal` | 安全分类器拒绝，或者模型自己拒绝。**HTTP 仍是 200** | **先判断 `stop_reason`，再读 content。** content 可能为空（输出前就拒绝），也可能是部分输出（流中途拒绝），部分输出要丢弃。**本轮的 tool_use 一律不执行**（可能被截断）。`stop_details = {type:"refusal", category: "cyber"\|"bio"\|"frontier_llm"\|"reasoning_extraction"\|"general_harms"\|null, explanation: string\|null}`，只用于提示，**不要用它分支**。可选 server-side `fallbacks`（beta），见 [Skill:model-migration.md §refusal stop reason] |
 | `model_context_window_exceeded` | 达到**上下文窗口**上限（不是 max_tokens） | 当前输出有效但不完整。触发 compaction 或摘要后继续 [Skill:model-migration.md 4.5+] |
 
 补充：
 
 - 进度 block 截断哨兵：在 `display:"updates"` 下，由 `max_tokens`、`model_context_window_exceeded` 或 `stop_sequence` 结束时，最后一个 thinking 的文本可能是 `This part of the response was interrupted before it finished.`。续写时原样回传 assistant turn，再追加 user 消息（如果有 tool_use，要附上对应的 tool_result）。
-- server-side fallback 时 content 中可能出现 `{"type":"fallback","from":{"model"},"to":{"model"}}` block（作为普通的 `content_block_start`/`stop` 到达）。TCode 不使用 fallbacks 时不会出现，但解析器要能容忍未知 block。
+- server-side fallback 时 content 中可能出现 `{"type":"fallback","from":{"model"},"to":{"model"}}` block（作为普通的 `content_block_start`/`stop` 到达）。TKCode 不使用 fallbacks 时不会出现，但解析器要能容忍未知 block。
 
 ---
 
@@ -568,7 +568,7 @@ data: {"type":"message_stop"}
 | Opus 4.7、Haiku 3.5 | 2048 |
 | Opus 4.6、Opus 4.5、Haiku 4.5 | 4096 |
 
-### 8.3 TCode 推荐布局（agent loop）
+### 8.3 TKCode 推荐布局（agent loop）
 
 1. 工具按 name 排序，确定性序列化（JSON key 顺序固定，不放时间戳或 UUID）。
 2. 在**静态 system 的最后一个 block** 上放显式断点，同时缓存 tools 和 system。
@@ -666,7 +666,7 @@ data: {"type":"message_stop"}
 
 ## 10. 完整请求示例
 
-### 10.1 TCode 典型的 agent loop 请求（Opus 5.5，流式）
+### 10.1 TKCode 典型的 agent loop 请求（Opus 5.5，流式）
 
 ```json
 {
@@ -677,7 +677,7 @@ data: {"type":"message_stop"}
   "output_config": {"effort": "medium"},
   "cache_control": {"type": "ephemeral"},
   "system": [
-    {"type": "text", "text": "<TCode 静态 system prompt>", "cache_control": {"type": "ephemeral"}}
+    {"type": "text", "text": "<TKCode 静态 system prompt>", "cache_control": {"type": "ephemeral"}}
   ],
   "tools": [
     {"name": "edit_file", "description": "...", "eager_input_streaming": true,
@@ -712,7 +712,7 @@ data: {"type":"message_stop"}
 
 ---
 
-## 11. Beta header 速查（TCode 可能用到的）
+## 11. Beta header 速查（TKCode 可能用到的）
 
 | beta | 作用 |
 |---|---|
@@ -735,7 +735,7 @@ data: {"type":"message_stop"}
 
 ## 12. Anthropic 兼容的第三方端点（简表，存在不确定性）
 
-结论先说：这些端点都是“近似兼容”。TCode 应为每个 provider 维护一个**能力描述**（认证方式、是否支持 cache_control、effort 取值集合、thinking 配置方式、是否支持 `role:"system"`、是否支持 document 和 redacted_thinking、是否可以发送 anthropic-beta 等），**不能**把 Anthropic 的高级特性原样发过去。
+结论先说：这些端点都是“近似兼容”。TKCode 应为每个 provider 维护一个**能力描述**（认证方式、是否支持 cache_control、effort 取值集合、thinking 配置方式、是否支持 `role:"system"`、是否支持 document 和 redacted_thinking、是否可以发送 anthropic-beta 等），**不能**把 Anthropic 的高级特性原样发过去。
 
 | 厂商 | Base URL | 认证 | 已知支持 | 已知忽略或不支持 | 来源 / 可信度 |
 |---|---|---|---|---|---|
@@ -744,7 +744,7 @@ data: {"type":"message_stop"}
 | **Moonshot Kimi** | `https://api.moonshot.ai/anthropic`（中国区 `.cn` 待核实） | `Authorization: Bearer` | 模型 `kimi-k3`；`system`；`stream`；`stop_sequences`（≤ 5 条，每条 ≤ 32 字节）；`tool_choice` 只有 `auto`/`any`/`none`（**没有 `tool`**）；**只支持顶层 `cache_control`**（messages 内的断点被忽略）；`output_config.effort` 取 `low`/`high`/`max`（默认 max，中途修改会破坏缓存）；`output_config.format`；thinking block 带 signature，需要原样回传；`output_tokens_details.thinking_tokens`；stop_reason 只有 end_turn/max_tokens/tool_use/refusal；最后一条为 assistant 时进入 Partial Mode 续写 | 请求侧 `thinking` 参数**没有文档**，思考深度由 effort 控制；document、temperature、top_k、anthropic-beta 均无文档 | [3P:https://platform.kimi.ai/docs/api/messages] 中等可靠 |
 | **智谱 / Z.ai（GLM）** | `https://open.bigmodel.cn/api/anthropic`（国际版疑为 `https://api.z.ai/api/anthropic`，待核实） | `x-api-key` | 基础 messages 和流式 | 官方页面只说“某些场景下与 Claude 接口仍存在差异”，没有列出明细。第三方资料称 GLM 4.5+ 默认开启 thinking、部分型号不允许 disabled、需要回传 reasoning 内容 | [3P:https://docs.bigmodel.cn/cn/guide/develop/claude/introduction] 低可靠，需要实测 |
 
-对 TCode 的兼容建议：
+对 TKCode 的兼容建议：
 
 1. 对第三方端点**默认不发送**：`anthropic-beta`、`eager_input_streaming`、`block_binding`、`role:"system"` 消息（统一降级为 user 文本）、`display:"updates"`、`clear_at`、`fallbacks`。
 2. thinking block 带上来源标记（provider+model）。**跨 provider 切换时剥离对方产生的 thinking 和 redacted_thinking**；同 provider 内原样回放。

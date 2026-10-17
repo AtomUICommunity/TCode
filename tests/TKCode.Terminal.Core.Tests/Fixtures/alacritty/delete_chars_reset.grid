@@ -1,0 +1,40 @@
+tkcode-grid 1
+size 106x30 cell 8x16
+cursor 43,2 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=1 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+  s1 fg=1 bold inverse strikethrough underline=single
+rows
+   0 |[kchibisov@NightLord alacritty]$ printf "\e[31;1;7;4;9md\n"                                               | s0
+   1 |d                                                                                                         | s1:0 s0:1-105
+   2 |[kchibisov@NightLord alacritty]$ printf "\ed\n"                                                           | s1:0-46 s0:47-105
+   3 |                                                                                                          | s0
+   4 |                                                                                                          | s0
+   5 |                                                                                                          | s0
+   6 |                                                                                                          | s0
+   7 |                                                                                                          | s0
+   8 |                                                                                                          | s0
+   9 |                                                                                                          | s0
+  10 |                                                                                                          | s0
+  11 |                                                                                                          | s0
+  12 |                                                                                                          | s0
+  13 |                                                                                                          | s0
+  14 |                                                                                                          | s0
+  15 |                                                                                                          | s0
+  16 |                                                                                                          | s0
+  17 |                                                                                                          | s0
+  18 |                                                                                                          | s0
+  19 |                                                                                                          | s0
+  20 |                                                                                                          | s0
+  21 |                                                                                                          | s0
+  22 |                                                                                                          | s0
+  23 |                                                                                                          | s0
+  24 |                                                                                                          | s0
+  25 |                                                                                                          | s0
+  26 |                                                                                                          | s0
+  27 |                                                                                                          | s0
+  28 |                                                                                                          | s0
+  29 |                                                                                                          | s0

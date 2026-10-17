@@ -1,0 +1,156 @@
+<!--
+  模型选择器：芯片（模型图标 + 短名 + 参数摘要）+ 弹层。
+  弹层左侧为主卡片（Provider 页签 / 搜索 / 模型列表 / 参数行），右侧为参数子菜单卡片，两张卡片底部对齐。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.ModelPickerView"
+             x:DataType="vm:ModelPickerViewModel">
+    <Panel>
+        <Button x:Name="Chip" Theme="{StaticResource TKCode.ChipButton}" Classes.selected="{Binding #Popup.IsOpen}"
+                Padding="6,0" VerticalAlignment="Center" Click="OnChipClick" ToolTip.Tip="{loc:TKCodeLangResource SelectModel}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <icons:ProviderLogo Key="{Binding Selected.IconKey, FallbackValue={x:Null}}" Width="15" Height="15" VerticalAlignment="Center" />
+                <TextBlock Classes="strong" Text="{Binding Selected.ShortName, FallbackValue=…}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TKCode.TextPrimary}" />
+                <TextBlock Classes="secondary" Text="{Binding Summary}" FontSize="12" VerticalAlignment="Center" />
+            </StackPanel>
+        </Button>
+
+        <motion:Popover x:Name="Popup" PlacementTarget="{Binding #Chip}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
+               IsLightDismissEnabled="True" Closed="OnPopupClosed" Opened="OnPopupOpened">
+            <Grid ColumnDefinitions="Auto,Auto" Margin="0,0,24,24">
+                <!-- ======= 主卡片 ======= -->
+                <Border Classes="menu" Width="300">
+                    <StackPanel>
+                        <!-- Provider 页签 -->
+                        <!-- 选中下划线在页签之间滑动 -->
+                        <motion:IndicatorPanel Mode="Underline" IndicatorBrush="{DynamicResource TKCode.Accent}">
+                        <ItemsControl ItemsSource="{Binding Tabs}" Margin="4,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ModelTabViewModel">
+                                    <StackPanel Orientation="Horizontal" IsVisible="{Binding IsAvailable}">
+                                        <!-- Agents 分组：与内置厂商之间的分隔线 -->
+                                        <Border Width="1" Height="16" Margin="4,0" Background="{DynamicResource TKCode.MenuBorder}" VerticalAlignment="Center"
+                                                IsVisible="{Binding StartsRuntimeGroup}" ToolTip.Tip="{loc:TKCodeLangResource AgentsGroup}" />
+                                        <Button Theme="{StaticResource TKCode.IconTab}" Classes.active="{Binding IsActive}" ToolTip.Tip="{Binding Title}"
+                                                motion:IndicatorPanel.IsCurrent="{Binding IsActive}"
+                                                Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).ActivateTabCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Panel>
+                                                <icons:LucideIcon Kind="StarFilled" Width="14" Height="14" IsVisible="{Binding IsFavorites}" />
+                                                <icons:ProviderLogo Key="{Binding IconKey}" Width="16" Height="16" IsVisible="{Binding !IsFavorites}" />
+                                            </Panel>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </motion:IndicatorPanel>
+                        <Border Classes="menuDivider" />
+
+                        <!-- 搜索 -->
+                        <Grid ColumnDefinitions="Auto,*" Margin="10,2">
+                            <icons:LucideIcon Kind="Search" Width="14" Height="14" Margin="0,0,2,0" StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                            <atom:LineEdit x:Name="SearchBox" Grid.Column="1" StyleVariant="Borderless" Background="Transparent"
+                                           PlaceholderText="{loc:TKCodeLangResource SearchModels}" Text="{Binding Search, Mode=TwoWay}" />
+                        </Grid>
+                        <Border Classes="menuDivider" />
+
+                        <!-- 模型列表 -->
+                        <ScrollViewer MaxHeight="204" atom:ScrollViewer.IsLiteMode="True">
+                            <!-- 右侧留出滚动条的位置，滚动条浮在内容上会盖住收藏按钮 -->
+                            <ItemsControl ItemsSource="{Binding VisibleModels}" Margin="4,4,12,4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModelOptionViewModel">
+                                        <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="32" Margin="0,1"
+                                                Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).SelectCommand}"
+                                                CommandParameter="{Binding}" ToolTip.Tip="{Binding Name}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                                <TextBlock Classes="strong" Text="{Binding ShortName}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding Description}" FontSize="12"
+                                                           Margin="8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <Border Grid.Column="2" Classes="kbd" IsVisible="{Binding Shortcut, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                                    <TextBlock Text="{Binding Shortcut}" />
+                                                </Border>
+                                                <Button Grid.Column="3" Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                                                        Margin="6,0,0,0" HorizontalContentAlignment="Center"
+                                                        Foreground="{DynamicResource TKCode.TextSecondary}"
+                                                        Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).ToggleFavoriteCommand}"
+                                                        CommandParameter="{Binding}">
+                                                    <Panel>
+                                                        <icons:LucideIcon Kind="Star" Width="13" Height="13" IsVisible="{Binding !IsFavorite}" />
+                                                        <icons:LucideIcon Kind="StarFilled" Width="13" Height="13" IsVisible="{Binding IsFavorite}"
+                                                                          StrokeBrush="{DynamicResource TKCode.TextPrimary}" />
+                                                    </Panel>
+                                                </Button>
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Classes="secondary" Margin="12,10" FontSize="12" IsVisible="{Binding IsEmpty}"
+                                   Text="{loc:TKCodeLangResource NoModels}" />
+                        <Border Classes="menuDivider" />
+
+                        <!-- 参数行 -->
+                        <ItemsControl ItemsSource="{Binding Parameters}" Margin="4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ModelParameterViewModel">
+                                    <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsExpanded}" MinHeight="32" Margin="0,1"
+                                            IsEnabled="{Binding IsEnabled}"
+                                            Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).ToggleParameterCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <TextBlock Classes="strong" Text="{Binding Title}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Classes="secondary" Text="{Binding ValueLabel}" VerticalAlignment="Center" />
+                                            <icons:LucideIcon Grid.Column="2" Kind="ChevronRight" Width="12" Height="12" Margin="8,0,0,0"
+                                                              StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- ======= 参数子菜单 ======= -->
+                <!-- 从左侧滑出；切换参数时选项逐项入场 -->
+                <Border Grid.Column="1" Classes="menu" Width="228" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                        motion:Presence.IsPresent="{Binding ExpandedParameter, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        motion:Presence.Effect="SlideRight">
+                    <ItemsControl ItemsSource="{Binding ExpandedParameter.Choices, FallbackValue={x:Null}}" Margin="4"
+                                  motion:ItemsMotion.Enter="SlideRight">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ModelParameterChoiceViewModel">
+                                <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="32" Margin="0,1"
+                                        Command="{Binding $parent[UserControl].((vm:ModelPickerViewModel)DataContext).ChooseParameterCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <TextBlock Classes="strong" Text="{Binding Label}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Classes="tertiary" Text="{loc:TKCodeLangResource Default}" FontSize="11"
+                                                   Margin="8,0" VerticalAlignment="Center" IsVisible="{Binding IsDefault}" />
+                                        <Panel Grid.Column="2" Width="14">
+                                            <icons:LucideIcon Kind="Check" Width="13" Height="13" IsVisible="{Binding IsSelected}" />
+                                        </Panel>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+            </Grid>
+        </motion:Popover>
+    </Panel>
+</UserControl>

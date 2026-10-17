@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TKCode.Mcp</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TKCode.Agent.Coding\TKCode.Agent.Coding.csproj" />
+        <ProjectReference Include="..\TKCode.Config\TKCode.Config.csproj" />
+        <ProjectReference Include="..\TKCode.Runtimes\TKCode.Runtimes.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="ModelContextProtocol.Core" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TKCode.Mcp.Tests" />
+    </ItemGroup>
+</Project>

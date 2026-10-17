@@ -1,0 +1,68 @@
+<!-- 统一 diff：双行号列、整行着色、左侧色条；块头为分隔行。工具步骤与变更面板共用。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             x:Class="TKCode.Desktop.Views.DiffView">
+    <UserControl.Styles>
+        <Style Selector="Border.row">
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.row.added">
+            <Setter Property="Background" Value="{DynamicResource TKCode.DiffAddBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TKCode.Success}" />
+        </Style>
+        <Style Selector="Border.row.removed">
+            <Setter Property="Background" Value="{DynamicResource TKCode.DiffRemoveBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TKCode.Danger}" />
+        </Style>
+        <Style Selector="Border.row.hunk">
+            <Setter Property="Background" Value="{DynamicResource TKCode.DiffHunkBg}" />
+        </Style>
+        <Style Selector="TextBlock.code">
+            <Setter Property="FontFamily" Value="{StaticResource TKCode.MonoFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="LineHeight" Value="20" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextPrimary}" />
+        </Style>
+        <Style Selector="TextBlock.gutter">
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextTertiary}" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style Selector="TextBlock.code.hunk">
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextTertiary}" />
+        </Style>
+        <Style Selector="TextBlock.code.added">
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.Success}" />
+        </Style>
+        <Style Selector="TextBlock.code.removed">
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.Danger}" />
+        </Style>
+    </UserControl.Styles>
+    <Border Background="{DynamicResource TKCode.CodeBg}" CornerRadius="8" ClipToBounds="True">
+        <ScrollViewer x:Name="Scroller" atom:ScrollViewer.IsLiteMode="True"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="Rows" Padding="0,6">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DiffLineViewModel">
+                        <Border Classes="row" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
+                                Classes.hunk="{Binding IsHunk}" Padding="0,0,12,0">
+                            <Grid ColumnDefinitions="40,40,16,*">
+                                <TextBlock Grid.Column="0" Classes="code gutter" Text="{Binding OldText}" />
+                                <TextBlock Grid.Column="1" Classes="code gutter" Text="{Binding NewText}" />
+                                <TextBlock Grid.Column="2" Classes="code" Classes.added="{Binding IsAdded}"
+                                           Classes.removed="{Binding IsRemoved}" Text="{Binding Sign}" />
+                                <TextBlock Grid.Column="3" Classes="code" Classes.hunk="{Binding IsHunk}"
+                                           Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
+                                           Text="{Binding Text}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Border>
+</UserControl>

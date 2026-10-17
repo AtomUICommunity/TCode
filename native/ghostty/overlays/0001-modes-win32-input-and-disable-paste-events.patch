@@ -6,7 +6,7 @@ index 6786f00..6ab72ca 100644
  #define GHOSTTY_MODE_VISIBILITY_REPORT (ghostty_mode_new(2033, false)) /**< Report terminal visibility */
  #define GHOSTTY_MODE_IN_BAND_RESIZE   (ghostty_mode_new(2048, false)) /**< In-band size reports */
  #define GHOSTTY_MODE_PASTE_EVENTS     (ghostty_mode_new(5522, false)) /**< Kitty clipboard protocol paste events */
-+#define GHOSTTY_MODE_WIN32_INPUT      (ghostty_mode_new(9001, false)) /**< win32-input-mode (TCode overlay O1) */
++#define GHOSTTY_MODE_WIN32_INPUT      (ghostty_mode_new(9001, false)) /**< win32-input-mode (TKCode overlay O1) */
  /** @} */
  
  /**
@@ -19,11 +19,11 @@ index 95e5236..45af75a 100644
          // The macOS app and libghostty-vt can both serve the follow-up
          // Kitty clipboard read that a paste event grants.
 -        .disabled = build_options.artifact != .lib and builtin.os.tag != .macos,
-+        // TCode overlay O2: disabled. TCode runs two cores per session and the
++        // TKCode overlay O2: disabled. TKCode runs two cores per session and the
 +        // paste-event grant would live in a different core from the read request.
 +        .disabled = true,
      },
-+    // TCode overlay O1: Windows Terminal win32-input-mode. ConPTY requests it
++    // TKCode overlay O1: Windows Terminal win32-input-mode. ConPTY requests it
 +    // at startup; tracking it here lets the embedder encode keys accordingly.
 +    .{ .name = "win32_input", .value = 9001, .default_configurable = false },
  };
@@ -38,7 +38,7 @@ index 1930537..d30599a 100644
  //! bit 41  in_band_size_reports
  //! bit 42  kitty_paste_events
 -//! bits 43-63  reserved, zero
-+//! bit  43     win32_input (TCode overlay O1)
++//! bit  43     win32_input (TKCode overlay O1)
 +//! bits 44-63  reserved, zero
  //! ```
  //!
@@ -48,7 +48,7 @@ index 1930537..d30599a 100644
          try writer.writeByte(@intFromBool(self.password_input));
  
 -        // Runtime, saved, and reset mode sets. ModePacked occupies 43 bits;
-+        // Runtime, saved, and reset mode sets. ModePacked occupies 44 bits (TCode overlay O1);
++        // Runtime, saved, and reset mode sets. ModePacked occupies 44 bits (TKCode overlay O1);
          // its eight-byte wire slots zero-extend the native packed value.
          const mode_values = [_]terminal_modes.ModePacked{
              self.current_modes,

@@ -25,9 +25,9 @@ commit="$(json 'd["commit"]')"
 optimize="${optimize:-$(json 'd["build"]["optimize"]')}"
 args="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(' '.join(d['build']['args'] + d['build']['perRid'][sys.argv[2]]))" "$manifest" "$rid")"
 
-zig="${TCODE_ZIG:-}"
+zig="${TKCODE_ZIG:-}"
 [[ -n "$zig" ]] || zig="$("$root/tools/terminal/install-zig.sh" | tail -1)"
-export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/tcode/zig-global}"
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/tkcode/zig-global}"
 
 # 1. 源码：独立的检出目录，按提交号定位；每次构建前恢复为干净状态再打补丁
 src="$root/artifacts/src/ghostty-${commit:0:12}"

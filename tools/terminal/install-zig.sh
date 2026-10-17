@@ -12,7 +12,7 @@ a = z["archives"][f"{arch}-{os_}"]
 print(z["version"], z["baseUrl"], a["file"], a["sha256"])
 ' "$root/native/toolchain.json")"
 read -r version base file sha <<< "$info"
-dest="${XDG_CACHE_HOME:-$HOME/.cache}/tcode/zig/$version"
+dest="${XDG_CACHE_HOME:-$HOME/.cache}/tkcode/zig/$version"
 if [[ -x "$dest/zig" ]] && [[ "$("$dest/zig" version)" == "$version" ]]; then
   echo "$dest/zig"; exit 0
 fi

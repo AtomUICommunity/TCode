@@ -158,18 +158,18 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/tcode/zig
+            ~/.cache/tkcode/zig
             ${{ github.workspace }}/.zig-cache-global
           key: zig-linux-${{ hashFiles('native/toolchain.json', 'native/ghostty/ghostty-upstream.json') }}
       - run: for rid in linux-x64 win-x64; do tools/terminal/build-ghostty.sh "$rid"; done
-      - run: native/tcodepty/build.sh linux-x64
+      - run: native/tkcodepty/build.sh linux-x64
       - uses: actions/upload-artifact@v4
         with:
           name: native-linux
           path: |
             artifacts/native/*/*ghostty-vt.*
-            artifacts/native/*/*tcodepty.*
-            artifacts/native/*/tcode-pty-spawn
+            artifacts/native/*/*tkcodepty.*
+            artifacts/native/*/tkcode-pty-spawn
             artifacts/native/*/ghostty-commit.txt
           if-no-files-found: error
 
@@ -184,17 +184,17 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/tcode/zig
+            ~/.cache/tkcode/zig
             ${{ github.workspace }}/.zig-cache-global
           key: zig-macos-${{ hashFiles('native/toolchain.json', 'native/ghostty/ghostty-upstream.json') }}
-      - run: for rid in osx-arm64 osx-x64; do tools/terminal/build-ghostty.sh "$rid"; native/tcodepty/build.sh "$rid"; done
+      - run: for rid in osx-arm64 osx-x64; do tools/terminal/build-ghostty.sh "$rid"; native/tkcodepty/build.sh "$rid"; done
       - uses: actions/upload-artifact@v4
         with:
           name: native-macos
           path: |
             artifacts/native/*/*ghostty-vt.*
-            artifacts/native/*/*tcodepty.*
-            artifacts/native/*/tcode-pty-spawn
+            artifacts/native/*/*tkcodepty.*
+            artifacts/native/*/tkcode-pty-spawn
             artifacts/native/*/ghostty-commit.txt
           if-no-files-found: error
 
@@ -219,18 +219,18 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          dotnet publish src/TCode.Desktop/TCode.Desktop.csproj -c Release -r win-x64 -p:Version=${{ needs.setup.outputs.version }} -o artifacts/publish/win-x64 2>&1 | tee publish.log
+          dotnet publish src/TKCode.Desktop/TKCode.Desktop.csproj -c Release -r win-x64 -p:Version=${{ needs.setup.outputs.version }} -o artifacts/publish/win-x64 2>&1 | tee publish.log
           if grep -E 'warning IL[0-9]{4}' publish.log; then echo "::error::AOT/trim warnings"; exit 1; fi
       - name: Smoke test
         shell: bash
         run: |
-          [ "$(artifacts/publish/win-x64/TCode.exe --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
-          artifacts/publish/win-x64/ptyhost/tcode-ptyhost.exe --self-test
+          [ "$(artifacts/publish/win-x64/TKCode.exe --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
+          artifacts/publish/win-x64/ptyhost/tkcode-ptyhost.exe --self-test
       - name: Build installer
         shell: pwsh
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ needs.setup.outputs.version }} `
-            /DSourceDir="$PWD\artifacts\publish\win-x64" /DOutputDir="$PWD\dist" src\TCode.Desktop\Packaging\windows\TCode.iss
+            /DSourceDir="$PWD\artifacts\publish\win-x64" /DOutputDir="$PWD\dist" src\TKCode.Desktop\Packaging\windows\TKCode.iss
       - uses: actions/upload-artifact@v4
         with:
           name: dist-win-x64
@@ -255,16 +255,16 @@ jobs:
         with:
           name: streammark-packages
           path: packages/streammark
-      - run: chmod +x artifacts/native/*/tcode-pty-spawn
+      - run: chmod +x artifacts/native/*/tkcode-pty-spawn
       - name: AOT publish (0 IL warnings)
         run: |
           set -o pipefail
-          dotnet publish src/TCode.Desktop/TCode.Desktop.csproj -c Release -r linux-x64 -p:Version=${{ needs.setup.outputs.version }} -o artifacts/publish/linux-x64 2>&1 | tee publish.log
+          dotnet publish src/TKCode.Desktop/TKCode.Desktop.csproj -c Release -r linux-x64 -p:Version=${{ needs.setup.outputs.version }} -o artifacts/publish/linux-x64 2>&1 | tee publish.log
           if grep -E 'warning IL[0-9]{4}' publish.log; then echo "::error::AOT/trim warnings"; exit 1; fi
       - name: Smoke test
         run: |
-          [ "$(artifacts/publish/linux-x64/TCode --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
-          artifacts/publish/linux-x64/ptyhost/tcode-ptyhost --self-test
+          [ "$(artifacts/publish/linux-x64/TKCode --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
+          artifacts/publish/linux-x64/ptyhost/tkcode-ptyhost --self-test
       - run: tools/release/package-linux.sh artifacts/publish/linux-x64 ${{ needs.setup.outputs.version }} linux-x64 dist
       - uses: actions/upload-artifact@v4
         with:
@@ -293,7 +293,7 @@ jobs:
         with:
           name: streammark-packages
           path: packages/streammark
-      - run: chmod +x artifacts/native/*/tcode-pty-spawn
+      - run: chmod +x artifacts/native/*/tkcode-pty-spawn
       - name: Import signing certificate
         env:
           APP_P12: ${{ secrets.MACOS_APP_CERT_P12 }}
@@ -311,7 +311,7 @@ jobs:
           # shellcheck disable=SC2046  # 原有的 keychain 列表按空白拆开
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           echo "MACOS_SIGN_IDENTITY=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')" >> "$GITHUB_ENV"
-      - name: Build and sign TCode.app (0 IL warnings)
+      - name: Build and sign TKCode.app (0 IL warnings)
         run: |
           set -o pipefail
           tools/package_macos_app.sh ${{ matrix.rid }} artifacts ${{ needs.setup.outputs.version }} 2>&1 | tee publish.log
@@ -319,14 +319,14 @@ jobs:
       - name: Smoke test
         if: matrix.rid == 'osx-arm64'
         run: |
-          [ "$(artifacts/TCode.app/Contents/MacOS/TCode --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
-          artifacts/TCode.app/Contents/MacOS/ptyhost/tcode-ptyhost --self-test
+          [ "$(artifacts/TKCode.app/Contents/MacOS/TKCode --version | cut -d' ' -f1)" = "${{ needs.setup.outputs.version }}" ]
+          artifacts/TKCode.app/Contents/MacOS/ptyhost/tkcode-ptyhost --self-test
       - name: Notarize, zip + dmg
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: tools/release/package-macos.sh artifacts/TCode.app ${{ needs.setup.outputs.version }} ${{ matrix.rid }} dist
+        run: tools/release/package-macos.sh artifacts/TKCode.app ${{ needs.setup.outputs.version }} ${{ matrix.rid }} dist
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.rid }}
@@ -361,5 +361,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # 手动运行时 tag 不存在，gh 在当前提交（--target）上创建
-          gh release create "${{ needs.setup.outputs.tag }}" dist/* --target "$GITHUB_SHA" --title "TCode ${{ needs.setup.outputs.version }}" --generate-notes \
+          gh release create "${{ needs.setup.outputs.tag }}" dist/* --target "$GITHUB_SHA" --title "TKCode ${{ needs.setup.outputs.version }}" --generate-notes \
             ${{ needs.setup.outputs.draft == 'true' && '--draft' || '' }} ${{ needs.setup.outputs.prerelease == 'true' && '--prerelease' || '' }}

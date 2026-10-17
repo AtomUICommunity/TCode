@@ -1,4 +1,4 @@
-# TCode 终端：路线图与验收
+# TKCode 终端：路线图与验收
 
 > 状态：设计稿 v1（2026-10-17）。本文把 01–12 中的实施拆分、spike 和待决问题汇总为一份按里程碑排列的计划。工期是**单人全职的粗略估计** [推断]，M0 完成后按实测修订。
 
@@ -6,7 +6,7 @@
 
 每个里程碑都要满足以下几条才算完成：
 
-1. **AOT**：`dotnet publish -c Release -r <rid>`（Desktop 和 tcode-ptyhost）0 个 IL2xxx/IL3xxx 警告，并且实际运行过发布后的二进制（[12](12-build-and-ci.md)）。
+1. **AOT**：`dotnet publish -c Release -r <rid>`（Desktop 和 tkcode-ptyhost）0 个 IL2xxx/IL3xxx 警告，并且实际运行过发布后的二进制（[12](12-build-and-ci.md)）。
 2. **平台**：在 macOS arm64、Windows x64、Linux x64 三台机器上跑过本里程碑的测试，其余 RID 至少在 CI 中构建并加载成功。
 3. **测试**：[11](11-testing-benchmarks.md) §5 中本里程碑对应的测试全部进入 CI。
 4. **文档**：实现中偏离设计的地方，要回写到对应的设计文档里。
@@ -33,24 +33,24 @@ M3 的视图可以先接**回放连接**开发（[01](01-architecture.md) §6.5 
 | libghostty-vt 在 6 个 RID 上构建（Zig 0.16.0）、加载、通过一个回放用例；Windows x64 反汇编确认没有 AVX | [02](02-core-ghostty.md) S1、[12](12-build-and-ci.md) §4 | 6 个 RID 的 CI 全绿 |
 | overlay O1–O4 能打上并通过上游测试；O1 后 `ModePacked` 的位宽与快照编解码 | 02 §2.4、S13 | 补丁可应用，快照往返通过 |
 | 绑定生成器原型（ClangSharp）；按值传结构体的 ABI 往返；`terminal_get_multi` 行为 | 02 S2、S3、S15 | 6 个 RID 往返测试通过 |
-| libtcodepty + helper 在 4 个 Unix RID 上构建；`tcpty_spawn` 往返；ConPTY 往返（DA1 握手） | [03](03-pty.md) | 三个平台上 `echo` 往返成功 |
+| libtkcodepty + helper 在 4 个 Unix RID 上构建；`tcpty_spawn` 往返；ConPTY 往返（DA1 握手） | [03](03-pty.md) | 三个平台上 `echo` 往返成功 |
 | macOS login shell：argv0 `-zsh` 直接启动（不经 login），断言退出码和 PATH | 03 §8.3、07 §3.2 | `exit 3` 得到退出码 3；Homebrew 路径在 PATH 中 |
 | `Control.Render` 画出一个静态网格（含宽字符、box drawing） | [05](05-rendering.md) | 截图测试通过 |
 | AOT 二进制中运行 `vim` 并退出 | 11 §5 | 人工 + 冒烟 |
-| 建立 CI（TCode 目前没有 CI；需要先解决 StreamMark 本地源的问题） | 12 §7 | `ci.yml` 跑通 |
+| 建立 CI（TKCode 目前没有 CI；需要先解决 StreamMark 本地源的问题） | 12 §7 | `ci.yml` 跑通 |
 
 #### M0 实施状态（2026-10-17）
 
 | 任务 | 状态 | 说明 |
 |---|---|---|
 | libghostty-vt 构建 | **完成（本机）**：osx-arm64 构建并通过全部测试；linux-x64、win-arm64 从 macOS 交叉编译成功；6 个 RID 待 CI 验证 | `tools/terminal/build-ghostty.sh`；Zig 0.16.0 由 `tools/terminal/install-zig.sh` 按 `native/toolchain.json` 安装并校验 SHA-256。linux-x64 剥离后约 2.2 MB，glibc 最高 2.27。**win-arm64 开启 SIMD 也能编译**（12 号文档的担忧未出现，运行时待验证） |
-| overlay O1–O4 | **完成** | `native/ghostty/overlays/0001`（O1 9001、O2 停用 5522）、`0002`（O3 延后应答 + 终止符、O4 modifyOtherKeys）；macOS 的导出列表追加 `_tcode_ghostty_*`。C 检查（`native/ghostty/test/overlay_check.c`）13/13，C# 测试覆盖同样的行为；O1 后快照往返保留 9001（S13） |
-| 绑定 | **M0 手写子集**（约 40 个函数），生成器（S3）推迟到 M1 | `TCode.Terminal.Core/Interop`；结构体布局用 `ghostty_type_json()` 清单逐字段校验。注意 `DisableRuntimeMarshalling` 下 `Marshal.SizeOf/OffsetOf` 测的是封送布局，不能用于校验 |
-| Unix PTY | **完成**：libtcodepty（spawn、管道模式 spawn、gather 读、wait、resize、退出监视、信号、进程信息）+ helper（PTY / `--exec` / `--exec-cwd` / `--detach`） | `native/tcodepty/build.sh`；macOS clang，Linux `zig cc`（glibc 2.28、helper musl 静态）；`-Werror` 通过。C 冒烟测试 9/9；C# 测试 11/11（控制终端、cwd、像素 resize、退出码、信号、SIGPIPE 复位、前台进程、挂断关闭、vim） |
+| overlay O1–O4 | **完成** | `native/ghostty/overlays/0001`（O1 9001、O2 停用 5522）、`0002`（O3 延后应答 + 终止符、O4 modifyOtherKeys）；macOS 的导出列表追加 `_tkcode_ghostty_*`。C 检查（`native/ghostty/test/overlay_check.c`）13/13，C# 测试覆盖同样的行为；O1 后快照往返保留 9001（S13） |
+| 绑定 | **M0 手写子集**（约 40 个函数），生成器（S3）推迟到 M1 | `TKCode.Terminal.Core/Interop`；结构体布局用 `ghostty_type_json()` 清单逐字段校验。注意 `DisableRuntimeMarshalling` 下 `Marshal.SizeOf/OffsetOf` 测的是封送布局，不能用于校验 |
+| Unix PTY | **完成**：libtkcodepty（spawn、管道模式 spawn、gather 读、wait、resize、退出监视、信号、进程信息）+ helper（PTY / `--exec` / `--exec-cwd` / `--detach`） | `native/tkcodepty/build.sh`；macOS clang，Linux `zig cc`（glibc 2.28、helper musl 静态）；`-Werror` 通过。C 冒烟测试 9/9；C# 测试 11/11（控制终端、cwd、像素 resize、退出码、信号、SIGPIPE 复位、前台进程、挂断关闭、vim） |
 | Windows ConPTY | **代码完成，未运行**（本机无 Windows） | `WindowsPtyConnection`：绝对路径加载随包 conpty.dll，否则回退 kernel32；读线程先于 CreateProcess；Close 在独立线程；每会话 Job。待 CI 验证；随包 conpty.dll / OpenConsole.exe 的打包放到 M1 |
 | macOS login 退出码 | **取消**（2026-10-17 决定不经 login） | — |
-| `Control.Render` 静态网格 | **完成** | `TCode.Terminal.Avalonia.TerminalView`（R3）：背景合并、按格 GlyphRun（x 对齐网格）、逐码点回退字体、四种光标；截图 `terminal-static-grid.png` 已人工检查（颜色、粗体、truecolor、CJK 宽字符、box drawing、光标）。`CaptureFrame` 暂为逐格读取，增量算法在 M1 |
-| AOT 运行 vim | **完成（osx-arm64）** | `tcode-ptyhost --self-test`：AOT 发布 0 个 IL 警告，二进制 1.8 MB；自检覆盖核心解析、O1、快照往返、PTY 往返与退出码、vim 进入备用屏并 `:q!` 退出 |
+| `Control.Render` 静态网格 | **完成** | `TKCode.Terminal.Avalonia.TerminalView`（R3）：背景合并、按格 GlyphRun（x 对齐网格）、逐码点回退字体、四种光标；截图 `terminal-static-grid.png` 已人工检查（颜色、粗体、truecolor、CJK 宽字符、box drawing、光标）。`CaptureFrame` 暂为逐格读取，增量算法在 M1 |
+| AOT 运行 vim | **完成（osx-arm64）** | `tkcode-ptyhost --self-test`：AOT 发布 0 个 IL 警告，二进制 1.8 MB；自检覆盖核心解析、O1、快照往返、PTY 往返与退出码、vim 进入备用屏并 `:q!` 退出 |
 | CI | **工作流已写好，未推送**（`.github/workflows/terminal.yml`，actionlint 通过） | 只构建终端项目，不依赖 StreamMark。全仓库 CI 需要 StreamMark 子模块指向包含当前 `StreamMarkVersion` 的已推送提交 |
 | StreamMark 子模块 | **完成** | `external/StreamMark`（074f7ff）；`nuget.config` 改为 `packages/streammark/`；`tools/streammark/pack.sh [源码目录] [版本]` |
 
@@ -65,10 +65,10 @@ M0 中发现、需要后续处理的：
 
 | 任务 | 文档 |
 |---|---|
-| `TCode.Terminal.Core`：151 个函数的绑定、门面 API、`FrameSnapshot` 复制算法、`InputModes`、键盘 / 鼠标 / 粘贴编码、选区、搜索、formatter、CommandTracker | 02 |
+| `TKCode.Terminal.Core`：151 个函数的绑定、门面 API、`FrameSnapshot` 复制算法、`InputModes`、键盘 / 鼠标 / 粘贴编码、选区、搜索、formatter、CommandTracker | 02 |
 | 差分测试（增量 vs 全量）；核对 RoyalTerminal 修过的问题中在 HEAD 仍存在的 6 个 | 02 §15 |
 | esctest2 驱动进 CI；黄金样本回放；fuzz 子集 | 11 |
-| `TCode.Terminal.Pty`：Unix（spawn、gather 读线程、写线程、退出监视、关闭语义、前台进程、cwd、管道模式启动）与 Windows（ConPTY、Job、宽度标志、W1–W12 对策） | 03 |
+| `TKCode.Terminal.Pty`：Unix（spawn、gather 读线程、写线程、退出监视、关闭语义、前台进程、cwd、管道模式启动）与 Windows（ConPTY、Job、宽度标志、W1–W12 对策） | 03 |
 | PTY 压力测试（每晚）：`cat` 1 GB、50 个并发会话、快速开关、resize 风暴、`yes \| head` | 03 §14 |
 
 验收：Tier 0 全部通过（[10](10-protocol-compat.md) §7.1）；ASCII 解析吞吐达到实测修订后的目标。
@@ -81,8 +81,8 @@ M0 中发现、需要后续处理的：
 | B | **完成** | `ITerminalEffects`（剪贴板、通知、进度、标题、cwd…）；核心应答的查询（DA1/DA2/XTVERSION/尺寸/配色）；OSC 133/633 `CommandTracker` |
 | C | **完成** | `InputModes`；按键 / 鼠标 / 焦点编码；粘贴安全检查与 bracketed paste |
 | D | **完成** | 选区（范围、矩形、词、行、全部、命令输出）与选区文本；视口滚动（顶 / 底 / 行 / 指定行 / 按提示符）；搜索（`TerminalSearch`，视口高亮在捕获时换算）；OSC 8 超链接解析进帧（`FrameSnapshot.Links` + `ResolvedStyle.HyperlinkId`，同一地址跨帧 id 不变，上限 65535）。帧新增 `Selection` / `Search` / `Links`，仅选区或搜索变化也会产生新帧 |
-| E | **完成** | 随包 ConPTY：`native/ConPty.targets`（不用包自带 targets，见 12 §5.5），CI 检查布局、自检断言 Bundled；Windows 前台进程：`ProcessTree`（Toolhelp32 + `GetProcessTimes` 防 pid 复用，排除 conhost / OpenConsole），纯函数部分跨平台测试；PTY 压力测试 T10–T14（`PtyStressTests`，默认 CI 规模，`TCODE_PTY_STRESS=1` 按文档规模，每晚运行） |
-| F | **完成** | `.grid` 快照格式（`TCode.Terminal.Core.Testing.GridSnapshot`）与 asciicast 读取（`Cast`）；黄金样本：xterm.js 76 个 + Alacritty 45 个（`tools/terminal/fixtures/convert-fixtures.py`），每个夹具三项断言（上游参照文本、`.grid` 回归锁定、分块不变性）；fuzz：上游 AFL++ 语料 PR 子集 694 个 + 结构化生成器 20 种子 × 1 MiB，不变量含增量 = 全量、宽字符成对、快照往返；esctest2 驱动 `tools/terminal/EscTestRunner`（一致性测试模式 `TerminalCoreOptions.Conformance`），CI 作业以 known-failures 为门禁 |
+| E | **完成** | 随包 ConPTY：`native/ConPty.targets`（不用包自带 targets，见 12 §5.5），CI 检查布局、自检断言 Bundled；Windows 前台进程：`ProcessTree`（Toolhelp32 + `GetProcessTimes` 防 pid 复用，排除 conhost / OpenConsole），纯函数部分跨平台测试；PTY 压力测试 T10–T14（`PtyStressTests`，默认 CI 规模，`TKCODE_PTY_STRESS=1` 按文档规模，每晚运行） |
+| F | **完成** | `.grid` 快照格式（`TKCode.Terminal.Core.Testing.GridSnapshot`）与 asciicast 读取（`Cast`）；黄金样本：xterm.js 76 个 + Alacritty 45 个（`tools/terminal/fixtures/convert-fixtures.py`），每个夹具三项断言（上游参照文本、`.grid` 回归锁定、分块不变性）；fuzz：上游 AFL++ 语料 PR 子集 694 个 + 结构化生成器 20 种子 × 1 MiB，不变量含增量 = 全量、宽字符成对、快照往返；esctest2 驱动 `tools/terminal/EscTestRunner`（一致性测试模式 `TerminalCoreOptions.Conformance`），CI 作业以 known-failures 为门禁 |
 
 阶段 D 的实测：
 - 行选区（`select_line`）止于最后一个非空格列，不是整行宽度；视图按选区区间绘制即可，不要自行补齐。
@@ -112,21 +112,21 @@ M0 中发现、需要后续处理的：
 
 | 步骤 | 状态 | 内容 |
 |---|---|---|
-| 1 协议与客户端 | **完成** | `TCode.Terminal.Protocol`：12 字节帧头、`Envelope`（`Utf8JsonReader` 扫描，不建 JsonDocument）、源生成 `PtyHostJsonContext`、HMAC 握手、`PtyConnection`（读 / 写线程、控制优先 + 数据轮转、Ping）、`PtyHostClient` / `PtySessionHandle` / `IPtySessionSink` |
+| 1 协议与客户端 | **完成** | `TKCode.Terminal.Protocol`：12 字节帧头、`Envelope`（`Utf8JsonReader` 扫描，不建 JsonDocument）、源生成 `PtyHostJsonContext`、HMAC 握手、`PtyConnection`（读 / 写线程、控制优先 + 数据轮转、Ping）、`PtyHostClient` / `PtySessionHandle` / `IPtySessionSink` |
 | 2 host 核心 | **完成** | `PtyHostServer`（监听、对端 uid 校验、认证超时、按方法分派）、会话 actor（命令与输出块同一队列）、`OutputLog`（64 KiB 记录的环、二分查找）、流控（256 / 64 KiB，4 块在途，慢订阅者 10 s 后 resync） |
 | 3 attach | **完成** | 原子 attach（取 S、编码快照、登记游标）、`resumeFrom`、VT 格式、多客户端、尺寸所有者（最近获得焦点者） |
-| 4 发现与启动 | **完成** | `PtyHostPaths` / `PtyHostLocator`（生命周期锁判活、start.lock 串行化、READY 行）、Unix 经 `tcode-pty-spawn --detach`、Windows `CreateProcessW` + breakaway（含 Job 回退）、`HostLifetime`（宽限期只计清醒时间、到期保留有程序在运行的会话、空 host 60 s 退出）、SIGTERM / SIGHUP、`HostLog` |
+| 4 发现与启动 | **完成** | `PtyHostPaths` / `PtyHostLocator`（生命周期锁判活、start.lock 串行化、READY 行）、Unix 经 `tkcode-pty-spawn --detach`、Windows `CreateProcessW` + breakaway（含 Job 回退）、`HostLifetime`（宽限期只计清醒时间、到期保留有程序在运行的会话、空 host 60 s 退出）、SIGTERM / SIGHUP、`HostLog` |
 | 5 持久化 | **完成** | `PersistenceStore`（0700 / 0600、原子写入、meta 最后写）、裁剪快照 + `tail.vt` 回退、定时保存只写有变化的会话、`onQuit` 三种模式、SIGTERM 1.5 s 内保存、revive 推入回滚 + 分隔文字 + 干净屏幕 |
-| 6 受限令牌 | **部分** | `auth/mintToken` / `revoke`、按权限列拒绝、agent 只能访问 agent 会话与共享会话、shell 环境去掉 `TCODE_PTYHOST_*`。`command/*` 的语义属于 09，随 M5 实现；AgentHost 的环境变量注入属于 Desktop 集成（M4） |
+| 6 受限令牌 | **部分** | `auth/mintToken` / `revoke`、按权限列拒绝、agent 只能访问 agent 会话与共享会话、shell 环境去掉 `TKCODE_PTYHOST_*`。`command/*` 的语义属于 09，随 M5 实现；AgentHost 的环境变量注入属于 Desktop 集成（M4） |
 | 7 升级并存 | **完成（基础）** | 客户端的 ghosttyBuildId 与 host 不同 → 连接标为外来构建：attach 强制 VT 格式、create 返回 `HostDraining` 并使 host 进入排空、最后一个会话关闭后退出。主版本不同时的引导子集流程由 Desktop 实现（M4） |
 
-验证：`TCode.Terminal.Protocol.Tests` 11 个、`TCode.Terminal.Host.Tests` 28 个（进程内 host + 真实客户端 + 真实 PTY；发现类用例启动真实 host 进程，CI 中另用 AOT 发布的 host 跑一遍）；AOT 发布 0 个 IL 警告。
+验证：`TKCode.Terminal.Protocol.Tests` 11 个、`TKCode.Terminal.Host.Tests` 28 个（进程内 host + 真实客户端 + 真实 PTY；发现类用例启动真实 host 进程，CI 中另用 AOT 发布的 host 跑一遍）；AOT 发布 0 个 IL 警告。
 
 尚未做（列入 M3 / M4 或待验证）：
 - Windows 命名管道仍用 .NET 的 `CurrentUserOnly`，04 §2.1 要求的 `PIPE_REJECT_REMOTE_CLIENTS` 与 `FILE_FLAG_FIRST_PIPE_INSTANCE`（自己调 `CreateNamedPipeW`）未做；客户端侧的服务端 SID 校验依赖 `CurrentUserOnly`。
 - Windows 关机时的隐藏窗口（`WM_ENDSESSION`，§12.3）未做；当前只靠定时保存兜底。
 - `session/foregroundChanged` 轮询、`session/inputOverflow`（8 MiB 输入上限）、环在空闲 60 s 后缩小、按回滚大小预估编码耗时（18.1 第 10 条）未做。
-- profile 探测与 shell 集成注入（`profiles/list`、`shellIntegration`）属于 `TCode.Terminal.Shell`（M4）；当前 `session/create` 只支持显式命令与系统默认 shell。
+- profile 探测与 shell 集成注入（`profiles/list`、`shellIntegration`）属于 `TKCode.Terminal.Shell`（M4）；当前 `session/create` 只支持显式命令与系统默认 shell。
 
 M2 中的实测与设计调整：
 - **受限令牌的握手**：serverProof 原本只用完整令牌计算，持受限令牌的 AgentHost 无法验证 host。改为 hello 带上非秘密的 `tokenId`，host 用对应令牌计算 serverProof、认证时只验证这一个令牌；未知 tokenId 用随机密钥作答，不泄露哪些 id 存在（04 §2.4 已同步）。
@@ -151,11 +151,11 @@ M2 中的实测与设计调整：
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| 桌面端接入 | **完成** | `TCode.Desktop` 引用 `TCode.Terminal.Avalonia` / `Protocol`；pty host 按 AgentHost 的方式复制到 `ptyhost/`（开发构建）并 AOT 发布到 `ptyhost/`（`PublishPtyHost`）。`PtyHostService` 负责发现 / 启动 / 配置当前构建的 host |
+| 桌面端接入 | **完成** | `TKCode.Desktop` 引用 `TKCode.Terminal.Avalonia` / `Protocol`；pty host 按 AgentHost 的方式复制到 `ptyhost/`（开发构建）并 AOT 发布到 `ptyhost/`（`PublishPtyHost`）。`PtyHostService` 负责发现 / 启动 / 配置当前构建的 host |
 | 会话管道 | **完成** | `TerminalSession`：UI 侧核心只在一个工作线程上使用（写入、记录、选区、滚动、捕获帧都经同一队列）；帧在 UI 线程上合并为最新一帧；每批处理完 Ack；resize 只在 Record 到达后生效（01 §3.2） |
 | 标签与生命周期 | **完成** | `TerminalTabViewModel`：启动、退出后按 Enter 重开、host 断开后在相同目录重开、关闭时有程序运行则保留标签并提示。`Workbench` 的终端标签不再是占位 |
 | 键盘 | **完成（基础）** | `TerminalView` 获得焦点并转发 KeyDown / KeyUp / TextInput；物理键映射（`TerminalKeys`，有单测）；编码交给 `InputEncoder`，模式取自工作线程的缓存。⌘C / Ctrl+Shift+C 复制（有选区时），⌘V / Ctrl+Shift+V 粘贴，⌘K 清屏（macOS） |
-| 粘贴 | **完成** | bracketed paste 编码（2004）；包含换行等不安全内容先进入确认栏（[TerminalTabView](../../src/TCode.Desktop/Views/TerminalTabView.axaml)），确认后以 allowUnsafe 发送，取消则丢弃 |
+| 粘贴 | **完成** | bracketed paste 编码（2004）；包含换行等不安全内容先进入确认栏（[TerminalTabView](../../src/TKCode.Desktop/Views/TerminalTabView.axaml)），确认后以 allowUnsafe 发送，取消则丢弃 |
 | 指针 | **完成（基础）** | 单击清除选区，拖动选区，双击选词，三击选行；程序开启鼠标模式时编码鼠标报告（Shift 绕过）；滚轮：鼠标模式上报、备用屏转方向键（1007）、否则滚动回滚 |
 | 链接 | **完成（基础）** | ⌘/Ctrl+点击打开 OSC 8 链接，仅 http / https / mailto |
 | 剪贴板写入 | **完成** | OSC 52 写入转到系统剪贴板（按 `oscWrite` 策略） |
@@ -163,10 +163,10 @@ M2 中的实测与设计调整：
 | 输入法（IME） | **完成（基础）** | `TerminalView` 提供 `TextInputMethodClient`：光标矩形（候选窗口位置）、preedit 支持；平台推送的组合文字画在光标处、带下划线，提交后经 TextInput 发送，失去焦点时中止组合。验证：组合文字的绘制与清除、宽字符对齐的 headless 快照；真实系统输入法未在本机验证 |
 | 搜索栏 | **完成** | ⌘F（macOS）/ Ctrl+Shift+F 打开，浮在终端右上角；搜索词变化即时搜索（UI 侧核心，不经 host）；"当前/总数"；Enter / Shift+Enter 或箭头切换；Esc 关闭并清除高亮。高亮来自帧里的 `SearchHighlights`。验证：计数与切换的集成测试（真实会话）、关闭后高亮清除、headless 截图 |
 | 关闭运行中的会话 | **完成** | 有程序在运行时 host 不关闭，工作台弹出确认框（AtomUI MessageBox），确认后强制关闭并移除标签 |
-| 验证 | **完成（部分）** | 键映射单测（23 项）；会话管道集成测试 6 项（真实 host + 真实 PTY）；视图 headless 快照（状态层、颜色、宽字符、反色）；AOT 发布 0 个 IL 警告，冒烟 `TCode --smoke` 在发布二进制中启动终端并看到 shell 输出 |
+| 验证 | **完成（部分）** | 键映射单测（23 项）；会话管道集成测试 6 项（真实 host + 真实 PTY）；视图 headless 快照（状态层、颜色、宽字符、反色）；AOT 发布 0 个 IL 警告，冒烟 `TKCode --smoke` 在发布二进制中启动终端并看到 shell 输出 |
 
 本轮发现并修掉的问题：
-- **helper 拒绝只有 argv0 的启动**（`tcode-pty-spawn` 的参数个数检查为 `argc < 5`，默认 shell 不带参数时被拒，errno 22）。冒烟在 AOT 二进制中发现，已修并加回归测试。
+- **helper 拒绝只有 argv0 的启动**（`tkcode-pty-spawn` 的参数个数检查为 `argc < 5`，默认 shell 不带参数时被拒，errno 22）。冒烟在 AOT 二进制中发现，已修并加回归测试。
 - **host 的应答与事件竞态**：会话瞬间退出时，退出通知会排在 create 的应答之前发出，客户端丢弃了它。host 改为应答排队之后才启动输出泵，协议上保证"应答先于该会话的任何数据 / 事件"。
 
 尚未做（M3 剩余，按优先级）：
@@ -248,7 +248,7 @@ M2 中的实测与设计调整：
 | 问题 | 位置 | 处理 |
 |---|---|---|
 | Codex 命令输出只显示最后一个片段 | `CodexSession.cs:427` 把单个片段当作进度结果，`SessionViewModel.cs:353` 又把每次进度当作完整结果 | 进度改传累计的 `command.Output`；随时可修 |
-| BashTool 子进程继承 `SIGPIPE=SIG_IGN`（`trap - PIPE` 对 bash 无效） | `BashTool.cs` | 改用 `tcode-pty-spawn --exec` 启动（[03](03-pty.md) §12），随 M1 完成 |
-| `PeerDirectory` 创建 socket 目录时没有设为 0700，`/tmp` 回退目录不检查所有者 | `src/TCode.AgentHost/Peers/PeerDirectory.cs` | 单独修复 |
+| BashTool 子进程继承 `SIGPIPE=SIG_IGN`（`trap - PIPE` 对 bash 无效） | `BashTool.cs` | 改用 `tkcode-pty-spawn --exec` 启动（[03](03-pty.md) §12），随 M1 完成 |
+| `PeerDirectory` 创建 socket 目录时没有设为 0700，`/tmp` 回退目录不检查所有者 | `src/TKCode.AgentHost/Peers/PeerDirectory.cs` | 单独修复 |
 | 打包脚本的 macOS 最低版本写的是 11.0，.NET 10 要求 15.0 | `tools/package_macos_app.sh` | 单独修复 |
 | Linux AOT 发布需要在 glibc 2.28 容器中进行，否则在 RHEL 8 上运行不了 | 发布流程 | 随 CI 建设一起处理（12） |

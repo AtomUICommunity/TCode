@@ -27,7 +27,7 @@
 | kovidgoyal/kitty | `f426c08` | 2026-10-16 |
 | contour-terminal/contour | `8f3a4a4` | 2026-10-16 |
 | AvaloniaUI/Avalonia | tag `12.1.3`（`8eeda4f`） | 2026-09-22 |
-| TCode | `dfd3657` | — |
+| TKCode | `dfd3657` | — |
 | StreamMark | `074f7ff` | 2026-10-16 |
 
 ---
@@ -71,7 +71,7 @@
 
 - `CompositionCustomVisualHandler` 提供 `OnRender`、`Invalidate(Rect)` 和 `RegisterForNextAnimationFrameUpdate`。
 - 12.1.3 中实现 `IPlatformRenderInterface` 的只有 Skia 和 Headless 两种，所以 Skia lease 在 6 个桌面 RID 上都可用。
-- Headless 测试只要 `UseSkia()` + `UseHeadlessDrawing=false`，lease 同样可用。TCode 的测试已经是这样配置的。
+- Headless 测试只要 `UseSkia()` + `UseHeadlessDrawing=false`，lease 同样可用。TKCode 的测试已经是这样配置的。
 
 ### 0.3 线程：每个终端一读线程加一核心线程（actor 模型），渲染线程永不等锁
 
@@ -911,8 +911,8 @@ public readonly record struct GlyphInfo(ushort GlyphIndex, int GlyphCluster, dou
 
 - 按"行 × 样式 run"缓存 `GlyphRun`，`GlyphInfo.GlyphAdvance` 固定为 cell 宽。
 - 每帧都要重新录制全部可见行，因为 Render 是全量替换，`ServerCompositionDrawListVisual.cs:36-39` 收到新的 render data 就 `InvalidateContent`。
-- 优点：只用稳定 API；Headless 绘制桩下也能运行；与 TCode 的 `CodeView`（`src/TCode.Desktop/Controls/CodeView.cs:69,313-370`，按行缓存 `TextLayout`）一脉相承，可以作为 MVP。
-- 缺点：终端帧率受制于 UI 线程。TCode 的 UI 线程同时承担 StreamMark 的流式 Markdown 渲染，Agent 大量输出时两者会争用。
+- 优点：只用稳定 API；Headless 绘制桩下也能运行；与 TKCode 的 `CodeView`（`src/TKCode.Desktop/Controls/CodeView.cs:69,313-370`，按行缓存 `TextLayout`）一脉相承，可以作为 MVP。
+- 缺点：终端帧率受制于 UI 线程。TKCode 的 UI 线程同时承担 StreamMark 的流式 Markdown 渲染，Agent 大量输出时两者会争用。
 
 ### 3.3 (b) `ICustomDrawOperation` + `ISkiaSharpApiLeaseFeature` [已核实 API]
 
@@ -938,13 +938,13 @@ public object? GetFeature(Type t) { if (t == typeof(ISkiaSharpApiLeaseFeature)) 
 **AOT** [推断，有强证据]
 
 - SkiaSharp 3.119.4 程序集带 `IsTrimmable` 元数据（在 nuget 缓存的 DLL 中能看到）。
-- TCode 已经引用 `StreamMark.Mermaid`（`src/TCode.Desktop/TCode.Desktop.csproj:24`，`PublishAot=true`），而它正是用 `ICustomDrawOperation` + `ISkiaSharpApiLeaseFeature` 画 SKPicture（`StreamMark/src/StreamMark.Mermaid/SkiaPictureDiagram.cs:90-130`）。在现有 AOT 0 警告的约束下，这条路已经走通。
+- TKCode 已经引用 `StreamMark.Mermaid`（`src/TKCode.Desktop/TKCode.Desktop.csproj:24`，`PublishAot=true`），而它正是用 `ICustomDrawOperation` + `ISkiaSharpApiLeaseFeature` 画 SKPicture（`StreamMark/src/StreamMark.Mermaid/SkiaPictureDiagram.cs:90-130`）。在现有 AOT 0 警告的约束下，这条路已经走通。
 
 **非 Skia 后端时的退化**
 
 - 唯一的非 Skia 情况是 Headless 的 `UseHeadlessDrawing=true`（默认值，见 `AvaloniaHeadlessPlatform.cs:115`），此时 `TryGetFeature` 返回 null。
 - 应对：要么什么都不画，要么回退到 (a)。
-- TCode 的测试用的是 `UseSkia()` + `UseHeadlessDrawing = false`（`tests/TCode.Desktop.Tests/HeadlessApp.cs:18-19`），lease 可用 [推断]。
+- TKCode 的测试用的是 `UseSkia()` + `UseHeadlessDrawing = false`（`tests/TKCode.Desktop.Tests/HeadlessApp.cs:18-19`），lease 可用 [推断]。
 
 ### 3.4 (c) `CompositionCustomVisual` + `CompositionCustomVisualHandler`（推荐）[已核实 API]
 
@@ -1035,7 +1035,7 @@ public void Draw(DrawingContextImpl context, ...) { lock (_lock) { if (_image ==
 
 ```csharp
 // 示意代码：所有量先换算到"设备像素"再取整
-double px = fontSizePt * dpi / 72;                 // TCode 内部以 DIP 为准：px = fontSizeDip * renderScaling
+double px = fontSizePt * dpi / 72;                 // TKCode 内部以 DIP 为准：px = fontSizeDip * renderScaling
 double s  = px / m.DesignEmHeight;
 double faceW = MaxAdvance(gt, ' '..'~') * s;       // Ghostty：ASCII 32..126 的最大 advance
 double faceH = (m.Descent - m.Ascent + m.LineGap) * s;
@@ -1055,7 +1055,7 @@ int underlineThick = Math.Max(1, (int)Math.Ceiling(m.UnderlineThickness * s));
 
 ### 4.2 逐字符字体回退
 
-| 步骤 | Ghostty 的做法 | 在 Avalonia / TCode 中的实现 [推断] |
+| 步骤 | Ghostty 的做法 | 在 Avalonia / TKCode 中的实现 [推断] |
 |---|---|---|
 | 1 | `font-codepoint-map` 覆盖 | 配置项"码点范围 → 字体" |
 | 2 | sprite face（程序化字符） | 先判断是否属于 §4.6 的范围 |
@@ -1090,7 +1090,7 @@ int underlineThick = Math.Max(1, (int)Math.Ceiling(m.UnderlineThickness * s));
 
 - `TextShaper.Current.ShapeText(ReadOnlyMemory<char>, TextShaperOptions)` 返回 `ShapedBuffer`（`TextShaper.cs:43`）。
 - `TextShaperOptions` 的参数包括 `GlyphTypeface`、`FontRenderingEmSize`、`BidiLevel`、`Culture`、`IncrementalTabWidth`、`LetterSpacing` 和 `FontFeatures`（`TextShaperOptions.cs:32-61`）。
-- 注意 Avalonia 12 把 text shaper 从渲染后端中解耦了，必须调用 `UseHarfBuzz()`。TCode 已经调用了（`src/TCode.Desktop/SmokeMode.cs:56-57`）。
+- 注意 Avalonia 12 把 text shaper 从渲染后端中解耦了，必须调用 `UseHarfBuzz()`。TKCode 已经调用了（`src/TKCode.Desktop/SmokeMode.cs:56-57`）。
 
 **策略** [推断，综合 Ghostty、kitty、WT 的做法]
 
@@ -1168,7 +1168,7 @@ int underlineThick = Math.Max(1, (int)Math.Ceiling(m.UnderlineThickness * s));
 
 - **对齐**：所有 cell 边界、基线、装饰线都放在整数设备像素上（§4.1）。如果用 `GlyphRun`，`BaselineOrigin` 也必须是整数设备像素。
 - **字形定位**：Avalonia Skia 的 `GlyphRunImpl` 默认 `SubpixelAntialias` + `Subpixel = true` + `BaselineSnap`（`GlyphRunImpl.cs:133-170`）。终端字形本来就按整数像素放置，"亚像素定位"带来的收益有限。
-- **LCD 子像素 AA**：要求背景不透明。TCode 如果用半透明或亚克力背景，就只能用灰度 AA。
+- **LCD 子像素 AA**：要求背景不透明。TKCode 如果用半透明或亚克力背景，就只能用灰度 AA。
   - Ghostty 一律用灰度 AA。
   - WT 默认 ClearType。
   - 建议默认灰度，不透明背景时可选 LCD [推断]。
@@ -1184,7 +1184,7 @@ int underlineThick = Math.Max(1, (int)Math.Ceiling(m.UnderlineThickness * s));
 |---|---|---|---|---|
 | **共享锁** | Ghostty（mutex + demand handoff）、Alacritty（FairMutex lease）、WT（公平 ticket lock） | 实现直接；渲染器能读到最新状态 | 必须解决锁饥饿；渲染侧要在锁内复制或 shaping | 渲染线程由**整个窗口共用**，在 `OnRender` 里等终端锁会拖慢全应用的帧。只有 try-lock 加"拿不到就沿用上一帧"才能接受 |
 | **actor + 快照发布**（推荐） | contour（`RenderDoubleBuffer` try-lock 交换）、WezTerm（锁外解析产出 Action）、Ghostty RenderState 的思路 | 渲染线程**永不等锁**；核心状态单线程独占，没有数据竞争；libghostty-vt 本身也不是线程安全的，正好匹配 | 快照复制有开销，但只复制脏行；UI 发出的命令有一次线程跳转（约 10–50 µs） | 与 `CompositionCustomVisualHandler` 天然契合 |
-| **单线程** | xterm.js（12 ms 时间片）、foot（epoll 单线程 + 渲染 worker） | 简单，没有锁 | UI 线程负担重；吞吐受限（xterm.js 只有 5–35 MB/s） | 不合适：TCode 的 UI 线程还要跑 Agent UI |
+| **单线程** | xterm.js（12 ms 时间片）、foot（epoll 单线程 + 渲染 worker） | 简单，没有锁 | UI 线程负担重；吞吐受限（xterm.js 只有 5–35 MB/s） | 不合适：TKCode 的 UI 线程还要跑 Agent UI |
 
 ### 5.2 推荐模型：每个终端两个线程，再加共用的渲染线程 [推断：设计]
 
@@ -1547,7 +1547,7 @@ PrintAscii(input[..run]);   // 有效列内：cells[x+i] = template | b[i]（可
   - 内部分段时间戳：KeyDown → 写 PTY → 回显被解析 → 快照发布 → `OnRender` 结束。
   - 可选：240 fps 高速摄像抽查，参考 Chad Austin 和 vizenc 的方法。
 - **对照组**：同机运行 Ghostty、Alacritty、kitty、WezTerm，Windows 上加 WT，macOS 上加 Terminal.app 和 iTerm2。只比较相对值，不比较绝对值。
-- **Headless 回归**：用 TCode 现有的 `HeadlessApp`（`UseSkia` + `UseHeadlessDrawing=false`）做像素快照测试，覆盖 box drawing 拼接、光标形状、宽字符、emoji、下划线样式和 HiDPI 缩放。这种模式只测 CPU 侧的帧构建耗时，不代表 GPU 性能。
+- **Headless 回归**：用 TKCode 现有的 `HeadlessApp`（`UseSkia` + `UseHeadlessDrawing=false`）做像素快照测试，覆盖 box drawing 拼接、光标形状、宽字符、emoji、下划线样式和 HiDPI 缩放。这种模式只测 CPU 侧的帧构建耗时，不代表 GPU 性能。
 
 ### 9.2 场景
 
@@ -1640,7 +1640,7 @@ PrintAscii(input[..run]);   // 有效列内：cells[x+i] = template | b[i]（可
   - 平台：`src/Windows/Avalonia.Win32/{WindowImpl.AppWndProc.cs,Input/Imm32InputMethod.cs,Win32PlatformOptions.cs}`、`src/Avalonia.Native/{AvaloniaNativeTextInputMethod,AvaloniaNativePlatformExtensions,AvnAutomationPeer}.cs`、`src/Avalonia.X11/X11Platform.cs`。
   - 可访问性：`src/Avalonia.Controls/Automation/{AutomationProperties.cs,Provider/*,Peers/*}`、`src/Windows/Avalonia.Win32.Automation/AutomationNode.cs`、`src/Avalonia.FreeDesktop.AtSpi/Handlers/*`。
   - Headless 与依赖版本：`src/Headless/Avalonia.Headless/{AvaloniaHeadlessPlatform,HeadlessPlatformRenderInterface}.cs`、`Directory.Packages.props`。
-- **TCode** `@ dfd3657`：`src/TCode.Desktop/Controls/CodeView.cs`、`src/TCode.Desktop/TCode.Desktop.csproj`、`src/TCode.Desktop/SmokeMode.cs`、`tests/TCode.Desktop.Tests/HeadlessApp.cs`。
+- **TKCode** `@ dfd3657`：`src/TKCode.Desktop/Controls/CodeView.cs`、`src/TKCode.Desktop/TKCode.Desktop.csproj`、`src/TKCode.Desktop/SmokeMode.cs`、`tests/TKCode.Desktop.Tests/HeadlessApp.cs`。
 - **StreamMark** `@ 074f7ff`：`src/StreamMark.Mermaid/SkiaPictureDiagram.cs`、`src/StreamMark.Avalonia/Rendering/TextSegmentView.cs`、`src/StreamMark.Avalonia/Transcript/TranscriptPanel.cs`。
 - **.NET 10 参考程序集**（`Microsoft.NETCore.App.Ref/10.0.9` 的 XML 文档）：`Utf8.{IsValid,ToUtf16,FromUtf16}`、`Ascii.{IsValid,ToUtf16}`、`SearchValues.Create(ReadOnlySpan<byte>)`、`MemoryExtensions.IndexOfAnyExcept(SearchValues)`、`IndexOfAnyExceptInRange`、`Rune.DecodeFromUtf8`、`Vector128.Widen/WidenLower`、`Vector512`。
 - **SkiaSharp 3.119.4**（nuget 缓存中 DLL 的元数据）：`SKTextBlobBuilder.AllocateHorizontalRun/AllocatePositionedRun/AllocateRawPositionedRun`、`SKCanvas.DrawAtlas`、`IsTrimmable`。

@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tkcode.dev/schemas/settings.json",
+  "title": "TKCode settings",
+  "description": "~/.tkcode/settings.json — see docs/settings.md",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "model": {
+      "type": "string",
+      "description": "Default model for new sessions: <provider>/<model>, e.g. anthropic/claude-opus-5-5."
+    },
+    "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
+    "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
+    "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
+    "autoCompact": { "type": "boolean", "description": "Automatically compact the built-in agent's context when it nears the context budget (default true). /compact still works when disabled." },
+    "closeToTray": { "type": "boolean", "description": "Closing the window hides TKCode to the system tray and keeps sessions running (default true). When false, closing the window quits TKCode." },
+    "originalImages": { "type": "boolean", "description": "Show Markdown images at full resolution. By default they are decoded at their display size to save memory; clicking an image always opens the original." },
+    "providers": {
+      "type": "object",
+      "description": "Keyed by provider id. A built-in id (anthropic, openai, deepseek, openrouter, …) overrides the catalog; any other id defines a custom provider.",
+      "additionalProperties": { "$ref": "#/definitions/provider" }
+    },
+    "webSearch": {
+      "type": "object",
+      "description": "Search backend for the built-in agent's web_search tool. The tool is unavailable until this is configured.",
+      "properties": {
+        "provider": { "enum": ["brave", "tavily", "exa", "searxng"] },
+        "apiKey": { "$ref": "#/definitions/secret" },
+        "baseUrl": { "type": "string", "description": "Custom endpoint. Required for searxng (the instance URL, with the JSON format enabled)." }
+      },
+      "required": ["provider"],
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "additionalDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra directories treated as part of the workspace: read-only tools need no approval inside them."
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultRole": {
+      "type": "string",
+      "description": "Mode for new conversations: agent (default), plan, acp, or the name of a custom role from roles/*.md. A custom role that the project does not define falls back to agent."
+    },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "autoDiscover": {
+          "type": "boolean",
+          "description": "List skills in the built-in agent's system prompt so the model can load them on its own (default true). When false, skills are used only when named with /skill-name."
+        }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "description": "In-app updates from GitHub Releases.",
+      "properties": {
+        "prerelease": { "type": "boolean", "description": "Also receive releases marked as pre-release on GitHub (default true). When false, only stable releases are offered." },
+        "autoCheck": { "type": "boolean", "description": "Check 60 seconds after start and every 6 hours after that (default true). When false, check from Settings › About." }
+      },
+      "additionalProperties": false
+    },
+    "mcpServers": {
+      "type": "object",
+      "description": "MCP servers for the built-in agent (and, through the TKCode bridge, external runtimes). Keys are server names: 1-32 letters, digits, '_' or '-'.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+      "additionalProperties": { "$ref": "#/definitions/mcpServer" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "mcpServer": {
+      "type": "object",
+      "description": "A command makes it a local (stdio) server; a url makes it a remote server. Strings accept {env:VAR}, ${VAR}, ${VAR:-default}, ${workspaceFolder} and ${userHome}.",
+      "properties": {
+        "type": { "enum": ["stdio", "http", "sse"], "description": "Usually inferred. http = Streamable HTTP (falls back to legacy SSE automatically); sse forces legacy HTTP+SSE." },
+        "command": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "cwd": { "type": "string", "description": "Working directory. Defaults to the session's project directory." },
+        "envFile": { "type": "string", "description": "A dotenv file whose variables are added to env." },
+        "url": { "type": "string" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" }, "description": "An Authorization header disables the OAuth login flow." },
+        "oauth": {
+          "type": "object",
+          "properties": {
+            "clientId": { "type": "string", "description": "Pre-registered client id. Omit to use dynamic client registration." },
+            "clientSecret": { "type": "string" },
+            "callbackPort": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Fixed loopback callback port (http://127.0.0.1:PORT/callback)." },
+            "scopes": { "type": "string", "description": "Space-separated scopes to request." }
+          },
+          "additionalProperties": false
+        },
+        "enabled": { "type": "boolean", "default": true },
+        "disabledTools": { "type": "array", "items": { "type": "string" }, "description": "Tools (MCP names) hidden from the model." },
+        "alwaysAllow": { "type": "array", "items": { "type": "string" }, "description": "Tools that never ask for approval; \"*\" allows the whole server." },
+        "startupTimeout": { "type": "integer", "minimum": 1, "default": 30, "description": "Seconds." },
+        "toolTimeout": { "type": "integer", "minimum": 1, "default": 600, "description": "Seconds per tool call." },
+        "name": { "type": "string", "description": "Display name." }
+      },
+      "additionalProperties": false
+    },
+    "secret": {
+      "type": "string",
+      "description": "Plain value, {env:VAR} or $VAR. Use \"\" for local servers that need no key."
+    },
+    "compat": {
+      "type": "object",
+      "description": "Escape hatch for verified vendor quirks. Usually auto-detected.",
+      "properties": {
+        "maxTokensField": { "enum": ["max_tokens", "max_completion_tokens"] },
+        "thinkingFormat": { "enum": ["None", "OpenAIEffort", "ThinkingType", "ThinkingTypeAndEffort", "EnableThinking", "OpenRouter"] },
+        "requiresReasoningContentOnAssistant": { "type": "boolean" },
+        "supportsDeveloperRole": { "type": "boolean" },
+        "supportsUsageInStreaming": { "type": "boolean" },
+        "supportsDisabledThinking": { "type": "boolean" },
+        "supportsEffort": { "type": "boolean" },
+        "authHeader": { "enum": ["x-api-key", "bearer"] },
+        "anthropicBetas": { "type": "array", "items": { "type": "string" } },
+        "reasoningEfforts": { "type": "array", "items": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"] } }
+      }
+    },
+    "model": {
+      "type": "object",
+      "description": "All fields optional; catalog metadata is used when the model is known.",
+      "properties": {
+        "api": {
+          "enum": ["chat", "responses", "messages"],
+          "description": "Wire protocol for this model. Defaults to the provider's protocol."
+        },
+        "baseUrl": { "type": "string", "description": "Base URL for this model. Defaults to the provider's base URL." },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "contextWindow": { "type": "integer", "minimum": 1, "description": "Default 128000 for unknown models." },
+        "defaultContextWindow": { "type": "integer", "minimum": 1, "description": "Default context budget for new sessions (the smaller picker option). Default 272000; gpt-6.1-sol 500000." },
+        "maxTokens": { "type": "integer", "minimum": 1, "description": "Default 16384 for unknown models." },
+        "reasoning": { "type": "boolean" },
+        "efforts": { "type": "array", "items": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"] } },
+        "images": { "type": "boolean" },
+        "fastMode": { "type": "boolean" },
+        "compat": { "$ref": "#/definitions/compat" }
+      },
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "api": {
+          "enum": ["chat", "responses", "messages"],
+          "description": "Wire protocol: OpenAI Chat Completions, OpenAI Responses or Anthropic Messages. Required for custom providers."
+        },
+        "baseUrl": { "type": "string", "description": "Required for custom providers." },
+        "apiKey": { "$ref": "#/definitions/secret" },
+        "enabled": { "type": "boolean", "default": true },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "models": {
+          "type": "object",
+          "description": "When present, only these models are enabled. Use {} to take catalog defaults.",
+          "additionalProperties": { "$ref": "#/definitions/model" }
+        },
+        "compat": { "$ref": "#/definitions/compat" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

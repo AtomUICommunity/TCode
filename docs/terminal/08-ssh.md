@@ -8,7 +8,7 @@
 
 ## 0. 结论摘要
 
-1. **第一期 = 本地 PTY 里运行系统 `ssh`**（D4）。TCode 不写任何 SSH 协议代码，只做三件事：
+1. **第一期 = 本地 PTY 里运行系统 `ssh`**（D4）。TKCode 不写任何 SSH 协议代码，只做三件事：
    - 从 `~/.ssh/config` 生成主机列表（`ssh:<别名>` profile）；
    - 构造 `ssh` 命令行；
    - 处理连接失败（退出码 255）的界面。
@@ -53,12 +53,12 @@
   - 它是 MSYS 程序，`~` 指向 MSYS 的 home；
   - 它不使用 Windows 的 `\\.\pipe\openssh-ssh-agent`，所以 Windows 的 ssh-agent 服务、1Password 的 agent 都对它无效 [实 research/06 §3]；
   - 与 Win32-OpenSSH 混用时，用户会遇到"终端里能连上，文件树连不上"这类不一致。
-- **外部命令的执行**：`ssh -V`、`ssh -G` 都在 pty host 中运行，必须经 07 §2.8 的执行器（`tcode-pty-spawn --exec` + 管道），不能用 `System.Diagnostics.Process`（03 §10 R5、04）。
+- **外部命令的执行**：`ssh -V`、`ssh -G` 都在 pty host 中运行，必须经 07 §2.8 的执行器（`tkcode-pty-spawn --exec` + 管道），不能用 `System.Diagnostics.Process`（03 §10 R5、04）。
 - **版本检查**：探测到后运行一次 `ssh -V`（版本信息输出到 stderr，例如 `OpenSSH_10.3p1, LibreSSL 3.3.6`、`OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2`），结果按路径和 mtime 缓存。
   - 版本低于 7.3 时，`Include` 和 `ProxyJump` 不可用，主机列表仍然生成，但在设置页提示 [推：7.3 引入 Include/ProxyJump]；
   - `ssh -G` 需要 6.8 以上 [推]。
 - **找不到 ssh 时**：主机列表为空，设置页的 SSH 子页和"+"菜单的 SSH 分组显示一条提示：
-  - Windows："未找到 OpenSSH 客户端。可以在 设置 → 系统 → 可选功能 中添加"OpenSSH 客户端"，或在管理员 PowerShell 中运行 `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`。" 附带"重新检测"按钮。命令只显示给用户，**TCode 不自动执行**（需要管理员权限）。
+  - Windows："未找到 OpenSSH 客户端。可以在 设置 → 系统 → 可选功能 中添加"OpenSSH 客户端"，或在管理员 PowerShell 中运行 `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`。" 附带"重新检测"按钮。命令只显示给用户，**TKCode 不自动执行**（需要管理员权限）。
   - Linux："未找到 ssh。请通过发行版的包管理器安装 openssh-client（Debian/Ubuntu）或 openssh-clients（Fedora/RHEL）。"
   - macOS 不会出现这种情况。
 - 探测在 pty host 中完成（`SshProfileProvider : IProfileProvider`，07 §1.2），与本地 shell 的探测共用缓存和刷新机制（07 §2.6）。
@@ -124,7 +124,7 @@ Scan(file, isUserConfig, depth):
   3. 一期连接前的"预检"——默认关闭，见 §2.4；
 - **运行方式**：
   - `argv = [ssh, (-F file)?, -G, --, <别名>]`；
-  - 环境同 07 §4（剔除 `TCODE_*` 等）；
+  - 环境同 07 §4（剔除 `TKCODE_*` 等）；
   - 经 07 §2.8 的执行器运行；stdin 接 `/dev/null`，超时 5 s；
   - stdout 按行解析为 `key value`：关键字是小写的；`identityfile`、`certificatefile`、`sendenv`、`setenv`、`localforward` 等可以出现多次，收集成列表；
 - **退出码非 0**（通常是 255，config 有语法错误）：把 stderr 显示在主机详情中，例如 "`/Users/u/.ssh/config line 12: Bad configuration option: foo`"。
@@ -198,7 +198,7 @@ BuildSshArgs(t, cfg):
 | `TERM` | ssh 在 `pty-req` 中携带本地的 `$TERM`。"TERM 在请求 PTY 时总会发送" | 本地已经是 `xterm-256color`（07 §4.2），远端无需任何处理。**不加** `SetEnv TERM=…` | [实 OSSH ssh_config.5:1905-1908；research/06 §4] |
 | `COLORTERM` | `SendEnv`，要求服务端 `AcceptEnv` | Debian/Ubuntu 的默认 sshd_config 含 `AcceptEnv LANG LC_* COLORTERM NO_COLOR` [实 research/06 §4]；RHEL、macOS 和上游默认都不接受 → 远端程序回退到 256 色或主动查询 | [实 sshd_config(5)："The default is not to accept any environment variables"] |
 | `TERM_PROGRAM`、`TERM_PROGRAM_VERSION` | `SendEnv` | 绝大多数服务器都不接受，被静默丢弃 | 同上 |
-| `LANG`、`LC_*` | macOS 的默认 ssh_config 已经写了 `SendEnv LANG LC_*` [实 research/06 §4] | 与系统 ssh 相同，TCode 不额外处理 | |
+| `LANG`、`LC_*` | macOS 的默认 ssh_config 已经写了 `SendEnv LANG LC_*` [实 research/06 §4] | 与系统 ssh 相同，TKCode 不额外处理 | |
 
 **为什么 `SendEnv` 安全而 `SetEnv` 不安全**：
 
@@ -222,15 +222,15 @@ BuildSshArgs(t, cfg):
   - 本地命令跟踪器看到的是一条"正在执行"的 ssh 命令（对 ssh profile 来说，整个会话就是这一条）；
   - 远端如果自己配置了 OSC 133（vte.sh、远端安装的 iTerm2/WezTerm 脚本、fish 4、nushell），镜像核心照样解析，状态为 `Native`（07 §5.5）。这时命令导航可用，但没有 nonce，也就没有可信的命令行，Agent 只能把它当作参考；
   - 远端发来的 OSC 7 带有远端主机名，**不能**当作本地路径（07 §6.4；research/03 §7.3）；
-  - 用户可以在远端手动 source 我们的脚本：设置页提供"复制安装命令"，内容是把 `current/<shell>/…` 的脚本内容通过 heredoc 写到远端 `~/.tcode/shell-integration/`，再加一行 rc 片段。这个命令由用户自己粘贴执行。
+  - 用户可以在远端手动 source 我们的脚本：设置页提供"复制安装命令"，内容是把 `current/<shell>/…` 的脚本内容通过 heredoc 写到远端 `~/.tkcode/shell-integration/`，再加一行 rc 片段。这个命令由用户自己粘贴执行。
 - **以后的自动方案**（v2，按主机选择开启：`"ssh:prod-1": { "shellIntegration": true }`）：
 
 | 方案 | 做法 | 优点 | 缺点 |
 |---|---|---|---|
-| A. kitty 式 tty 引导 | `ssh -t host '<一段 POSIX sh 引导脚本>'`：脚本关闭回显，用一次性口令向终端请求数据；TCode 在本地识别这个请求（一种私有 OSC/DCS），把 base64 的 tar（集成脚本 + 版本号）写进 PTY；脚本解包到 `~/.cache/tcode-si/<hash>/` 后，`exec` 用户的登录 shell，并按 07 §5.3 的方式注入（ZDOTDIR 等通过 `env` 设置，不依赖 AcceptEnv） | 只用一条连接、一次认证；Windows 本地也能用（不需要 ControlMaster）；不依赖 AcceptEnv | 只适用于 POSIX 远端；会占用 RemoteCommand（与用户自己的 RemoteCommand 冲突）；需要在 TCode 的 PTY 输出路径上加一个握手识别器 [实 research/06 §5 引用 kitty 文档] |
+| A. kitty 式 tty 引导 | `ssh -t host '<一段 POSIX sh 引导脚本>'`：脚本关闭回显，用一次性口令向终端请求数据；TKCode 在本地识别这个请求（一种私有 OSC/DCS），把 base64 的 tar（集成脚本 + 版本号）写进 PTY；脚本解包到 `~/.cache/tkcode-si/<hash>/` 后，`exec` 用户的登录 shell，并按 07 §5.3 的方式注入（ZDOTDIR 等通过 `env` 设置，不依赖 AcceptEnv） | 只用一条连接、一次认证；Windows 本地也能用（不需要 ControlMaster）；不依赖 AcceptEnv | 只适用于 POSIX 远端；会占用 RemoteCommand（与用户自己的 RemoteCommand 冲突）；需要在 TKCode 的 PTY 输出路径上加一个握手识别器 [实 research/06 §5 引用 kitty 文档] |
 | B. Ghostty 式 ControlMaster 复制 | 首次连接时经临时 ControlMaster 运行 `mkdir -p … && cat > …` 写入脚本，本地缓存"已安装"；之后用 `ssh -t host 'exec env … $SHELL -l'` | 实现简单 | Windows 上没有 ControlMaster，会认证两次；需要远端可写 [实 GH src/cli/ssh.zig:480-560 的 terminfo 安装流程] |
 
-  **建议 A** [定]：Windows 是 TCode 的一等平台，B 在 Windows 上体验差。A 的识别器需要 01 的镜像核心或会话 actor 支持"私有握手序列"，到时在 04 中增加。
+  **建议 A** [定]：Windows 是 TKCode 的一等平台，B 在 Windows 上体验差。A 的识别器需要 01 的镜像核心或会话 actor 支持"私有握手序列"，到时在 04 中增加。
 
 ### 2.7 askpass：要不要接到 UI
 
@@ -240,7 +240,7 @@ BuildSshArgs(t, cfg):
 - 设置 `SSH_ASKPASS=<脚本>` 和 `SSH_ASKPASS_REQUIRE=force`。ssh 需要密码、口令或确认时会运行这个脚本，脚本通过 socket 把提示发给 Zed，Zed 用对话框收集输入；
 - **前提**：Zed 的 master 连接是 `ssh -N`，**没有 TTY**。没有 askpass，ssh 就无法提示用户。
 
-**TCode 一期不需要它** [定]：
+**TKCode 一期不需要它** [定]：
 
 | 场景 | 有没有 TTY | 提示出现在哪里 |
 |---|---|---|
@@ -248,9 +248,9 @@ BuildSshArgs(t, cfg):
 | `ssh -V`、`ssh -G` | 不需要 | 不会认证，没有提示 |
 
 - 设置 askpass 反而会改变行为：`SSH_ASKPASS_REQUIRE=force` 会让交互终端也弹出对话框。所以交互终端**不设置** askpass，用户自己在环境中设置的 `SSH_ASKPASS*` 原样保留（这是用户的选择）。
-- **什么时候需要**：TCode 在后台运行没有 TTY 的 ssh 时（以后的 ControlMaster 预热、§3.4 中二期回退路径里的后台 master），要按 Zed 的方式实现：
+- **什么时候需要**：TKCode 在后台运行没有 TTY 的 ssh 时（以后的 ControlMaster 预热、§3.4 中二期回退路径里的后台 master），要按 Zed 的方式实现：
   - 每次连接一个 0700 临时目录，放 Unix socket 和一个 askpass 入口；
-  - 入口是 TCode 的 AOT 可执行文件，以 `--askpass <socket>` 模式运行；
+  - 入口是 TKCode 的 AOT 可执行文件，以 `--askpass <socket>` 模式运行；
   - 对话框必须显示主机名和 ssh 给出的原始提示文本，并标明"由 ssh 请求"（防钓鱼）；
   - OpenSSH 8.4 之前还要求设置 `DISPLAY` 才会使用 askpass [推]；
   - Win32-OpenSSH 是否支持 `SSH_ASKPASS` 需要实测 [推]。
@@ -281,14 +281,14 @@ BuildSshArgs(t, cfg):
 - **按钮**：
   - "重新连接"（Enter 键）：在同一标签中启动新会话，旧内容保留，中间插入分隔线（07 §6.3）；
   - "详细模式重试"：同样的命令加 `-v`，用于诊断；
-  - "编辑主机"：打开设置页对应的 profile。对于探测得到的主机，按钮名改为"打开 ~/.ssh/config"，用 TCode 的编辑器打开文件并定位到 `HostEntry.line`；
+  - "编辑主机"：打开设置页对应的 profile。对于探测得到的主机，按钮名改为"打开 ~/.ssh/config"，用 TKCode 的编辑器打开文件并定位到 `HostEntry.line`；
   - "复制命令"：复制等价的命令行（`LaunchPlan.DisplayCommand`）。
 - **onExit 对 255 无效**：即使用户设置 `onExit: close`，也不自动关闭，因为用户需要看到错误信息 [定]。
 - **常见错误的提示**（只匹配 ssh 自己打印的固定英文前缀，作为横幅中的附加说明，不替代原文）：
 
 | 输出中包含 | 附加说明 |
 |---|---|
-| `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | 主机密钥与 known_hosts 不一致。如果确认是服务器重装，可以运行 `ssh-keygen -R <host>`（TCode 不自动执行） |
+| `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | 主机密钥与 known_hosts 不一致。如果确认是服务器重装，可以运行 `ssh-keygen -R <host>`（TKCode 不自动执行） |
 | `Permission denied (publickey` | 服务器只接受公钥认证；检查 ssh-agent 是否运行、`IdentityFile` 是否正确 |
 | `Could not resolve hostname` | 主机名无法解析；检查 `HostName` |
 | `Too many authentication failures` | agent 中的密钥过多，超过了服务器的 `MaxAuthTries`；可以在该主机的配置中设置 `IdentitiesOnly yes`（research/06 §3） |
@@ -299,7 +299,7 @@ BuildSshArgs(t, cfg):
 
 | 问题 | 结论 |
 |---|---|
-| TCode 会不会主动开启 ControlMaster | **不会**（一期）。用户在 config 中写了 `ControlMaster auto` + `ControlPath` + `ControlPersist`，系统 ssh 自然会复用：第二个标签连接同一主机时不需要再认证 |
+| TKCode 会不会主动开启 ControlMaster | **不会**（一期）。用户在 config 中写了 `ControlMaster auto` + `ControlPath` + `ControlPersist`，系统 ssh 自然会复用：第二个标签连接同一主机时不需要再认证 |
 | 第一个标签就是 master 时关闭它 | 没有 `ControlPersist` 时，master 会等所有共享会话结束后才退出，标签关闭会被延迟。我们的关闭确认（07 §6.1）把 `ssh` 视为"在运行"，会弹出确认 |
 | `ControlPersist` 让 master 转入后台 | master 进程脱离我们的会话，继续存活。关闭标签时我们发 SIGHUP 给进程组，它已经不在进程组里了，所以不受影响。这符合用户在 config 中表达的意图 |
 | Windows | Win32-OpenSSH 不支持 ControlMaster（依赖 Unix socket 与文件描述符传递）[实 research/06 §1 Zed 行] |
@@ -317,8 +317,8 @@ BuildSshArgs(t, cfg):
 | 远端输出伪造 OSC | OSC 7 和 OSC 8 中的远端 `file://` 不当作本地路径（07 §6.4）；OSC 52 读剪贴板默认询问（01 §8）；伪造的 `633;E` 没有 nonce，不被信任（07 §5.1） |
 | Agent 操作 SSH 终端 | 在 SSH 终端里执行命令的影响在远端，审批必须明确显示"远程主机 `prod-1`"。默认要求逐条审批，不适用"本地只读命令免审批"的规则 [定，细节由 09 定] |
 | revive 快照中的远端输出 | 与本地会话相同：0600、行数上限、可以关闭（`persistence.*`，07 §7.3） |
-| Agent forwarding | TCode 从不添加 `-A`；用户在 config 或 profile 的 `args` 中自己开启 |
-| 凭据 | TCode 一期不接触任何密码或口令（都在 ssh 进程里）；不在命令行中传递密码；`sshpass` 一类的做法不支持 |
+| Agent forwarding | TKCode 从不添加 `-A`；用户在 config 或 profile 的 `args` 中自己开启 |
+| 凭据 | TKCode 一期不接触任何密码或口令（都在 ssh 进程里）；不在命令行中传递密码；`sshpass` 一类的做法不支持 |
 
 ---
 
@@ -337,8 +337,8 @@ BuildSshArgs(t, cfg):
 
 **放在哪里** [定]：
 
-- 新项目 `src/TCode.Terminal.Ssh`，只依赖 Tmds.Ssh 和 BCL，不依赖其他 TCode 项目（D2）。内容：
-  - `SshConfigDump`（`ssh -G` 的运行与解析，一期就需要，届时从 `TCode.Terminal.Shell` 移过来）；
+- 新项目 `src/TKCode.Terminal.Ssh`，只依赖 Tmds.Ssh 和 BCL，不依赖其他 TKCode 项目（D2）。内容：
+  - `SshConfigDump`（`ssh -G` 的运行与解析，一期就需要，届时从 `TKCode.Terminal.Shell` 移过来）；
   - `SshSettingsMapper`；
   - `SshConnectionPool`；
   - `SshChannelConnection : ITerminalConnection`（§3.6）。
@@ -406,7 +406,7 @@ BuildSshArgs(t, cfg):
 |---|---|---|
 | keyboard-interactive（Duo、Google Authenticator、PAM 的 OTP） | Tmds.Ssh 没有实现（`kbdinteractivedevices` 的注释是 "not supported"）[实 research/06 §2.1] | ① 向上游提交 RFC 4256 的实现（协议很小，维护者活跃）；② 合入之前：服务器只提供 keyboard-interactive 时，认证失败 → 文件树显示"此主机需要交互式认证，托管连接暂不支持" |
 | FIDO（`sk-ssh-ed25519@openssh.com`、`sk-ecdsa-sha2-nistp256@openssh.com`） | 私钥文件需要 libfido2；经 agent 签名需要库认识 sk 公钥算法，目前不认识 | ① 上游 PR：增加 sk 公钥算法名与签名格式，让 agent 中的 sk 密钥可用（触摸由 agent 驱动）；② 磁盘上的 sk 密钥文件**不支持**（不引入 libfido2 的 6 RID 原生依赖） |
-| ProxyCommand | 无法实现（§3.2） | 上游 PR：公开一个基于 `Func<CancellationToken, ValueTask<Stream>>` 的 `StreamProxy`；TCode 用它运行 ProxyCommand 并把子进程的 stdin/stdout 作为 Stream |
+| ProxyCommand | 无法实现（§3.2） | 上游 PR：公开一个基于 `Func<CancellationToken, ValueTask<Stream>>` 的 `StreamProxy`；TKCode 用它运行 ProxyCommand 并把子进程的 stdin/stdout 作为 Stream |
 | `IdentityAgent` 指定路径 | 无法指定 | 上游 PR：公开 `SshAgentCredentials(string address)` |
 | PEM / PPK 私钥 | 不支持 | 提示用户 `ssh-keygen -p -f <key>` 转换为 OpenSSH 格式（只显示命令） |
 | 以上任何一项不满足 | — | **回退** |
@@ -415,12 +415,12 @@ BuildSshArgs(t, cfg):
 
 | 平台 | 回退 |
 |---|---|
-| macOS / Linux | **系统 ssh + ControlMaster + SFTP over stdio**：<br>① 在一个**可见的** PTY 标签中运行 `ssh -M -S <TCODE_HOME/run/ssh/<hash>.sock> -o ControlPersist=10m -N <别名>`，用户在终端里完成 OTP 或 FIDO 触摸（与一期的体验相同）；<br>② 之后运行 `ssh -S <sock> -s <别名> sftp`（`-s` 表示请求 subsystem），把子进程的 stdin/stdout 当作 SFTP 通道；<br>③ 在这个 Stream 上运行一个**最小的 SFTP v3 客户端**：Tmds.Ssh 的 `SftpClient` 只能通过 `SshClient` 创建 [实 TMDS SftpClient.cs:117-147]。可以向上游提议"基于 Stream 的 SftpClient"，否则自己实现一个只读子集（opendir/readdir/stat/open/read/close，约 800 行）。<br>socket 目录 0700；TCode 退出时 `ssh -O exit` |
+| macOS / Linux | **系统 ssh + ControlMaster + SFTP over stdio**：<br>① 在一个**可见的** PTY 标签中运行 `ssh -M -S <TKCODE_HOME/run/ssh/<hash>.sock> -o ControlPersist=10m -N <别名>`，用户在终端里完成 OTP 或 FIDO 触摸（与一期的体验相同）；<br>② 之后运行 `ssh -S <sock> -s <别名> sftp`（`-s` 表示请求 subsystem），把子进程的 stdin/stdout 当作 SFTP 通道；<br>③ 在这个 Stream 上运行一个**最小的 SFTP v3 客户端**：Tmds.Ssh 的 `SftpClient` 只能通过 `SshClient` 创建 [实 TMDS SftpClient.cs:117-147]。可以向上游提议"基于 Stream 的 SftpClient"，否则自己实现一个只读子集（opendir/readdir/stat/open/read/close，约 800 行）。<br>socket 目录 0700；TKCode 退出时 `ssh -O exit` |
 | Windows | 没有 ControlMaster。回退为"此主机的文件树不可用：原因 X。终端连接不受影响。" |
 
 ### 3.4 known_hosts 的界面
 
-Tmds.Ssh 读写的是与 OpenSSH **相同的** known_hosts 文件（`UserKnownHostsFilePaths`），所以信任关系在系统 ssh 和 TCode 之间是共享的 [实 research/06 §2.1]：在终端里接受过的主机，文件树不再询问；反之亦然。
+Tmds.Ssh 读写的是与 OpenSSH **相同的** known_hosts 文件（`UserKnownHostsFilePaths`），所以信任关系在系统 ssh 和 TKCode 之间是共享的 [实 research/06 §2.1]：在终端里接受过的主机，文件树不再询问；反之亦然。
 
 `HostAuthentication` 委托收到 `KnownHostResult`（`Trusted` / `Revoked` / `Changed` / `Unknown`）[实 TMDS KnownHostResult.cs] 和 `ConnectionInfo`（含主机密钥）：
 
@@ -477,7 +477,7 @@ SHA256 指纹：SHA256:Xq2…9kE              [复制]
 运行在 pty host 中，替换本地 PTY 作为会话的连接；镜像核心、输出日志、快照、命令跟踪都不受影响（01 §3）。
 
 ```csharp
-namespace TCode.Terminal.Ssh;
+namespace TKCode.Terminal.Ssh;
 
 /// managed 模式的远程终端：一条已认证的 SshClient 上的一个 session 通道（pty-req + shell）。
 public sealed class SshChannelConnection : ITerminalConnection
@@ -583,13 +583,13 @@ public sealed class SshChannelConnection : ITerminalConnection
 | 主题 | 规则 |
 |---|---|
 | 凭据 | 二期的密码、密钥口令只保存在内存中，用完后尽量清零（`char[]`、`CryptographicOperations.ZeroMemory`）；**从不写盘**，也不放进 settings.json；对话框不提供"记住密码"（以后如果要做，使用系统钥匙串，单独评审） |
-| 主机密钥 | 只用 OpenSSH 的 known_hosts 文件，不建立 TCode 自己的信任库；`Changed` 和 `Revoked` 一律拒绝（§3.4） |
-| 提示的来源 | 所有凭据对话框都显示主机名、端口和"由 TCode 托管连接请求"，与 Agent 的审批对话框在视觉上区分开，防止远端或 Agent 诱导用户在错误的对话框中输入密码 |
+| 主机密钥 | 只用 OpenSSH 的 known_hosts 文件，不建立 TKCode 自己的信任库；`Changed` 和 `Revoked` 一律拒绝（§3.4） |
+| 提示的来源 | 所有凭据对话框都显示主机名、端口和"由 TKCode 托管连接请求"，与 Agent 的审批对话框在视觉上区分开，防止远端或 Agent 诱导用户在错误的对话框中输入密码 |
 | agent forwarding | 托管连接一律关闭 agent 和 X11 转发（§3.2） |
 | 远程路径 | SFTP 返回的文件名是不可信输入：显示时过滤控制字符和换行；`..`、绝对路径和符号链接按远端语义处理，不拼接成本地路径；下载到本地时处理 Windows 的保留名（`CON`、`NUL` 等）和非法字符（`:`、`*`），覆盖前确认 |
 | Agent 的远程操作 | Agent 读取远程文件、在远程终端中执行命令，都需要审批，并在审批界面中明确显示远程主机（09）；远程写入默认不提供 |
-| 子进程环境 | `ssh -G`、`ssh -V`、回退方案中的 master 都使用 07 §4 的环境（剔除 `TCODE_*`，防止 pty host 的令牌泄漏给 ssh 调用的 `ProxyCommand`、`Match exec`） |
-| 控制 socket | 回退方案的 ControlPath 放在 `$TCODE_HOME/run/ssh/`（0700），文件名用哈希，避免超过 Unix socket 路径长度上限（104 字节）[推] |
+| 子进程环境 | `ssh -G`、`ssh -V`、回退方案中的 master 都使用 07 §4 的环境（剔除 `TKCODE_*`，防止 pty host 的令牌泄漏给 ssh 调用的 `ProxyCommand`、`Match exec`） |
+| 控制 socket | 回退方案的 ControlPath 放在 `$TKCODE_HOME/run/ssh/`（0700），文件名用哈希，避免超过 Unix socket 路径长度上限（104 字节）[推] |
 | 日志 | 不记录 `ssh -G` 的完整输出（可能包含内部主机名和用户名）；只在用户主动打开诊断时显示 |
 | 项目级配置（以后） | 不允许项目级配置定义 ssh profile、`ssh.path`、`ssh.configFile`（§2.10） |
 
@@ -678,10 +678,10 @@ GitHub Actions 的 Linux runner 用 service container 运行。镜像是自己�
 | 列表中混入无法登录的主机（git 托管站点、只做跳板的主机） | 菜单杂乱 | 默认隐藏列表 + 用户可调；以后可以按"最近使用"折叠 |
 | `ssh -G` 执行 `Match exec` 带来的延迟和副作用 | 打开详情变慢 | 只按需运行，带超时，结果缓存 |
 | 255 的歧义（远端命令自己返回 255） | 误报"连接失败" | 横幅措辞保守，以终端里的原始输出为准 |
-| Tmds.Ssh 是单人维护的库（research/06：244 星） | 上游 PR 合入慢或者不合入；项目停滞 | pin 版本；上游 PR 不合入时在 TCode 内维护一个小的 fork（MIT）；文件树功能本身有回退方案，可以降级 |
+| Tmds.Ssh 是单人维护的库（research/06：244 星） | 上游 PR 合入慢或者不合入；项目停滞 | pin 版本；上游 PR 不合入时在 TKCode 内维护一个小的 fork（MIT）；文件树功能本身有回退方案，可以降级 |
 | Tmds.Ssh 不兼容的主机比例高（企业环境中 ProxyCommand、OTP 很常见） | 文件树对这些用户不可用 | 一期不受影响；二期提供"不兼容原因"，并优先推进 ProxyCommand 和 keyboard-interactive 的上游 PR |
 | 两次认证（Windows、没有 agent 的密码主机） | 体验差 | `managed` 模式（§3.5）；鼓励使用 agent |
-| 远程 shell 集成的方案 A 需要在输出路径上识别握手 | 安全面增加（远端可以伪造请求） | 一次性口令 + 只在 TCode 主动发起的引导会话中识别；v2 单独评审 |
+| 远程 shell 集成的方案 A 需要在输出路径上识别握手 | 安全面增加（远端可以伪造请求） | 一次性口令 + 只在 TKCode 主动发起的引导会话中识别；v2 单独评审 |
 | `SendEnv` 导致个别网络设备断开连接 | 连接失败 | `ssh.sendEnv: false`，或按 profile 关闭 |
 
 ---

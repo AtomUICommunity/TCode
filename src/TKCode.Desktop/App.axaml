@@ -1,0 +1,20 @@
+<Application xmlns:smt="using:StreamMark.Avalonia.Themes"
+             xmlns:sma="using:StreamMark.Theme.AtomUI"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TKCode.Desktop.App"
+             Name="TKCode">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://TKCode/Styling/Palette.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+    <Application.Styles>
+        <StyleInclude Source="avares://TKCode/Styling/Controls.axaml" />
+        <!-- StreamMark：默认 Markdown 外观，再映射到 AtomUI 设计 token -->
+        <smt:StreamMarkTheme />
+        <sma:AtomUIMarkdownTheme />
+    </Application.Styles>
+</Application>

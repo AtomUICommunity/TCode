@@ -1,16 +1,16 @@
 using System.Text;
-using TCode.Terminal.Core;
-using TCode.Terminal.Pty;
+using TKCode.Terminal.Core;
+using TKCode.Terminal.Pty;
 
 // esctest2 无头驱动（11 §1.1.4，参照 Ghostty test/esctest/src/main.zig）：
-// 在真实 PTY 中运行 esctest.py，输出全部写入 TCode 核心（一致性测试模式：DECRQCRA 校验和、VT520 DA、CSI 8 t），
+// 在真实 PTY 中运行 esctest.py，输出全部写入 TKCode 核心（一致性测试模式：DECRQCRA 校验和、VT520 DA、CSI 8 t），
 // 核心的应答写回 PTY；结束后解析 esctest 日志，与 known-failures 比较：新增失败 → 退出码 1；已知失败通过了 → 警告。
 //
 // 用法：esctest-runner --esctest <esctest 目录> [--known <known-failures.txt>] [--log <日志路径>] [-- esctest 参数...]
 
 var esctestDir = Arg("--esctest") ?? throw new ArgumentException("--esctest <dir> is required");
 var knownPath = Arg("--known");
-var logPath = Path.GetFullPath(Arg("--log") ?? Path.Combine(Path.GetTempPath(), $"esctest-tcode-{Environment.ProcessId}.log"));
+var logPath = Path.GetFullPath(Arg("--log") ?? Path.Combine(Path.GetTempPath(), $"esctest-tkcode-{Environment.ProcessId}.log"));
 var passthrough = args.SkipWhile(a => a != "--").Skip(1).ToArray();
 
 var (tally, failing) = await RunAsync(passthrough, logPath);

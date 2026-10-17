@@ -1,0 +1,46 @@
+tkcode-grid 1
+size 105x29 cell 8x16
+cursor 1,22 shape=block visible=1 blink=0 wide=0
+screen alternate
+modes decckm=1 deckpam=1 2004=0 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+  s1 fg=4 bold
+  s2 fg=2 bold
+  s3 fg=2
+  s4 fg=1 bold
+  s5 fg=1
+  s6 fg=3
+  s7 fg=0 bg=3
+  s8 fg=0 bg=4
+rows
+   0 |* bdd2181 - (2 hours ago) Add support for recording/running ref tests - Joe Wilm                         | s0:0-1 s1:2-8 s0:9-11 s2:12-24 s0:25-69 s3:70-79 s0:80-104
+   1 | (HEAD -> ref-tests, origin/ref-tests)                                                                   | s4:0-37 s0:38-104
+   2 || *   d629f72 - (2 days ago) WIP on master: d97996e Make bindings configurable f                         | s5:0 s0:1-5 s1:6-12 s0:13-15 s2:16-27 s0:28-104
+   3 |rom alacritty.yml - Joe Wilm (refs/stash)                                                                | s0:0-17 s3:18-27 s4:28-40 s0:41-104
+   4 || |\                                                                                                     | s5:0 s0:1 s5:2 s6:3 s0:4-104
+   5 ||/ /                                                                                                     | s5:0-1 s0:2 s6:3 s0:4-104
+   6 || * 5908bde - (2 days ago) index on master: d97996e Make bindings configurable f                         | s5:0 s0:1-3 s1:4-10 s0:11-13 s2:14-25 s0:26-104
+   7 |rom alacritty.yml - Joe Wilm                                                                             | s0:0-17 s3:18-27 s0:28-104
+   8 ||/                                                                                                       | s5:0-1 s0:2-104
+   9 |* d97996e - (4 days ago) Make bindings configurable from alacritty.yml - Joe Wil                         | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-70 s3:71-79 s0:80-104
+  10 |m (origin/master, origin/bindings-v2, origin/HEAD, master, bindings-v2)                                  | s3:0 s4:1-70 s0:71-104
+  11 |* cb2bc4e - (4 days ago) Fix test for Cell layout - Joe Wilm                                             | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-49 s3:50-59 s0:60-104
+  12 |* cbb9167 - (5 days ago) Redraw screen on focus - Joe Wilm                                               | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-47 s3:48-57 s0:58-104
+  13 |* 8360ab4 - (8 days ago) Fallback to received chars when no bindings - Joe Wilm                          | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-68 s3:69-78 s0:79-104
+  14 |* 6925daa - (8 days ago) Fix/add some keybindings - Joe Wilm                                             | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-49 s3:50-59 s0:60-104
+  15 |* e426013 - (8 days ago) Fix alacritty shutdown when shell exits on macOS - Joe                          | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-73 s3:74-79 s0:80-104
+  16 |Wilm                                                                                                     | s3:0-3 s0:4-104
+  17 |* 8cbd768 - (8 days ago) Fix resize on macOS leaving screen blank - Joe Wilm                             | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-65 s3:66-75 s0:76-104
+  18 |* a652b4a - (8 days ago) Rustup - Joe Wilm                                                               | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-31 s3:32-41 s0:42-104
+  19 |* 8cbd768 - (8 days ago) Fix resize                                                                      | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-104
+  20 |                                    on macOS leaving screen blank - Joe Wilm                             | s0:0-65 s3:66-75 s0:76-104
+  21 |* a652b4a - (8 days ago) Rustup - Joe Wilm                                                               | s0:0-1 s1:2-8 s0:9-11 s2:12-23 s0:24-31 s3:32-41 s0:42-104
+  22 |:                                                                                                        | s0
+  23 |1:git*                                                                                                   | s7:0-5 s8:6-79 s0:80-104
+  24 |                                                                                                         | s0
+  25 |                                                                                                         | s0
+  26 |                                                                                                         | s0
+  27 |                                                                                                         | s0
+  28 |                                                                                                         | s0

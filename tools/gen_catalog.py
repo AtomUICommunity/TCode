@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""把 models.dev 的 api.json 裁剪成 TCode 的内置模型目录（src/TCode.AgentHost/Catalog/catalog.json）。
+"""把 models.dev 的 api.json 裁剪成 TKCode 的内置模型目录（src/TKCode.AgentHost/Catalog/catalog.json）。
 
-只保留能映射到 TCode 三种协议的厂商，以及支持工具调用、未弃用、输出文本的模型。
-规则与 src/TCode.AgentHost/Catalog/ModelsDevTrimmer.cs（运行时在线同步）一致，修改时两处同步，
-并用 TCODE_MODELSDEV_FILE=<同一份 api.json> 运行 TrimmerParityTests 验证。
+只保留能映射到 TKCode 三种协议的厂商，以及支持工具调用、未弃用、输出文本的模型。
+规则与 src/TKCode.AgentHost/Catalog/ModelsDevTrimmer.cs（运行时在线同步）一致，修改时两处同步，
+并用 TKCODE_MODELSDEV_FILE=<同一份 api.json> 运行 TrimmerParityTests 验证。
 用法：
   curl -sSL https://models.dev/api.json -o /tmp/models.dev.json
   python3 -I tools/gen_catalog.py /tmp/models.dev.json
@@ -14,7 +14,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "src/TCode.AgentHost/Catalog/catalog.json"
+OUT = ROOT / "src/TKCode.AgentHost/Catalog/catalog.json"
 
 # npm 包 → (协议, 缺省 Base URL)
 NPM = {
@@ -72,7 +72,7 @@ def main():
         base_url = p.get("api") or default_url
         if not base_url:
             continue
-        # AI SDK 的 Anthropic baseURL 含 /v1（再拼 /messages），TCode 的 Messages 适配器自己拼 /v1/messages
+        # AI SDK 的 Anthropic baseURL 含 /v1（再拼 /messages），TKCode 的 Messages 适配器自己拼 /v1/messages
         if api == "messages" and base_url.rstrip("/").endswith("/v1"):
             base_url = base_url.rstrip("/")[:-3]
         models = {}

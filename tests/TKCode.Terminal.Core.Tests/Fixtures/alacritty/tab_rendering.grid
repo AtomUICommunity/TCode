@@ -1,0 +1,74 @@
+tkcode-grid 1
+size 116x63 cell 8x16
+cursor 45,13 shape=block visible=1 blink=0 wide=0
+screen primary
+modes decckm=0 deckpam=0 2004=1 1004=0 mouse=none kitty=0 2026=0 2027=0 origin=0 autowrap=1 insert=0 9001=0
+title ""
+styles
+  s0 default
+  s1 fg=0 bg=9
+  s2 fg=7 bg=8
+rows
+   0 | UL  ~/…/tests/ref/tab_rendering  copy-tabs  echo '\tb\na\tb\naa\tb\naaa\tb\naaaa\tb\naaaaa\tb\naaaaaa\tb\naaaaaaa\t| s1:0-3 s2:4-32 s1:33-43 s0:44-115  wrap
+   1 |b\naaaaaaaa\tb\naaaaaaaaa\tb\naaaaaaaaaa\tb'                                                                        | s0
+   2 |        b                                                                                                           | s0
+   3 |a       b                                                                                                           | s0
+   4 |aa      b                                                                                                           | s0
+   5 |aaa     b                                                                                                           | s0
+   6 |aaaa    b                                                                                                           | s0
+   7 |aaaaa   b                                                                                                           | s0
+   8 |aaaaaa  b                                                                                                           | s0
+   9 |aaaaaaa b                                                                                                           | s0
+  10 |aaaaaaaa        b                                                                                                   | s0
+  11 |aaaaaaaaa       b                                                                                                   | s0
+  12 |aaaaaaaaaa      b                                                                                                   | s0
+  13 | UL  ~/…/tests/ref/tab_rendering  copy-tabs                                                                         | s1:0-3 s2:4-32 s1:33-43 s0:44-115
+  14 |                                                                                                                    | s0
+  15 |                                                                                                                    | s0
+  16 |                                                                                                                    | s0
+  17 |                                                                                                                    | s0
+  18 |                                                                                                                    | s0
+  19 |                                                                                                                    | s0
+  20 |                                                                                                                    | s0
+  21 |                                                                                                                    | s0
+  22 |                                                                                                                    | s0
+  23 |                                                                                                                    | s0
+  24 |                                                                                                                    | s0
+  25 |                                                                                                                    | s0
+  26 |                                                                                                                    | s0
+  27 |                                                                                                                    | s0
+  28 |                                                                                                                    | s0
+  29 |                                                                                                                    | s0
+  30 |                                                                                                                    | s0
+  31 |                                                                                                                    | s0
+  32 |                                                                                                                    | s0
+  33 |                                                                                                                    | s0
+  34 |                                                                                                                    | s0
+  35 |                                                                                                                    | s0
+  36 |                                                                                                                    | s0
+  37 |                                                                                                                    | s0
+  38 |                                                                                                                    | s0
+  39 |                                                                                                                    | s0
+  40 |                                                                                                                    | s0
+  41 |                                                                                                                    | s0
+  42 |                                                                                                                    | s0
+  43 |                                                                                                                    | s0
+  44 |                                                                                                                    | s0
+  45 |                                                                                                                    | s0
+  46 |                                                                                                                    | s0
+  47 |                                                                                                                    | s0
+  48 |                                                                                                                    | s0
+  49 |                                                                                                                    | s0
+  50 |                                                                                                                    | s0
+  51 |                                                                                                                    | s0
+  52 |                                                                                                                    | s0
+  53 |                                                                                                                    | s0
+  54 |                                                                                                                    | s0
+  55 |                                                                                                                    | s0
+  56 |                                                                                                                    | s0
+  57 |                                                                                                                    | s0
+  58 |                                                                                                                    | s0
+  59 |                                                                                                                    | s0
+  60 |                                                                                                                    | s0
+  61 |                                                                                                                    | s0
+  62 |                                                                                                                    | s0

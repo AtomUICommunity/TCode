@@ -43,7 +43,7 @@
       ]
     },
     {
-      "file": "overlays/0002-tcode-extensions-clipboard-deferred-and-mok2.patch",
+      "file": "overlays/0002-tkcode-extensions-clipboard-deferred-and-mok2.patch",
       "ids": [
         "O3",
         "O4"

@@ -1,17 +1,17 @@
-# TCode 设置文件规格
+# TKCode 设置文件规格
 
-TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` 改到别处。
+TKCode 的数据目录默认为 `~/.tkcode`，可以用环境变量 `TKCODE_HOME` 改到别处。
 
 | 文件 | 由谁写入 | 内容 |
 |---|---|---|
 | `settings.json` | 用户（手工编辑或通过设置界面） | 厂商与模型、默认模型、语言、主题 |
-| `settings.schema.json` | TCode 启动时生成 | JSON Schema，供编辑器自动补全 |
+| `settings.schema.json` | TKCode 启动时生成 | JSON Schema，供编辑器自动补全 |
 | `state.json` | 程序自动写入 | 收藏的模型、最近项目、上次使用的会话参数等 |
 | `sessions/` | Agent Host | 会话记录（JSONL） |
 
 ## 1. 设计原则
 
-1. **能省则省**：内置模型目录（裁剪后的 models.dev 快照，再叠加 TCode 自己的补充）。
+1. **能省则省**：内置模型目录（裁剪后的 models.dev 快照，再叠加 TKCode 自己的补充）。
    - 内置厂商只需要填一个 Key；
    - 自定义厂商的模型只需要写 id，元数据缺失时使用保守的默认值。
 2. **同一套写法覆盖内置项**：`providers` 的键与内置厂商 id 相同时，写下的每个字段都是对内置值的覆盖；键不同时就是自定义厂商。
@@ -108,7 +108,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
   - 结果会缓存，设置页中可以手动刷新；
   - 获取失败且没有 `models` 时，该厂商显示为“配置错误”，**不影响其它配置**；
   - 发现的模型 id 若在内置目录中存在（例如代理转发的 `deepseek-v4-pro`），自动沿用目录元数据。
-- 内置厂商省略 `models` 时，启用目录中的**推荐模型**：TCode 维护的推荐列表；没有推荐列表时，取最近发布、支持工具调用、未弃用的 8 个模型。
+- 内置厂商省略 `models` 时，启用目录中的**推荐模型**：TKCode 维护的推荐列表；没有推荐列表时，取最近发布、支持工具调用、未弃用的 8 个模型。
 - 写了 `models` 时，**只启用列出的模型**。值是对目录元数据的覆盖，`{}` 表示完全使用目录中的元数据。
 
 **什么情况下厂商会出现在模型选择器中**
@@ -149,7 +149,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 
 ### 2.4 `compat`（兜底）
 
-一般由 TCode 根据 Base URL 和目录自动判断。只有遇到确认的厂商差异时才需要手写。字段与代码中的 `ModelCompat` 一一对应，常用的有：
+一般由 TKCode 根据 Base URL 和目录自动判断。只有遇到确认的厂商差异时才需要手写。字段与代码中的 `ModelCompat` 一一对应，常用的有：
 
 - `maxTokensField`：`max_tokens` \| `max_completion_tokens`
 - `thinkingFormat`：`OpenAIEffort` \| `ThinkingType` \| `ThinkingTypeAndEffort` \| `EnableThinking` \| `OpenRouter` \| `None`
@@ -196,13 +196,13 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 | `name` | 显示名 |
 
 - **变量**：所有字符串都支持 `{env:VAR}`、`$VAR`、`${VAR}`、`${VAR:-default}`、`${env:VAR}`、`${workspaceFolder}`、`${userHome}`。变量未设置时展开为空串，并在设置页提示。
-- **项目级配置**：项目根目录（git 根）的 `.mcp.json`，格式与 Claude Code 相同（顶层为 `mcpServers`），覆盖同名的全局服务器。项目服务器需要用户确认信任后才会启动；信任记录保存在 `~/.tcode/mcp/trust.json`，配置改变后需要重新确认。
+- **项目级配置**：项目根目录（git 根）的 `.mcp.json`，格式与 Claude Code 相同（顶层为 `mcpServers`），覆盖同名的全局服务器。项目服务器需要用户确认信任后才会启动；信任记录保存在 `~/.tkcode/mcp/trust.json`，配置改变后需要重新确认。
 - **工具名**：模型看到的名字是 `mcp__<服务器>__<工具>`，长度上限 64。
 - **错误处理**：单个服务器的配置有误时，只停用该服务器，不影响整个文件。
 
 ## 3. 内置目录
 
-- **来源**：models.dev（`https://models.dev/api.json`）的快照，由 `tools/gen_catalog.py` 裁剪后作为嵌入资源放在 `src/TCode.AgentHost/Catalog/catalog.json`。
+- **来源**：models.dev（`https://models.dev/api.json`）的快照，由 `tools/gen_catalog.py` 裁剪后作为嵌入资源放在 `src/TKCode.AgentHost/Catalog/catalog.json`。
 - **只保留能映射到三种协议的厂商**：
 
   | npm 包 | 协议 |
@@ -216,7 +216,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 - **只保留**支持工具调用、未弃用、输出为文本的模型。
 - **字段映射**：
 
-  | models.dev | TCode |
+  | models.dev | TKCode |
   |---|---|
   | `reasoning_options.effort.values` | `efforts` |
   | 存在 `toggle` | 可以关闭思考（`supportsDisabledThinking`） |
@@ -224,8 +224,8 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
   | `limit.context` / `limit.output` | `contextWindow` / `maxTokens` |
   | `modalities.input` 含 `image` | `images` |
 
-- **TCode 补充**（`BuiltInCatalog.Overlay`）：各厂商的推荐模型、一句话说明、fast mode、个别模型的默认上下文预算（`DefaultContextWindows` 表，按去掉路由前缀与 `@`/`:` 后缀的模型 id 匹配所有厂商），以及 models.dev 没有覆盖的默认 Base URL。
-- **优先级**：目录 → TCode 补充 → `settings.json`，后者覆盖前者。
+- **TKCode 补充**（`BuiltInCatalog.Overlay`）：各厂商的推荐模型、一句话说明、fast mode、个别模型的默认上下文预算（`DefaultContextWindows` 表，按去掉路由前缀与 `@`/`:` 后缀的模型 id 匹配所有厂商），以及 models.dev 没有覆盖的默认 Base URL。
+- **优先级**：目录 → TKCode 补充 → `settings.json`，后者覆盖前者。
 
 ### 3.1 更新目录（手动）
 
@@ -236,11 +236,11 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 2. **查看差异**：按厂商列出新增、移除、变更的模型，以及字段变化（名称、上下文、输出上限、推理、图片、推理档位、可否关闭思考、输入 / 输出价格、厂商的 Base URL 与协议）。
    - 默认只显示用户已添加的厂商，可以切换为显示全部；
    - 每个厂商最多显示 20 个模型。
-3. **应用更新或放弃**：应用后写入 `~/.tcode/cache/catalog.json`，替换目录，重载模型列表并推送 `models/changed`。放弃则丢弃暂存结果。
+3. **应用更新或放弃**：应用后写入 `~/.tkcode/cache/catalog.json`，替换目录，重载模型列表并推送 `models/changed`。放弃则丢弃暂存结果。
 
 - **失败处理**：网络错误、格式错误或结果为空时，不产生暂存结果，设置页显示错误。
 - **启动加载**：有有效缓存就用缓存（即上次应用的更新），否则用嵌入快照。
-- **规则一致性**：Python 与 C# 两份裁剪规则必须同步修改。用同一份 api.json 设置 `TCODE_MODELSDEV_FILE` 后运行 `TrimmerParityTests`，可以验证两者输出一致。
+- **规则一致性**：Python 与 C# 两份裁剪规则必须同步修改。用同一份 api.json 设置 `TKCODE_MODELSDEV_FILE` 后运行 `TrimmerParityTests`，可以验证两者输出一致。
 
 ### 2.5 错误的级别
 
@@ -253,7 +253,7 @@ TCode 的数据目录默认为 `~/.tcode`，可以用环境变量 `TCODE_HOME` �
 ## 4. 开发用 Fake 厂商
 
 满足以下任一条件时会出现 Fake 厂商：
-- 设置了环境变量 `TCODE_FAKE_PROVIDER=1`；
+- 设置了环境变量 `TKCODE_FAKE_PROVIDER=1`；
 - 没有任何其它可用模型。
 
 这样离线也能体验完整流程，配置了真实厂商后它不会混在模型列表里。

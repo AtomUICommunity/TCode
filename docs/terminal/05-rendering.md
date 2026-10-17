@@ -1,8 +1,8 @@
-# TCode 终端：渲染（TCode.Terminal.Avalonia）
+# TKCode 终端：渲染（TKCode.Terminal.Avalonia）
 
 > 状态：设计稿 v1（2026-10-16）。上游约束见 [01-architecture.md](01-architecture.md)（D5、§5.2 线程、§6.1 FrameSnapshot、§6.5 TerminalView）；依据见 [research/04](research/04-rendering-performance.md)、[research/05](research/05-platform-behavior-config.md) §7、[research/03](research/03-vt-protocol.md) §6。输入侧见 [06-input.md](06-input.md)。
 >
-> **来源标注**：**[已核实]** = 在只读源码中读到（Avalonia tag `12.1.3`/`8eeda4f`，libghostty-vt `b3dc3d7`，TCode `dfd3657`，StreamMark `074f7ff`），给出 `文件:行`；**[推断]** = 设计决定或由源码推导，未经运行验证；**[spike]** = 必须先做实验确认的点（§13）。
+> **来源标注**：**[已核实]** = 在只读源码中读到（Avalonia tag `12.1.3`/`8eeda4f`，libghostty-vt `b3dc3d7`，TKCode `dfd3657`，StreamMark `074f7ff`），给出 `文件:行`；**[推断]** = 设计决定或由源码推导，未经运行验证；**[spike]** = 必须先做实验确认的点（§13）。
 
 ## 0. 结论摘要
 
@@ -15,11 +15,11 @@
 | 行缓存 | 键 = `RowId + Version + FontGeneration`（连字且"光标处断开"时再加光标列）；颜色、选区、搜索、光标**不进键**，绘制时用裁剪覆盖着色 |
 | 字体 | 默认按平台（`.SF NS Mono`→Menlo / Cascadia Mono→Consolas / portal monospace）；逐码点回退 + 缓存；系统查找放后台线程，先画占位 |
 | 帧调度 | 输入路径无定时器；空闲时渲染循环休眠；光标闪烁由 UI 线程按相位边界唤醒（不逐帧轮询）；mode 2026 由核心 actor 扣住快照 |
-| 主题 | `Terminal.*` 资源键 + `TerminalResourceAlias`（同 `MarkdownResourceAlias`）；Desktop 映射 AtomUI token / TCode 调色板；明暗两套 ANSI 16 色（§11.3） |
+| 主题 | `Terminal.*` 资源键 + `TerminalResourceAlias`（同 `MarkdownResourceAlias`）；Desktop 映射 AtomUI token / TKCode 调色板；明暗两套 ANSI 16 色（§11.3） |
 
 ## 1. 模块与文件
 
-`src/TCode.Terminal.Avalonia/Rendering/`：
+`src/TKCode.Terminal.Avalonia/Rendering/`：
 
 | 类型 | 职责 | 所在线程（R3 / R1） |
 |---|---|---|
@@ -67,7 +67,7 @@ UI 线程 ── OverlayState ─────┤        Painter → DrawingConte
 ### 3.1 接口
 
 ```csharp
-namespace TCode.Terminal.Avalonia.Rendering;
+namespace TKCode.Terminal.Avalonia.Rendering;
 
 /// 一帧的输入：全部是不可变值或由渲染所有者独占的对象。
 public readonly struct PaintInput
@@ -212,7 +212,7 @@ sealed class TerminalVisualHandler : CompositionCustomVisualHandler
 |---|---|---|
 | `TerminalViewOptions.RenderHost` | `Auto` / `UiThread`(R3) / `CustomOperation`(R2) / `Compositor`(R1) | `Auto`：M3–M5 = R3；M6 起 = R1 |
 | settings（高级，`terminal.rendering.host`） | `auto` / `ui` / `customOp` / `compositor` | `auto` |
-| 环境变量 | `TCODE_TERMINAL_RENDER_HOST` | 覆盖 settings，用于排查 |
+| 环境变量 | `TKCODE_TERMINAL_RENDER_HOST` | 覆盖 settings，用于排查 |
 
 `Auto` 在以下情况自动降为 R3：`ElementComposition.GetElementVisual(this)` 为 null；Headless 且 spike S-7 结论是自定义视觉不进 `CaptureRenderedFrame`。切换宿主时重建 `RowCache`（R3 缓存 `GlyphRun`，R1 缓存 `ImmutableRef`）。
 
@@ -375,7 +375,7 @@ readonly record struct RowKey(ulong RowId, int Version, int FontGeneration, int 
 
 1. **ASCII 快路径**（全部码点 0x20–0x7E、主字面、`ligatures=false`）：每个字面预先建 `ushort[95]` 字形表；`GlyphInfo(glyph, cluster: i, advance: cellWDip)`。不经过 HarfBuzz。
 2. **cmap 路径**（关闭连字、每格一个码点或 grapheme 不需要 shaping）：逐格 `CharacterToGlyphMap` 取字形，同样固定 advance。
-3. **shaping 路径**（开启连字，或 grapheme 含组合符 / ZWJ / 复杂文字）：`TextShaper.Current.ShapeText(chars, new TextShaperOptions(face, emSize, bidiLevel: 0, culture, features))`（[已核实 `TextShaper.cs:43`；TCode 已 `UseHarfBuzz()`，research/04 §4.5]）→ 网格对齐：每个 cluster 的起点强制为 `col × cellW`，cluster 内多个字形保留 HarfBuzz 的相对偏移，最后一个字形的 advance 补齐到下一个 cluster 的列（WT `AtlasEngine.cpp:1173` 同样做法）。
+3. **shaping 路径**（开启连字，或 grapheme 含组合符 / ZWJ / 复杂文字）：`TextShaper.Current.ShapeText(chars, new TextShaperOptions(face, emSize, bidiLevel: 0, culture, features))`（[已核实 `TextShaper.cs:43`；TKCode 已 `UseHarfBuzz()`，research/04 §4.5]）→ 网格对齐：每个 cluster 的起点强制为 `col × cellW`，cluster 内多个字形保留 HarfBuzz 的相对偏移，最后一个字形的 advance 补齐到下一个 cluster 的列（WT `AtlasEngine.cpp:1173` 同样做法）。
    - `ligatures=false` 时 features 传 `-calt,-liga,-dlig`（Ghostty 建议值）。
    - shaping 结果按 `hash(码点序列, 相对 cluster, FaceId, featuresId)` 缓存（颜色不进键，Ghostty `run.zig:262-287`），容量 4096。
 4. `new GlyphRun(face, emSizeDip, chars, glyphInfos, baselineOrigin)`（[已核实 `GlyphRun.cs:63-68`]）；R1 再 `TryCreateImmutableGlyphRunReference()` 并缓存，旧引用在条目重建时 Dispose。
@@ -602,7 +602,7 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 ### 10.6 平滑滚动
 
-- 设置 `terminal.rendering.smoothScrolling`，默认 `false`；全局 `reduceMotion`（TCode 已有 `MotionSettings.SystemReduceMotion` / `UserReduceMotion`，[已核实 `App.axaml.cs:55-58`]）为真时强制关闭。
+- 设置 `terminal.rendering.smoothScrolling`，默认 `false`；全局 `reduceMotion`（TKCode 已有 `MotionSettings.SystemReduceMotion` / `UserReduceMotion`，[已核实 `App.axaml.cs:55-58`]）为真时强制关闭。
 - 实现：actor 请求 `OVERSCAN = {above: 1, below: 1}`（[已核实 `render.h:409-418`]），快照带上下各 1 行。触控板精确滚动时，UI 线程把亚行位移 `subRowPx ∈ (−cellH, cellH)` 放进 `OverlayState`，Painter 整体平移网格并多画一行 overscan；累积超过一行时向 actor 发 `ScrollViewport(±1)` 并把 `subRowPx` 减去 `cellH`。
 - 鼠标滚轮按"行"跳动时不做动画（v1）；需要时在 M6 后加 100 ms ease-out 的插值，overscan 扩到每次跳动的行数。
 - 关闭时 overscan 为 0（避免额外的快照复制）。
@@ -615,7 +615,7 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 ### 11.1 `Terminal.*` 资源键
 
-`TerminalResourceKeys`（`TCode.Terminal.Avalonia`，不依赖 AtomUI）。值可以是 `Color`、`ISolidColorBrush`，或 `TerminalResourceAlias(object Key)`（指向宿主的另一个资源键；目标是 `Color` 时自动转画刷），解析方式与 StreamMark `MarkdownResourceAlias` 相同：从 `TerminalView` 自身开始 `TryFindResource(key, ActualThemeVariant, out value)`，因此能找到窗口 / 主题作用域内的 token，并随明暗切换（[已核实 StreamMark `MarkdownResourceAlias.cs`、`AtomUIMarkdownTheme.cs`]）。
+`TerminalResourceKeys`（`TKCode.Terminal.Avalonia`，不依赖 AtomUI）。值可以是 `Color`、`ISolidColorBrush`，或 `TerminalResourceAlias(object Key)`（指向宿主的另一个资源键；目标是 `Color` 时自动转画刷），解析方式与 StreamMark `MarkdownResourceAlias` 相同：从 `TerminalView` 自身开始 `TryFindResource(key, ActualThemeVariant, out value)`，因此能找到窗口 / 主题作用域内的 token，并随明暗切换（[已核实 StreamMark `MarkdownResourceAlias.cs`、`AtomUIMarkdownTheme.cs`]）。
 
 | 键 | 类型 | 说明 |
 |---|---|---|
@@ -635,27 +635,27 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 `ActualThemeVariantChanged` → 重建 `RenderTheme`、`ThemeGeneration++`、发给宿主；**同时**必须把新的默认调色板交给 pty host（01 §3.2：`SetColors` 是日志记录，两份核心在同一位置更新，OSC 4/10/11 查询应答才一致）。UI 侧核心**不**在本地抢先改调色板；`SetColors` 记录回来之前（约 1 ms）画面仍用旧调色板，可以接受。`ITerminalViewSession` 目前没有发起这个请求的方法（见文末架构问题）。
 
-### 11.2 Desktop 的映射（`TCodeTerminalTheme : Styles`）
+### 11.2 Desktop 的映射（`TKCodeTerminalTheme : Styles`）
 
 与 `AtomUIMarkdownTheme` 同样写法：`Resources[key] = new TerminalResourceAlias(token)`。
 
 | `Terminal.*` | 映射到 |
 |---|---|
-| `Background` | `TCode.TerminalBg`（新增于 `Palette.axaml`；暗 `#141414` = `TCode.WindowBg`，亮 `#FFFFFF`） |
-| `Foreground` | `TCode.TerminalFg`（新增；暗 `#E6E6E6`，亮 `#1F1F1F`） |
-| `CursorColor` | `TCode.TextPrimary` |
-| `SelectionBackground` | `TCode.AccentSoftBg`（暗 `#2E2A4A` / 亮 `#ECE9FE`） |
+| `Background` | `TKCode.TerminalBg`（新增于 `Palette.axaml`；暗 `#141414` = `TKCode.WindowBg`，亮 `#FFFFFF`） |
+| `Foreground` | `TKCode.TerminalFg`（新增；暗 `#E6E6E6`，亮 `#1F1F1F`） |
+| `CursorColor` | `TKCode.TextPrimary` |
+| `SelectionBackground` | `TKCode.AccentSoftBg`（暗 `#2E2A4A` / 亮 `#ECE9FE`） |
 | `SearchMatchBackground` | AtomUI `SharedTokenKind.ColorWarningBg` |
 | `SearchMatchActiveBackground` | AtomUI `SharedTokenKind.ColorWarningBorder` [推断：token 名按 AtomUI 现有 `ColorWarning*` 系列，实现时核对] |
 | `LinkForeground` | AtomUI `SharedTokenKind.ColorLink` |
-| `FocusBorder` | `TCode.Accent` |
+| `FocusBorder` | `TKCode.Accent` |
 | `Ansi.*` | `Palette.axaml` 的 ThemeDictionaries 中新增 `Terminal.Ansi.*`（§11.3） |
 
 用户配置 `terminal.colors.dark` / `colors.light`（research/05 §10.3）覆盖上述映射，由 Desktop 直接写进 `TerminalView.Resources`。
 
 ### 11.3 默认 ANSI 16 色
 
-设计取向：暗色沿用 TCode 已有的文件图标色系（`TCode.File*`），亮色把"白"映射为深灰（VS Code Light 的做法），保证在白底上可读。表中对比度为与默认背景的 WCAG 对比度（脚本计算）。
+设计取向：暗色沿用 TKCode 已有的文件图标色系（`TKCode.File*`），亮色把"白"映射为深灰（VS Code Light 的做法），保证在白底上可读。表中对比度为与默认背景的 WCAG 对比度（脚本计算）。
 
 | 索引 | 名称 | 暗（bg `#141414`） | 对比度 | 亮（bg `#FFFFFF`） | 对比度 |
 |---|---|---|---|---|---|
@@ -679,7 +679,7 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 - 暗色 Black（0）有意接近背景：它主要被用作背景色（状态栏、选中行）；作前景时由最小对比度兜底。
 - 亮色所有前景色 ≥ 4.5，所以亮色主题下最小对比度几乎不会触发，颜色保真。
-- 光标：暗 `#F0F0F0` / 亮 `#1A1A1A`（`TCode.TextPrimary`）；光标下文字取默认背景。
+- 光标：暗 `#F0F0F0` / 亮 `#1A1A1A`（`TKCode.TextPrimary`）；光标下文字取默认背景。
 
 ## 12. 性能预算与测量点
 
@@ -699,7 +699,7 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 ### 12.2 测量点
 
-`RenderStats : EventSource`（名称 `TCode-Terminal-Render`，AOT 安全的 EventCounters）：
+`RenderStats : EventSource`（名称 `TKCode-Terminal-Render`，AOT 安全的 EventCounters）：
 
 | 计数器 | 含义 |
 |---|---|
@@ -719,9 +719,9 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 | # | spike | 实施 | 通过标准 | 里程碑 |
 |---|---|---|---|---|
-| S-1（04 #1） | 渲染线程上 `FontManager` / `TextShaper` / `GlyphRun` 的线程安全 | `TCode.Terminal.Benchmarks` 里 8 个线程并发构建同一组行布局 10 万次，比对字形与 advance；再在 R2 开关下跑截图测试 | 无异常、结果一致；否则采用"布局工作线程"方案（§4.5 步骤 2） | M3 末 |
+| S-1（04 #1） | 渲染线程上 `FontManager` / `TextShaper` / `GlyphRun` 的线程安全 | `TKCode.Terminal.Benchmarks` 里 8 个线程并发构建同一组行布局 10 万次，比对字形与 advance；再在 R2 开关下跑截图测试 | 无异常、结果一致；否则采用"布局工作线程"方案（§4.5 步骤 2） | M3 末 |
 | S-2（04 #2） | handler 自轮询开销、休眠与唤醒 | S10（10 终端空闲 10 min）+ S8（Typometer） | 空闲 < 0.5% CPU；唤醒后首帧 ≤ 1 vsync | M6 |
-| S-3（04 #3） | 单脏矩形合并的实际收益、`UseRegionDirtyRectClipping` 副作用 | S4（vim 滚动、htop）开关对比，同时测 TCode 其他界面的帧时间 | 打开后终端 p99 降 ≥ 30% 且其他界面无回退才建议 Desktop 打开 | M6 |
+| S-3（04 #3） | 单脏矩形合并的实际收益、`UseRegionDirtyRectClipping` 副作用 | S4（vim 滚动、htop）开关对比，同时测 TKCode 其他界面的帧时间 | 打开后终端 p99 降 ≥ 30% 且其他界面无回退才建议 Desktop 打开 | M6 |
 | S-4（04 #4） | GlyphRun 在 Metal / ANGLE / GLX / Software 下的成本 | 4 个后端 × 200×60 全量重画，AOT 二进制 | 全部 p99 ≤ 2 ms；Software 后端允许 ≤ 6 ms | M3 |
 | S-5 | A8 atlas + `DrawAtlas` colors 着色 | 截图测试比较 `DrawAtlas` 与逐个 `DrawImage` 的像素 | 一致则用 DrawAtlas | M3 |
 | S-6（04 #6） | libghostty-vt 每帧 FFI 成本 | 属于 02-core-ghostty；渲染侧只验证"每帧 FFI 次数 ∝ 脏行数" | `CaptureFrame` 全脏 ≤ 50 µs | M1 |
@@ -732,7 +732,7 @@ blink 熄灭相位 → 不画字形（§9.8）
 
 ## 13. 截图测试清单
 
-基础设施：沿用 `tests/TCode.Desktop.Tests/HeadlessApp`（`UseSkia()` + `UseHeadlessDrawing=false` [已核实 `HeadlessApp.cs:16-19`]），新增 `TerminalTestHost`：用回放实现的 `ITerminalViewSession` 直接喂字节（01 §6.5），`Step` 后 `CaptureRenderedFrame`。每个用例 = **像素探针断言**（`PixelProbe`：取指定设备像素的颜色，断言等于 / 接近期望）+ 保存 PNG 供人工查看。只有 sprite 类用例额外保留金样图（`tests/TCode.Desktop.Tests/Terminal/golden/`，容差 0）。R3 必跑；S-7 通过后 R1 再跑一遍并比较两者像素完全一致。
+基础设施：沿用 `tests/TKCode.Desktop.Tests/HeadlessApp`（`UseSkia()` + `UseHeadlessDrawing=false` [已核实 `HeadlessApp.cs:16-19`]），新增 `TerminalTestHost`：用回放实现的 `ITerminalViewSession` 直接喂字节（01 §6.5），`Step` 后 `CaptureRenderedFrame`。每个用例 = **像素探针断言**（`PixelProbe`：取指定设备像素的颜色，断言等于 / 接近期望）+ 保存 PNG 供人工查看。只有 sprite 类用例额外保留金样图（`tests/TKCode.Desktop.Tests/Terminal/golden/`，容差 0）。R3 必跑；S-7 通过后 R1 再跑一遍并比较两者像素完全一致。
 
 | # | 用例 | 关键断言 |
 |---|---|---|

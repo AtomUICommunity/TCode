@@ -1,8 +1,8 @@
-# Model Context Protocol (MCP) 客户端协议规格（TCode 实现用）
+# Model Context Protocol (MCP) 客户端协议规格（TKCode 实现用）
 
 > 版本基线：MCP **2026-07-28**（当前稳定版），兼容 **2025-11-25** 及更早的旧版（按 initialize 握手协商）。
-> 用途：TCode 的 Agent Host 作为 MCP **Client**，把 MCP 服务器的工具、资源、提示词接入内置 Agent。设计见 [design/mcp.md](../design/mcp.md)。
-> 实现：官方 C# SDK `ModelContextProtocol.Core` 2.2.0。本文的作用有两个：一是界定 SDK 负责什么、TCode 负责什么；二是列出 TCode 必须自己遵守的规则。
+> 用途：TKCode 的 Agent Host 作为 MCP **Client**，把 MCP 服务器的工具、资源、提示词接入内置 Agent。设计见 [design/mcp.md](../design/mcp.md)。
+> 实现：官方 C# SDK `ModelContextProtocol.Core` 2.2.0。本文的作用有两个：一是界定 SDK 负责什么、TKCode 负责什么；二是列出 TKCode 必须自己遵守的规则。
 > 编写日期：2026-10-16。方法名、字段名一律保留英文原文。
 
 ## 0. 来源
@@ -25,7 +25,7 @@
 |---|---|---|
 | Modern | 2026-07-28 及以后的版本。**没有握手**：每个请求在 `_meta` 中携带 `io.modelcontextprotocol/protocolVersion`、`clientCapabilities`（必填）和 `clientInfo`（建议填） | [Spec:basic/versioning]、[Spec:basic/index#meta] |
 | Legacy | 2025-11-25 及更早的版本。先发 `initialize`，再发 `notifications/initialized`，能力在握手时协商；HTTP 下有 `Mcp-Session-Id` 会话 | [Legacy] |
-| Dual-era | 两种时代都支持。**TCode 属于这一类**（由 SDK 实现） | [Spec:basic/versioning] |
+| Dual-era | 两种时代都支持。**TKCode 属于这一类**（由 SDK 实现） | [Spec:basic/versioning] |
 
 **时代判定**（SDK 自动完成，[SDK] v2.0.0 发布说明「discovery-first negotiation」）：
 - **stdio**：先用首选的 modern 版本发 `server/discover`。返回 `DiscoverResult`，说明对方是 modern；返回已知的 modern 错误（如 `-32022 UnsupportedProtocolVersion`），按 `data.supported` 换一个版本重试，**不回退**；返回其他错误或超时，说明对方是 legacy，改走 `initialize`。**不能**只凭某一个错误码判断要不要回退 [Spec:basic/transports/stdio#backward-compatibility]。
@@ -44,14 +44,14 @@
 9. 资源不存在的错误码由 `-32002` 改为 `-32602`；客户端仍应把 `-32002` 当作资源不存在。
 10. **弃用**（[Deprecated]，最早 2027-07-28 之后移除）：Roots、Sampling、Logging、Dynamic Client Registration（推荐改用 Client ID Metadata Documents）、HTTP+SSE 传输。
 
-**TCode 的选择**：请求时用 SDK 默认的最高版本，由 SDK 负责向下协商；协商出的版本（`McpClient.NegotiatedProtocolVersion`）在设置页显示。
+**TKCode 的选择**：请求时用 SDK 默认的最高版本，由 SDK 负责向下协商；协商出的版本（`McpClient.NegotiatedProtocolVersion`）在设置页显示。
 
 ## 2. 消息与错误码
 
 - JSON-RPC 2.0。请求的 `id` 必须是 string 或 integer，不能是 `null`，在未完成的请求之间不能重复 [Spec:basic/index]。
 - 错误码 [Spec:basic/index#error-codes]：
 
-| 码 | 含义 | TCode 处理 |
+| 码 | 含义 | TKCode 处理 |
 |---|---|---|
 | `-32700`、`-32600`～`-32603` | JSON-RPC 标准错误 | `tools/call` 收到时作为工具错误交给模型（见 §4.2） |
 | `-32020` HeaderMismatch | HTTP 请求头与请求体不一致 | 重新执行 `tools/list`，然后重试一次（SDK 的 `McpHeaderExtractor` 负责生成请求头） |
@@ -71,7 +71,7 @@
 - 取消：发送 `notifications/cancelled {requestId, reason?}`。
 - **关闭顺序**：先关闭子进程的 stdin，等它退出；超时后强制结束（POSIX 先 SIGTERM 再 SIGKILL，Windows 用 TerminateProcess 或 Job Object）。SDK 的 `StdioClientTransportOptions.ShutdownTimeout` 默认 5s。
 - **意外退出**：客户端**应当**重启服务器。协议是无状态的，进行中的请求直接丢失，可以重试；`subscriptions/listen` 订阅需要重新建立。
-- 规范**不建议**把单个会话或对话的生命周期作为 stdio 进程的生命周期 [Spec:basic/index#statelessness]，这一点支持 TCode 采用 Host 共享连接池的做法。
+- 规范**不建议**把单个会话或对话的生命周期作为 stdio 进程的生命周期 [Spec:basic/index#statelessness]，这一点支持 TKCode 采用 Host 共享连接池的做法。
 
 SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Arguments, WorkingDirectory, EnvironmentVariables, InheritEnvironmentVariables = true, ShutdownTimeout, StandardErrorLines = line => … })`。
 
@@ -92,7 +92,7 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 - 只能标在 integer、string 或 boolean 类型的属性上，不能是 number；
 - 只能经由 `properties` 链静态到达。
 
-违反约束的工具**必须从 `tools/list` 结果中剔除**，并记一条警告。这些由 SDK 的 `McpHeaderExtractor` 完成；TCode 只需要在设置页的工具列表中显示“已剔除：原因”（如果 SDK 暴露了这个信息，否则写进日志）。
+违反约束的工具**必须从 `tools/list` 结果中剔除**，并记一条警告。这些由 SDK 的 `McpHeaderExtractor` 完成；TKCode 只需要在设置页的工具列表中显示“已剔除：原因”（如果 SDK 暴露了这个信息，否则写进日志）。
 
 ### 3.4 旧版 HTTP（2025-03-26～2025-11-25）[Legacy]
 
@@ -117,7 +117,7 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
   - `inputSchema`：必填，不能为 `null`；默认 JSON Schema 2020-12；必须是对象 schema。v2.0 的 SDK 收到缺少 `inputSchema` 的工具时会抛 `JsonException`。
   - `outputSchema?`、`annotations?`、`_meta?`。
 - `annotations`（`ToolAnnotations`）：`title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`。**它们只是提示**：除非服务器可信，客户端必须把它们视为不可信 [Spec:server/tools#tool]、[SDK] `ToolAnnotations` 注释。
-- **命名冲突**：聚合多个服务器时**应当**给工具名加服务器前缀；`serverInfo.name` 不保证唯一，不能用它区分服务器 [Spec:server/tools#tool-names]。TCode 用配置中的服务器键作前缀（见设计文档 §5）。
+- **命名冲突**：聚合多个服务器时**应当**给工具名加服务器前缀；`serverInfo.name` 不保证唯一，不能用它区分服务器 [Spec:server/tools#tool-names]。TKCode 用配置中的服务器键作前缀（见设计文档 §5）。
 - 服务器**应当**按确定的顺序返回工具，便于客户端缓存和保持 prompt cache 命中 [Changelog minor 3]。
 
 ### 4.2 工具：`tools/call`
@@ -142,7 +142,7 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 - Modern：客户端发一个长时间挂起的请求 `subscriptions/listen {notifications:{toolsListChanged?, promptsListChanged?, resourcesListChanged?, resourceSubscriptions?: string[]}}`。服务器先回 `notifications/subscriptions/acknowledged`（其中给出同意的子集），之后在这个流上推送 `notifications/tools/list_changed` 等通知；每条通知的 `_meta["io.modelcontextprotocol/subscriptionId"]` 都等于该请求的 id。
 - 取消订阅：HTTP 下关闭流，stdio 下发 `notifications/cancelled`。服务器主动结束时回一个 `resultType:"complete"` 的响应；连接突然断开时没有这个响应，客户端**可以**重连。
 - Legacy：服务器声明了 `listChanged` 能力后，直接发送通知（HTTP 走 GET 流）。
-- **SDK 2.2.0 的客户端没有封装 `subscriptions/listen`**（只有服务器端实现）。TCode 的做法：
+- **SDK 2.2.0 的客户端没有封装 `subscriptions/listen`**（只有服务器端实现）。TKCode 的做法：
   - 用 `McpSession.SendRequestAsync(new JsonRpcRequest { Method = "subscriptions/listen", … })` 加长期的 CancellationToken 自己发这个请求，再用 `RegisterNotificationHandler("notifications/tools/list_changed", …)` 接收通知；
   - Legacy 服务器只需要注册通知处理器；
   - 订阅失败（服务器不支持）时不报错，退回到 TTL 和每轮检查（§4.4）。
@@ -154,7 +154,7 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 - `ttlMs` 缺失、为 0 或为负数时，都视为立即过期。TTL **不是轮询间隔**；如果确实要轮询，必须加抖动和退避。
 - 收到对应的 `list_changed` 通知时，缓存立即失效。
 - 经 MRTR 重试得到的结果（请求中带 `inputResponses` / `requestState`）**不能**缓存。
-- TCode 只用 TTL 判断要不要在每轮开始前重新 `tools/list`，不做跨认证上下文的共享缓存。
+- TKCode 只用 TTL 判断要不要在每轮开始前重新 `tools/list`，不做跨认证上下文的共享缓存。
 
 ### 4.5 资源 [Spec:server/resources]
 
@@ -164,7 +164,7 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 - `resources/read {uri}` 返回 `contents[]`，每项为 `{uri, mimeType?, text}` 或 `{uri, mimeType?, blob(base64)}`；可能有多项，例如读取一个目录。
 - 资源不存在时返回 `-32602`（旧版为 `-32002`）。服务器不能用空的 `contents` 表示资源不存在。
 - 资源由**应用控制**：怎样纳入上下文由宿主决定（例如 @ 选择器）。
-- `https://` 资源可以由客户端直接抓取，TCode 首版仍然统一走 `resources/read`。
+- `https://` 资源可以由客户端直接抓取，TKCode 首版仍然统一走 `resources/read`。
 
 ### 4.6 提示词 [Spec:server/prompts]
 
@@ -180,11 +180,11 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 
 ### 4.8 日志（已弃用）
 
-`notifications/message` 只在请求的 `_meta` 中带了 `io.modelcontextprotocol/logLevel` 时才会发送。TCode **不请求**服务器日志：stdio 的 stderr 已经能看到日志；HTTP 服务器的日志不在客户端的职责范围内。
+`notifications/message` 只在请求的 `_meta` 中带了 `io.modelcontextprotocol/logLevel` 时才会发送。TKCode **不请求**服务器日志：stdio 的 stderr 已经能看到日志；HTTP 服务器的日志不在客户端的职责范围内。
 
 ## 5. 客户端能力
 
-| 能力 | TCode 首版 | 理由 |
+| 能力 | TKCode 首版 | 理由 |
 |---|---|---|
 | `elicitation {form:{}, url:{}}` | **声明** | 用户已选择支持 elicitation 表单。URL 模式只需要“确认后用系统浏览器打开”，代价很小 |
 | `roots` | 不声明 | 已弃用 [Deprecated]；需要工作目录的服务器通过 args、cwd 或 env 拿到 |
@@ -218,13 +218,13 @@ SDK 对应：`StdioClientTransport(new StdioClientTransportOptions { Command, Ar
 - 只有 `tools/call`、`resources/read`、`prompts/get` 可能返回 `InputRequiredResult {resultType:"input_required", inputRequests?, requestState?}`。
 - 客户端处理 `inputRequests`，然后**用新的 JSON-RPC id** 重发原请求，带上 `inputResponses`；`requestState` 必须**原样**带回，不能检查或修改；服务器没给 `requestState` 时也不能带。
 - SDK 的 `McpClientImpl` 自动完成这个循环：调用 `ResolveInputRequestsAsync`，由它调用 `ElicitationHandler`；循环有次数上限，超过后抛 `McpException`。
-- 用户长时间不处理 elicitation 时，这次工具调用会一直挂起，所以 TCode 的 elicitation 等待要受工具调用的取消控制（Abort）。
+- 用户长时间不处理 elicitation 时，这次工具调用会一直挂起，所以 TKCode 的 elicitation 等待要受工具调用的取消控制（Abort）。
 
 ## 7. 进度、取消与超时
 
-- **进度** [Spec:basic/patterns/progress]：请求的 `_meta.progressToken` 必须在所有活动请求中唯一；`notifications/progress {progressToken, progress (递增), total?, message?}`。SDK 的 `CallToolAsync(name, args, IProgress<ProgressNotificationValue>)` 会自动生成 token。TCode 把进度映射为 `ToolExecutionUpdated`。
+- **进度** [Spec:basic/patterns/progress]：请求的 `_meta.progressToken` 必须在所有活动请求中唯一；`notifications/progress {progressToken, progress (递增), total?, message?}`。SDK 的 `CallToolAsync(name, args, IProgress<ProgressNotificationValue>)` 会自动生成 token。TKCode 把进度映射为 `ToolExecutionUpdated`。
 - **取消** [Spec:basic/patterns/cancellation]：HTTP 下关闭响应流，stdio 下发 `notifications/cancelled`；取消之后到达的响应应当忽略。SDK 根据 CancellationToken 自动处理。
-- **超时**：应当为每个请求设置超时；收到进度通知时**可以**重置计时，但必须有上限。TCode 的取值：启动或连接 30s（`HttpClientTransportOptions.ConnectionTimeout` 与 `McpClientOptions.InitializationTimeout`）；工具调用默认 10 分钟、可配置；收到进度时延长，但不超过上限。
+- **超时**：应当为每个请求设置超时；收到进度通知时**可以**重置计时，但必须有上限。TKCode 的取值：启动或连接 30s（`HttpClientTransportOptions.ConnectionTimeout` 与 `McpClientOptions.InitializationTimeout`）；工具调用默认 10 分钟、可配置；收到进度时延长，但不超过上限。
 
 ## 8. 授权（HTTP）[Spec:basic/authorization/*]
 
@@ -239,7 +239,7 @@ stdio 服务器**不走** OAuth，凭据从环境变量取 [Spec:basic/index#aut
 4. **PKCE**：元数据中缺少 `code_challenge_methods_supported`，或其中不含 `S256`，就拒绝继续。SDK v2.0 起强制执行。
 5. 客户端注册，按优先级：
    - 预注册的 `client_id`（配置中的 `oauth.clientId`）；
-   - CIMD（授权服务器声明了 `client_id_metadata_document_supported`，**并且**客户端在 HTTPS 上托管了元数据文档；TCode 暂无托管地址，首版不用）；
+   - CIMD（授权服务器声明了 `client_id_metadata_document_supported`，**并且**客户端在 HTTPS 上托管了元数据文档；TKCode 暂无托管地址，首版不用）；
    - DCR（`registration_endpoint`，已弃用但仍是主要的兜底方式；必须带 `application_type: "native"`，SDK 会自动推断）；
    - 让用户手动填写。
 6. 选择 scope：`WWW-Authenticate` 中有 `scope` 时用它；否则用 PRM 的 `scopes_supported`；两者都没有时不发 `scope` 参数。授权服务器声明了 `offline_access` 时追加它（SDK 已实现）。
@@ -254,7 +254,7 @@ stdio 服务器**不走** OAuth，凭据从环境变量取 [Spec:basic/index#aut
 11. **Step-up**：收到 `403` 加 `error="insufficient_scope", scope="…"` 时，取已请求 scope 与挑战中 scope 的并集重新授权，重试次数要有限制。SDK v2.0 起，挑战没有带来新 scope 时抛 `McpException`。
 12. **绑定**：客户端凭据（client_id / secret）按授权服务器的 `issuer` 保存，不能拿到其他授权服务器使用；授权服务器变化后必须重新注册。
 
-SDK 对应：`HttpClientTransportOptions.OAuth = new ClientOAuthOptions { RedirectUri, ClientId?, ClientSecret?, Scopes?, DynamicClientRegistration = new() { ClientName = "TCode", … }, TokenCache = <ITokenCache>, AuthorizationCallbackHandler = (ctx, ct) => … }`。`TokenContainer` 带 `ClientId`、`ClientSecret`、`AuthorizationServer`，用 `[JsonSerializable(typeof(TokenContainer))]` 的源生成上下文做持久化（[实测]，AOT 下可用）。
+SDK 对应：`HttpClientTransportOptions.OAuth = new ClientOAuthOptions { RedirectUri, ClientId?, ClientSecret?, Scopes?, DynamicClientRegistration = new() { ClientName = "TKCode", … }, TokenCache = <ITokenCache>, AuthorizationCallbackHandler = (ctx, ct) => … }`。`TokenContainer` 带 `ClientId`、`ClientSecret`、`AuthorizationServer`，用 `[JsonSerializable(typeof(TokenContainer))]` 的源生成上下文做持久化（[实测]，AOT 下可用）。
 
 **静态凭据**：不支持 OAuth 的服务器在配置的 `headers` 中写 `Authorization: Bearer {env:TOKEN}` 即可。规范没有规定这种方式，但各客户端都支持；这时**不启用** OAuth 流程。
 
@@ -264,7 +264,7 @@ SDK 对应：`HttpClientTransportOptions.OAuth = new ClientOAuthOptions { Redire
 - **令牌直通**：只把授权服务器为该 MCP 服务器颁发的令牌发给它；不同服务器的令牌不能混用。
 - **Annotations 不可信**：`readOnlyHint` 等标注不能作为免审批的依据（与用户决策一致，见设计文档 §7）。
 - **工具输出不可信**：工具描述和工具结果都可能包含提示注入。设置页要能查看每个工具的描述原文；结果要截断（见设计文档）。
-- **SSRF**：授权发现中的 URL 来自服务器，SDK 负责相关校验；TCode 不额外打开服务器给出的 URL，elicitation 的 URL 模式必须先经用户确认。
+- **SSRF**：授权发现中的 URL 来自服务器，SDK 负责相关校验；TKCode 不额外打开服务器给出的 URL，elicitation 的 URL 模式必须先经用户确认。
 - **图标**：只接受 https 或 data URI，不带凭据，同源，并按魔数校验图片类型。首版**不渲染**服务器提供的图标，统一显示默认图标。
 
 ## 10. 各客户端的配置格式（导入用）
@@ -290,8 +290,8 @@ SDK 对应：`HttpClientTransportOptions.OAuth = new ClientOAuthOptions { Redire
 - 有 `command` 就是 stdio；
 - 有 `url` / `serverUrl` / `httpUrl` 就是远程：
   - `type` 为 `sse`（或 Gemini 的 `url`）时走 SSE；
-  - 否则走 Streamable HTTP（TCode 用 `AutoDetect`，HTTP 不通时会自动回退到 SSE）。
-- Claude Code 把带 `url` 但没有 `type` 的条目当作配置错误，TCode 导入时则宽松地按 http 处理。
+  - 否则走 Streamable HTTP（TKCode 用 `AutoDetect`，HTTP 不通时会自动回退到 SSE）。
+- Claude Code 把带 `url` 但没有 `type` 的条目当作配置错误，TKCode 导入时则宽松地按 http 处理。
 
 ## 11. SDK 实测（2026-10-16，osx-arm64，.NET 10）
 
@@ -305,5 +305,5 @@ SDK 对应：`HttpClientTransportOptions.OAuth = new ClientOAuthOptions { Redire
   - 端点不可达时，以 `HttpRequestException` 失败；
   - OAuth：PRM 发现、AS 元数据、DCR、PKCE S256、回环回调（带 `iss` 和 `state`）、自定义 `ITokenCache` 持久化、令牌过期后自动刷新、重启后复用 refresh token 不再打开浏览器。
 - 已知注意点：
-  - v2.0 起会给 Roots / Sampling / Logging API 报 `MCP9005`，`AuthorizationRedirectDelegate` 报 `MCP9007`；TCode 不使用这些 API。
+  - v2.0 起会给 Roots / Sampling / Logging API 报 `MCP9005`，`AuthorizationRedirectDelegate` 报 `MCP9007`；TKCode 不使用这些 API。
   - 改用 `AuthorizationCallbackHandler`，它返回 `AuthorizationResult {Code, State, Iss}`。

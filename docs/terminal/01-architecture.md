@@ -1,4 +1,4 @@
-# TCode 终端：总体架构
+# TKCode 终端：总体架构
 
 > 状态：设计稿 v1（2026-10-16）。依据见 [README.md](README.md) 的决策表和 [research/](research/)。本文定义各层的职责、进程划分、线程模型和层间接口。各子系统的实现细节见 02–13 号文档。
 
@@ -20,11 +20,11 @@
 | # | 决策 | 来源 |
 |---|---|---|
 | D1 | 终端核心使用 **libghostty-vt**（Ghostty 的 C API），自己维护 C# 绑定，pin 上游 commit，CI 构建 6 个 RID，**不做托管保底核心**。C# 门面接口与 libghostty 解耦，保留以后更换核心的可能 | 用户 |
-| D2 | 组织形式：**TCode 仓库内的独立项目** `src/TCode.Terminal.*`。终端库不依赖 TCode 的其他项目，以后可以拆成独立仓库 | 用户 |
-| D3 | **一开始就做独立的 pty host 进程**（`tcode-ptyhost`）。终端会话不放在 UI 进程，也不放在 AgentHost | 用户 |
+| D2 | 组织形式：**TKCode 仓库内的独立项目** `src/TKCode.Terminal.*`。终端库不依赖 TKCode 的其他项目，以后可以拆成独立仓库 | 用户 |
+| D3 | **一开始就做独立的 pty host 进程**（`tkcode-ptyhost`）。终端会话不放在 UI 进程，也不放在 AgentHost | 用户 |
 | D4 | SSH 采用混合方案：交互终端用系统 `ssh`（默认不加 `-t`，只在有远程命令时加，以尊重用户的 `RequestTTY` 配置）；以后 SFTP 用 Tmds.Ssh | 用户 |
 | D5 | 渲染：先用 `Control.Render`（R3）做出可用版本，再迁到 `CompositionCustomVisualHandler` 在渲染线程绘制（R1） | 用户 |
-| D6 | 终端获得焦点时按系统终端惯例分配快捷键：macOS 上 ⌘ 组合键归 TCode，⌘K 清屏；Windows / Linux 上 Ctrl+字母交给 shell，TCode 用 Ctrl+Shift。命令面板增加 ⌘⇧P / Ctrl+Shift+P | 用户 |
+| D6 | 终端获得焦点时按系统终端惯例分配快捷键：macOS 上 ⌘ 组合键归 TKCode，⌘K 清屏；Windows / Linux 上 Ctrl+字母交给 shell，TKCode 用 Ctrl+Shift。命令面板增加 ⌘⇧P / Ctrl+Shift+P | 用户 |
 | D7 | shell 集成默认自动注入，可以关闭，注入失败时显示原因 | 用户 |
 | D8 | v1 范围：多标签与分屏、会话保活与恢复、Agent 与终端打通、Kitty 图形协议。**不做** sixel | 用户 |
 | D9 | macOS 的 login shell 用 argv0 `-zsh` 形式直接启动，**不经 `/usr/bin/login`**（login 父进程总是 `exit(0)`，会吞掉 shell 的退出码；2026-10-17 用户决定放弃 login 包装，代价是没有 utmp 记录和 "Last login"）；Unicode 宽度在 macOS / Linux 上默认兼容模式，程序开启 2027 后切换到字形簇模式；**Windows 上固定为字形簇模式**（ConPTY 的宽度在创建时就固定，不响应 2027）；Windows 随应用分发 `conpty.dll` + `OpenConsole.exe`，v1 实现 win32-input-mode；`TERM=xterm-256color`，不发布自定义 terminfo | 采纳调研推荐（可推翻） |
@@ -32,13 +32,13 @@
 ## 3. 进程划分
 
 ```
-┌──────────────────── TCode.Desktop（UI 进程） ────────────────────┐
+┌──────────────────── TKCode.Desktop（UI 进程） ────────────────────┐
 │ TerminalView × N（每个视图一个 UI 侧核心：libghostty-vt）           │
 │ 标签 / 分屏 · 快捷键路由 · 设置 · 链接 → 工作台                      │
 │        │ PtyHostClient（控制面 + 数据面，同一条 IPC 连接）           │
 └────────┼─────────────────────────────────────────────────────────┘
          │ Unix domain socket / Windows named pipe（仅当前用户、令牌认证）
-┌────────┴──────────── tcode-ptyhost（独立 AOT 进程） ───────────────┐
+┌────────┴──────────── tkcode-ptyhost（独立 AOT 进程） ───────────────┐
 │ SessionManager                                                    │
 │  └ Session × N                                                    │
 │     ├ ITerminalConnection（本地 PTY：Unix spawn helper / ConPTY）  │
@@ -48,7 +48,7 @@
 │ Persistence：退出时写快照，下次启动恢复内容（revive）               │
 └────────┬─────────────────────────────────────────────────────────┘
          │ 同一套 IPC 协议（第二个客户端）
-┌────────┴──────────── TCode.AgentHost ─────────────────────────────┐
+┌────────┴──────────── TKCode.AgentHost ─────────────────────────────┐
 │ bash 工具（可见终端模式）· ACP auth.terminal / terminal/* · 读取命令输出 │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -93,61 +93,61 @@ pty host 里的每个会话都有一个**无头镜像核心**，它是该会话�
 
 | 事件 | 行为 |
 |---|---|
-| 首次打开终端（或 Agent 首次需要终端） | Desktop 按需启动 `tcode-ptyhost`（脱离 Desktop 的 Job / 进程组，Desktop 崩溃时 host 不受影响），通过 IPC 握手，并在 `host/configure` 中发送 Desktop 启动时的原始环境（BaseEnvironment）：host 是长期进程，它自己的环境会过期，新会话的环境以 Desktop 最近一次发送的为准。AgentHost 通过环境变量拿到连接地址和受限令牌；**这些变量必须从 AgentHost 启动的所有子进程（BashTool、MCP 服务器、外部 Agent CLI）的环境中剔除**，否则 Agent 执行的任何命令都能直接连上 pty host |
+| 首次打开终端（或 Agent 首次需要终端） | Desktop 按需启动 `tkcode-ptyhost`（脱离 Desktop 的 Job / 进程组，Desktop 崩溃时 host 不受影响），通过 IPC 握手，并在 `host/configure` 中发送 Desktop 启动时的原始环境（BaseEnvironment）：host 是长期进程，它自己的环境会过期，新会话的环境以 Desktop 最近一次发送的为准。AgentHost 通过环境变量拿到连接地址和受限令牌；**这些变量必须从 AgentHost 启动的所有子进程（BashTool、MCP 服务器、外部 Agent CLI）的环境中剔除**，否则 Agent 执行的任何命令都能直接连上 pty host |
 | UI 崩溃、重载、升级重启 | host 不受影响；新的 Desktop 找到正在运行的 host（运行时目录中的 `ptyhost-<build>.json`），重新连接，用快照恢复每个标签。无客户端连接的宽限期默认 **30 分钟**，超时后的处理见下一行 |
-| 宽限期到期 | 没有前台程序在运行的会话按"退出 TCode"处理；**有前台程序在运行的会话继续保留**，直到程序结束或达到 `keepAliveMaxHours`（2026-10-17 用户决定） |
-| 用户正常退出 TCode | 有程序在运行时汇总确认一次（`keepAlive` 模式不结束进程，不需要确认）；然后按 `terminal.persistence.onQuit` 处理：<br>**`revive`（默认）**：每个会话写一份快照（裁剪到尾部 N 行，默认 1000 行；libghostty 快照格式不保证跨版本兼容，所以同时保存一份 `tail.vt` 作为回退）→ SIGHUP / 关闭 → host 退出；下次启动时恢复标签、cwd 和内容，并启动新 shell（iTerm2、VS Code 的做法）<br>`keepAlive`：host 保留所有会话继续运行，下次启动时直接重新连接（类似 tmux）<br>`close`：全部关闭，不保存 |
+| 宽限期到期 | 没有前台程序在运行的会话按"退出 TKCode"处理；**有前台程序在运行的会话继续保留**，直到程序结束或达到 `keepAliveMaxHours`（2026-10-17 用户决定） |
+| 用户正常退出 TKCode | 有程序在运行时汇总确认一次（`keepAlive` 模式不结束进程，不需要确认）；然后按 `terminal.persistence.onQuit` 处理：<br>**`revive`（默认）**：每个会话写一份快照（裁剪到尾部 N 行，默认 1000 行；libghostty 快照格式不保证跨版本兼容，所以同时保存一份 `tail.vt` 作为回退）→ SIGHUP / 关闭 → host 退出；下次启动时恢复标签、cwd 和内容，并启动新 shell（iTerm2、VS Code 的做法）<br>`keepAlive`：host 保留所有会话继续运行，下次启动时直接重新连接（类似 tmux）<br>`close`：全部关闭，不保存 |
 | host 崩溃 | Desktop 检测到断开 → 所有终端标签显示"会话已丢失"，并提供"在相同目录重新打开"（使用最近一次的 revive 快照，host 每 30 s 增量保存一次）。Desktop 不会自动重启正在运行的程序 |
 | 系统关机、注销 | 与正常退出相同，但不弹确认 |
 
-pty host 按"用户 + `TCODE_HOME` + 构建"区分：正常情况下只有一个 host，多个 Desktop 窗口（以后会有）共用它；升级后新旧两个构建的 host 可能短暂并存，旧 host 在其会话全部结束后退出（[04](04-pty-host.md) §1.5）。Agent 创建的会话默认不持久化。
+pty host 按"用户 + `TKCODE_HOME` + 构建"区分：正常情况下只有一个 host，多个 Desktop 窗口（以后会有）共用它；升级后新旧两个构建的 host 可能短暂并存，旧 host 在其会话全部结束后退出（[04](04-pty-host.md) §1.5）。Agent 创建的会话默认不持久化。
 
 ## 4. 项目划分
 
 ```
 src/
-  TCode.Terminal.Core/          终端核心门面（无 UI）：TerminalCore、RenderState 读取、键盘/鼠标/粘贴编码、
+  TKCode.Terminal.Core/          终端核心门面（无 UI）：TerminalCore、RenderState 读取、键盘/鼠标/粘贴编码、
                                 选区、搜索、快照、formatter；Interop/Ghostty（LibraryImport 原始声明）；
                                 托管 PNG 解码器（供 Kitty 图形使用）；runtimes/<rid>/native/libghostty-vt.*
-  TCode.Terminal.Pty/           ITerminalConnection 与本地 PTY：Unix（libtcodepty + tcode-pty-spawn）、
+  TKCode.Terminal.Pty/           ITerminalConnection 与本地 PTY：Unix（libtkcodepty + tkcode-pty-spawn）、
                                 Windows（ConPTY，随包 conpty.dll + OpenConsole.exe）；进程信息查询
-  TCode.Terminal.Shell/         profile 探测（各平台）、启动命令构造（login、argv0）、环境变量策略、
+  TKCode.Terminal.Shell/         profile 探测（各平台）、启动命令构造（login、argv0）、环境变量策略、
                                 shell 集成脚本（嵌入资源）与注入、ssh 主机列表
-  TCode.Terminal.Protocol/      pty host IPC 协议：帧格式、控制消息（源生成 JSON）、流控；PtyHostClient
-  TCode.Terminal.Host/          tcode-ptyhost 可执行项目：SessionManager、镜像核心、输出日志、命令跟踪、
+  TKCode.Terminal.Protocol/      pty host IPC 协议：帧格式、控制消息（源生成 JSON）、流控；PtyHostClient
+  TKCode.Terminal.Host/          tkcode-ptyhost 可执行项目：SessionManager、镜像核心、输出日志、命令跟踪、
                                 持久化、Agent 命令执行器
-  TCode.Terminal.Avalonia/      TerminalView 控件：Painter、行缓存、字体与 sprite、输入 / IME / 鼠标、
+  TKCode.Terminal.Avalonia/      TerminalView 控件：Painter、行缓存、字体与 sprite、输入 / IME / 鼠标、
                                 选区手势、搜索栏、可访问性；只依赖 Avalonia（不依赖 AtomUI）；
                                 资源键 Terminal.*（颜色、字体）
-  TCode.Desktop/                集成：TerminalTabViewModel、分屏、快捷键路由、settings 的 terminal 节、
+  TKCode.Desktop/                集成：TerminalTabViewModel、分屏、快捷键路由、settings 的 terminal 节、
                                 AtomUI 主题 → Terminal.* 映射、链接打开、Agent 终端展示
 native/
   ghostty/                      上游 pin（ghostty-upstream.json）、构建脚本、overlay 补丁（如有）
-  tcodepty/                     libtcodepty（约 690 行 C）与 tcode-pty-spawn（约 85 行 C，PTY / --exec / --detach 三种模式）
+  tkcodepty/                     libtkcodepty（约 690 行 C）与 tkcode-pty-spawn（约 85 行 C，PTY / --exec / --detach 三种模式）
 tools/terminal/                 原生库构建脚本、EscTestRunner（esctest2 驱动）、夹具录制工具
 tests/
-  TCode.Terminal.Core.Tests/    回放 → 网格断言、增量 vs 全量差分、esctest2 驱动、fuzz 回归
-  TCode.Terminal.Pty.Tests/     真实 PTY 往返、resize、退出码、SIGPIPE、关闭语义、ConPTY 握手
-  TCode.Terminal.Shell.Tests/   profile 探测（假文件系统 / 注册表）、启动命令构造、环境变量策略、shell 集成注入（CI 中真实启动各 shell）
-  TCode.Terminal.Host.Tests/    协议、流控、重连快照、持久化、多客户端
-  TCode.Terminal.Avalonia.Tests/ 视图单元测试：按键编码表、路由、选区手势、行缓存
-  TCode.Desktop.Tests/          TerminalView 截图测试（Headless + Skia）
-  TCode.Terminal.Benchmarks/    BenchmarkDotNet：解析吞吐、快照成本、渲染帧时间
+  TKCode.Terminal.Core.Tests/    回放 → 网格断言、增量 vs 全量差分、esctest2 驱动、fuzz 回归
+  TKCode.Terminal.Pty.Tests/     真实 PTY 往返、resize、退出码、SIGPIPE、关闭语义、ConPTY 握手
+  TKCode.Terminal.Shell.Tests/   profile 探测（假文件系统 / 注册表）、启动命令构造、环境变量策略、shell 集成注入（CI 中真实启动各 shell）
+  TKCode.Terminal.Host.Tests/    协议、流控、重连快照、持久化、多客户端
+  TKCode.Terminal.Avalonia.Tests/ 视图单元测试：按键编码表、路由、选区手势、行缓存
+  TKCode.Desktop.Tests/          TerminalView 截图测试（Headless + Skia）
+  TKCode.Terminal.Benchmarks/    BenchmarkDotNet：解析吞吐、快照成本、渲染帧时间
 ```
 
 依赖方向（单向）：
 
 ```
-TCode.Desktop ──▶ TCode.Terminal.Avalonia ──▶ TCode.Terminal.Core
+TKCode.Desktop ──▶ TKCode.Terminal.Avalonia ──▶ TKCode.Terminal.Core
       │                                              ▲
-      ├──▶ TCode.Terminal.Protocol ◀── TCode.Terminal.Host ──▶ TCode.Terminal.Pty
+      ├──▶ TKCode.Terminal.Protocol ◀── TKCode.Terminal.Host ──▶ TKCode.Terminal.Pty
       │                                      │                      
-TCode.AgentHost ──▶ TCode.Terminal.Protocol  └──▶ TCode.Terminal.Shell ──▶ TCode.Terminal.Pty
+TKCode.AgentHost ──▶ TKCode.Terminal.Protocol  └──▶ TKCode.Terminal.Shell ──▶ TKCode.Terminal.Pty
 ```
 
-- `TCode.Terminal.*` 不引用任何 `TCode.*` 非终端项目，也不引用 AtomUI。TCode 的设置、主题、本地化通过 Desktop 的适配层注入。
-- `TCode.Terminal.Protocol` 只依赖 BCL，Desktop 和 AgentHost 都引用它。
-- 只有 `TCode.Terminal.Avalonia` 依赖 Avalonia。
+- `TKCode.Terminal.*` 不引用任何 `TKCode.*` 非终端项目，也不引用 AtomUI。TKCode 的设置、主题、本地化通过 Desktop 的适配层注入。
+- `TKCode.Terminal.Protocol` 只依赖 BCL，Desktop 和 AgentHost 都引用它。
+- 只有 `TKCode.Terminal.Avalonia` 依赖 Avalonia。
 
 ## 5. 线程模型
 
@@ -183,10 +183,10 @@ TCode.AgentHost ──▶ TCode.Terminal.Protocol  └──▶ TCode.Terminal.S
 
 以下是各层之间的约定。签名是设计稿，实现时可以调整名称，但职责划分不变。
 
-### 6.1 核心门面（TCode.Terminal.Core）
+### 6.1 核心门面（TKCode.Terminal.Core）
 
 ```csharp
-namespace TCode.Terminal.Core;
+namespace TKCode.Terminal.Core;
 
 /// 一个终端状态机。非线程安全：只能由其所属的 actor 线程调用。
 public sealed class TerminalCore : IDisposable
@@ -277,12 +277,12 @@ public sealed class RowSnapshot
 public readonly record struct TerminalSize(int Columns, int Rows, int CellWidth, int CellHeight);
 ```
 
-### 6.2 连接（TCode.Terminal.Pty）
+### 6.2 连接（TKCode.Terminal.Pty）
 
 采用 [research/06](research/06-ssh-transport.md) §6 的接口草案：
 
 ```csharp
-namespace TCode.Terminal.Pty;
+namespace TKCode.Terminal.Pty;
 
 public interface ITerminalConnection : IAsyncDisposable
 {
@@ -301,7 +301,7 @@ public sealed record PtyLaunch(
     string File, IReadOnlyList<string> Arguments, string? Argv0,   // Argv0 = "-zsh" 这类 login 形式
     string? WindowsCommandLine,                                     // Windows：原样命令行（cmd.exe 等不按 CommandLineToArgvW 解析的程序）
     string? WorkingDirectory,
-    IReadOnlyList<KeyValuePair<string, string>> Environment,        // 完整环境块（策略由 TCode.Terminal.Shell 决定）
+    IReadOnlyList<KeyValuePair<string, string>> Environment,        // 完整环境块（策略由 TKCode.Terminal.Shell 决定）
     TerminalSize InitialSize,
     PtyWidthMode WidthMode, bool AmbiguousWide);                    // Windows：映射为 ConPTY 的 GLYPH_WIDTH_* / AMBIGUOUS_IS_WIDE
 
@@ -311,7 +311,7 @@ public sealed record PtyLaunch(
 // Exited 在"输出读到 EOF，或进程退出后输出静默超时"之后完成：后台进程仍持有 slave 时读不到 EOF。
 ```
 
-### 6.3 Shell 与 profile（TCode.Terminal.Shell）
+### 6.3 Shell 与 profile（TKCode.Terminal.Shell）
 
 ```csharp
 public interface IProfileProvider { IReadOnlyList<TerminalProfile> Detect(); }  // 每个平台一个实现
@@ -330,12 +330,12 @@ public static class LaunchBuilder
 }
 ```
 
-### 6.4 IPC 协议（TCode.Terminal.Protocol）
+### 6.4 IPC 协议（TKCode.Terminal.Protocol）
 
 完整规格见 [04-pty-host.md](04-pty-host.md)。要点：
 
 - **传输**：
-  - Unix：`$TCODE_HOME/run/ptyhost-<build>.sock`，所在目录权限 0700（路径超出 `sun_path` 上限时回退，见 04）；
+  - Unix：`$TKCODE_HOME/run/ptyhost-<build>.sock`，所在目录权限 0700（路径超出 `sun_path` 上限时回退，见 04）；
   - Windows：命名管道，ACL 只允许当前用户，并设置 `PIPE_REJECT_REMOTE_CLIENTS`；
   - 先校验对端 uid / SID，再做 **HMAC 双向挑战应答**（令牌保存在权限 0600 的 `ptyhost-<build>.json` 中，从不在连接上传输，防止管道抢注者拿到令牌），然后握手协议版本和 `ghosttyBuildId`。
 - **帧**：`[u32 长度][u8 类型][u8 标志][u16 保留][u32 会话 id][负载]`。类型分为三种：
@@ -350,7 +350,7 @@ public static class LaunchBuilder
   - 慢订阅者最多拖住会话 **10 s**；超时后这个订阅者降级，等它跟上后用快照重新同步（resync）。数据不会丢，因为镜像核心始终是完整的。Agent 订阅者用"按需读取"模式，不订阅原始字节，所以不参与流控（§9）。
 - **重连**：`session/attach` 返回 `{快照, 快照对应的日志序号}`，之后的 `Output` 帧从这个序号开始，不重不漏。快照分两段发送：先发 READY 段（可以立即渲染），再增量发送更早的回滚。
 
-### 6.5 UI 控件（TCode.Terminal.Avalonia）
+### 6.5 UI 控件（TKCode.Terminal.Avalonia）
 
 ```csharp
 public sealed class TerminalView : Control   // R3：重写 Render；R1：挂载 CompositionCustomVisual
@@ -358,7 +358,7 @@ public sealed class TerminalView : Control   // R3：重写 Render；R1：挂载
     public ITerminalViewSession? Session { get; set; }       // 由宿主提供：输入输出走 IPC，或者在测试里直接接回放
     public TerminalViewOptions Options { get; set; }         // 字体、光标、选区、鼠标、粘贴、链接、可访问性……
     public event EventHandler<TerminalLinkActivatedEventArgs>? LinkActivated;   // URL、文件路径（path:line:col）、OSC 8
-    public event EventHandler<TerminalKeyRoutingEventArgs>? KeyRouting;         // 宿主决定按键归 TCode 还是归 shell
+    public event EventHandler<TerminalKeyRoutingEventArgs>? KeyRouting;         // 宿主决定按键归 TKCode 还是归 shell
     public void Copy(); public void Paste(); public void Clear(); public void Find(); public void ScrollToPrompt(int delta);
 }
 
@@ -376,16 +376,16 @@ public interface ITerminalViewSession
 }
 ```
 
-`TerminalView` 不知道 pty host 的存在，也不知道 TCode 的设置格式。
+`TerminalView` 不知道 pty host 的存在，也不知道 TKCode 的设置格式。
 
-## 7. 与 TCode 的集成点
+## 7. 与 TKCode 的集成点
 
 | 位置 | 改动 |
 |---|---|
-| [WorkbenchViewModel.cs](../../src/TCode.Desktop/ViewModels/WorkbenchViewModel.cs) | 新增 `TerminalTabViewModel`。`AddTool(Terminal)` 改为每次都新建一个终端，不再按 Kind 去重；标签支持分屏（`TerminalGroupViewModel` 持有一棵分屏树） |
-| [MainWindow.axaml.cs](../../src/TCode.Desktop/Views/MainWindow.axaml.cs) `OnWindowKeyDown` | 焦点在终端里时，先询问终端的按键路由（D6）；命令面板新增 ⌘⇧P / Ctrl+Shift+P |
-| `docs/settings.md` + `TCode.Config` | 新增 `terminal` 节（[07](07-shell-profiles-config.md) §7），沿用 JSONC、宽容解析、热重载 |
-| 主题 | `TCode.Desktop` 把 AtomUI token 和 TCode 调色板映射到 `Terminal.*` 资源键（与 StreamMark 的 `MarkdownResourceAlias` 做法相同） |
+| [WorkbenchViewModel.cs](../../src/TKCode.Desktop/ViewModels/WorkbenchViewModel.cs) | 新增 `TerminalTabViewModel`。`AddTool(Terminal)` 改为每次都新建一个终端，不再按 Kind 去重；标签支持分屏（`TerminalGroupViewModel` 持有一棵分屏树） |
+| [MainWindow.axaml.cs](../../src/TKCode.Desktop/Views/MainWindow.axaml.cs) `OnWindowKeyDown` | 焦点在终端里时，先询问终端的按键路由（D6）；命令面板新增 ⌘⇧P / Ctrl+Shift+P |
+| `docs/settings.md` + `TKCode.Config` | 新增 `terminal` 节（[07](07-shell-profiles-config.md) §7），沿用 JSONC、宽容解析、热重载 |
+| 主题 | `TKCode.Desktop` 把 AtomUI token 和 TKCode 调色板映射到 `Terminal.*` 资源键（与 StreamMark 的 `MarkdownResourceAlias` 做法相同） |
 | 链接 | `LinkActivated` → 文件路径在工作台打开（含行号）；URL 交给系统打开；OSC 8 打开前确认真实地址 |
 | AgentHost | 新增 `TerminalBroker`，连接 pty host，为 bash 工具的可见终端模式、ACP `auth.terminal` / `terminal/*` 提供服务（[09](09-agent-integration.md)） |
 | ACP | `auth.terminal:true`；`terminal:true` 作为可配置能力（v2 草案删除了它，见 09） |
@@ -398,10 +398,10 @@ public interface ITerminalViewSession
 | IPC | 仅当前用户：Unix socket 所在目录 0700，Windows 管道 ACL 只允许当前用户，再加令牌认证；拒绝远程客户端 |
 | 程序 → 终端 | OSC 52 读剪贴板默认询问；标题回报默认关闭；OSC 8 链接打开前显示真实地址；OSC 7 cwd 当作不可信输入（只用于继承目录，并校验目录存在）；DECRQSS 应答不回显请求内容（[10](10-protocol-compat.md) §6） |
 | 用户 → 程序 | 粘贴前检查 `ESC[201~` 和控制字符；多行粘贴警告（可配置） |
-| Agent → 终端 | Agent 只能操作它自己创建的终端，或者用户明确共享给它的终端；在终端里执行命令前走 TCode 的审批；Agent 读取用户终端的内容需要用户授权（[09](09-agent-integration.md) §11） |
+| Agent → 终端 | Agent 只能操作它自己创建的终端，或者用户明确共享给它的终端；在终端里执行命令前走 TKCode 的审批；Agent 读取用户终端的内容需要用户授权（[09](09-agent-integration.md) §11） |
 | 持久化 | revive 快照可能包含敏感输出：文件权限 0600，可以关闭，保存的行数有上限 |
-| 原生库 | conpty.dll 只按绝对路径加载；libghostty-vt 和 libtcodepty 与应用一起签名（macOS 需要公证） |
-| 许可证 | Ghostty、kitty 的 shell 集成脚本是 GPLv3，不能拷贝进 TCode（Apache-2.0）；只能参考思路自写，或改编 VS Code 的 MIT 脚本（07 §5） |
+| 原生库 | conpty.dll 只按绝对路径加载；libghostty-vt 和 libtkcodepty 与应用一起签名（macOS 需要公证） |
+| 许可证 | Ghostty、kitty 的 shell 集成脚本是 GPLv3，不能拷贝进 TKCode（Apache-2.0）；只能参考思路自写，或改编 VS Code 的 MIT 脚本（07 §5） |
 
 ## 9. Agent 使用终端的方式（概要）
 

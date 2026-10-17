@@ -1,6 +1,6 @@
 # 输入框增强：@ 文件、/ 命令、Skills 与 Role
 
-状态：设计已确认（2026-10-17）；C1–C11 全部实现（`src/TCode.Desktop/Controls/Composer/`、`ViewModels/Completion/`、`TCode.Agent.Coding/Workspace/WorkspaceFileIndex.cs`、`TCode.Agent.Coding/Assets/`），实现与设计的差异见 §17
+状态：设计已确认（2026-10-17）；C1–C11 全部实现（`src/TKCode.Desktop/Controls/Composer/`、`ViewModels/Completion/`、`TKCode.Agent.Coding/Workspace/WorkspaceFileIndex.cs`、`TKCode.Agent.Coding/Assets/`），实现与设计的差异见 §17
 关联文档：[mcp.md](mcp.md)（§8 现有的 @ 资源 / / 提示词选择器）、[builtin-agent-tools.md](builtin-agent-tools.md)、[external-agent-runtimes.md](external-agent-runtimes.md)、[motion.md](motion.md)、[settings.md](../settings.md)
 
 ## 1. 目标
@@ -16,20 +16,20 @@
 | 维度 | 决策 |
 |---|---|
 | 内联 tag 的实现 | **自绘编辑器**：不用 TextBox 加覆盖层，也不用 U+FFFC 加内联 run。文档模型、排版、输入法、选择、撤销都由我们自己实现 |
-| 代码位置 | 放在当前项目 `TCode.Desktop`（`Controls/Composer/`），不另建工程 |
-| 目录约定 | 全局目录 `~/.tcode/{commands,skills,roles}`（受 `TCODE_HOME` 控制）；项目目录 `<项目根>/.agents/{commands,skills,roles}`。**不**读取 `.claude/`、`.codex/` 这些兼容目录 |
+| 代码位置 | 放在当前项目 `TKCode.Desktop`（`Controls/Composer/`），不另建工程 |
+| 目录约定 | 全局目录 `~/.tkcode/{commands,skills,roles}`（受 `TKCODE_HOME` 控制）；项目目录 `<项目根>/.agents/{commands,skills,roles}`。**不**读取 `.claude/`、`.codex/` 这些兼容目录 |
 | Role 语义 | 与 Cursor 的模式相同：内置 **Agent / Plan / ACP**（用户 2026-10-17 改定，去掉 Ask；ACP 参考 NextCoWork），另可自定义。按会话保存，在模式下拉框里切换，也可以用 Shift+Tab 循环切换 |
 | @ 文件发送 | **只发路径**，模型需要时用 `read` 等工具自己读取 |
 | Skills 触发 | 两种方式都支持：用户用 `/skill名` 显式指定；模型也能从系统提示的清单里自动发现，再用 `skill` 工具加载（渐进加载） |
-| 外部运行时 | 把运行时自带的命令合并进 `/` 列表，原样透传；TCode 定义的 command 和 skill 由 Host 展开后发送；Role 对外部运行时只注入指令（运行时有原生模式时映射过去，见 §11） |
+| 外部运行时 | 把运行时自带的命令合并进 `/` 列表，原样透传；TKCode 定义的 command 和 skill 由 Host 展开后发送；Role 对外部运行时只注入指令（运行时有原生模式时映射过去，见 §11） |
 
 ## 3. 架构
 
 ```
-TCode.Desktop                                         TCode.AgentHost
-  ComposerView                                          AgentAssets（扫描 ~/.tcode 与 .agents，监听变化）
+TKCode.Desktop                                         TKCode.AgentHost
+  ComposerView                                          AgentAssets（扫描 ~/.tkcode 与 .agents，监听变化）
    ├─ ComposerEditor（自绘控件）                         │   ├─ commands / skills / roles 目录
-   │    ├─ ComposerDocument：文本片段 + tag 片段          │   └─ 解析 frontmatter（TCode.Config，AOT 安全）
+   │    ├─ ComposerDocument：文本片段 + tag 片段          │   └─ 解析 frontmatter（TKCode.Config，AOT 安全）
    │    ├─ 排版：TextLayout + ITextSource + TagRun        ├─ WorkspaceFileIndex（@ 文件搜索，按 cwd 缓存）
    │    └─ 输入法、选择、撤销、剪贴板、无障碍             ├─ 发送时展开：command 模板、skill 内容、role 指令
    └─ CompletionViewModel（统一的选择器）                └─ 内置会话：系统提示里的 skills 清单、skill 工具、role 对应的工具集
@@ -40,12 +40,12 @@ TCode.Desktop                                         TCode.AgentHost
 ```
 
 - **文件搜索和资产扫描都放在 Host**：UI 进程不扫描磁盘。大仓库只在 Host 里建一次索引，所有会话共用。
-- **frontmatter 解析放在 `TCode.Config`**：Host 和 Desktop 都可能用到，比如设置页预览。用一个只支持平面 key–value 和字符串列表的 YAML 子集解析器，不引入 YamlDotNet（它依赖反射，不适合 AOT）。
+- **frontmatter 解析放在 `TKCode.Config`**：Host 和 Desktop 都可能用到，比如设置页预览。用一个只支持平面 key–value 和字符串列表的 YAML 子集解析器，不引入 YamlDotNet（它依赖反射，不适合 AOT）。
 
 ## 4. 目录与文件格式
 
 ```
-~/.tcode/                     <项目根>/.agents/
+~/.tkcode/                     <项目根>/.agents/
   commands/                     commands/
     review.md        → /review    review.md      ← 覆盖全局同名项
     git/commit.md    → /git:commit
@@ -107,7 +107,7 @@ You are reviewing code. Do not modify files; report findings with file:line refe
 
 ## 5. 资产发现（Host：`AgentAssets`）
 
-- 位置：`TCode.Agent.Coding/Assets/`。内容包括 `AgentAssetCatalog`（按 cwd 缓存的不可变快照）、`CommandAsset`、`SkillAsset`、`RoleAsset`。
+- 位置：`TKCode.Agent.Coding/Assets/`。内容包括 `AgentAssetCatalog`（按 cwd 缓存的不可变快照）、`CommandAsset`、`SkillAsset`、`RoleAsset`。
 - **加载**：第一次用到某个 cwd 时扫描；之后用 `FileSystemWatcher` 监听全局目录和项目 `.agents`，复用 `SettingsWatcher` 的防抖。快照变化时向 UI 推送 `assets/changed {cwd}`。
 - **限制**：只读 frontmatter 和描述，正文在用到时才读取，所以 skill 正文不会进入快照。单个文件超过 256 KB 时跳过；每个目录最多 500 项。
 - **错误**：解析失败的文件放进快照的 `Problems` 列表，在设置页和选择器底部显示，不影响其他文件。
@@ -134,7 +134,7 @@ public sealed record TagSegment(TagKind Kind, string Value, string Label) : Segm
 ### 6.2 排版与绘制
 
 - 由 `ComposerTextSource : ITextSource` 生成 `TextLayout`：文本片段对应 `TextCharacters`；tag 对应 `TagRun : DrawableTextRun`。`TagRun` 的宽度等于图标宽度加文字宽度再加内边距，基线与正文对齐。
-- **tag 外观**：圆角背景 `TCode.AccentSoftBg`，文字 `TCode.AccentText`，左侧是按类型显示的 Lucide 图标（文件、文件夹、命令、skill、MCP）。tag 宽度超过最大值时，文字中间截断，例如 `src/…/Foo.cs`。悬停 tag 时显示完整路径或描述。
+- **tag 外观**：圆角背景 `TKCode.AccentSoftBg`，文字 `TKCode.AccentText`，左侧是按类型显示的 Lucide 图标（文件、文件夹、命令、skill、MCP）。tag 宽度超过最大值时，文字中间截断，例如 `src/…/Foo.cs`。悬停 tag 时显示完整路径或描述。
 - **换行**：tag 不拆开；单个 tag 比一整行还宽时独占一行并截断。
 - **绘制顺序**：选区背景、文本与 tag（选中的 tag 加描边）、预编辑文字下划线、光标。光标闪烁复用 TextBox 的节奏，不聚焦时不重绘。
 - **增量**：只在文档或宽度变化时重建 `TextLayout`；光标移动、闪烁不触发重排，延续 [streaming-cpu-findings] 里的结论。
@@ -156,7 +156,7 @@ public sealed record TagSegment(TagKind Kind, string Value, string Label) : Segm
   选择器打开时，↑↓、Enter、Tab、Esc 交给选择器处理。
 - **鼠标**：单击放置光标，拖动选择，双击选中单词（双击 tag 选中这个 tag），三击选中一段。点击 tag 不打开文件，只放置光标（悬停时显示提示）。
 - **剪贴板**：
-  - 复制时写纯文本投影，另外写一份内部格式（片段的 JSON）。在 TCode 内部复制粘贴时保留 tag。
+  - 复制时写纯文本投影，另外写一份内部格式（片段的 JSON）。在 TKCode 内部复制粘贴时保留 tag。
   - 粘贴外部纯文本时一律当作文本，不自动转换 `@path`。
   - 图片粘贴沿用 `PasteAsync`。
 - **拖放**：图片沿用现有逻辑；从系统拖入工作区内的文件时插入文件 tag，工作区外的文件插入绝对路径文本。
@@ -202,7 +202,7 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
 
 ### 7.3 列表与排序
 
-- 列表是**浮在输入框上方的弹出层**（`Popover`，与模型选择器同样的卡片外观），横向对齐到查询起点（`@` 或 `/`），不改变输入框的高度。每一行使用 `TCode.RowButton`，最多显示 8 行，超出时滚动。
+- 列表是**浮在输入框上方的弹出层**（`Popover`，与模型选择器同样的卡片外观），横向对齐到查询起点（`@` 或 `/`），不改变输入框的高度。每一行使用 `TKCode.RowButton`，最多显示 8 行，超出时滚动。
 - 列表项不可获得焦点，键盘始终留在输入框里。点击弹出层以外的地方会关闭它，效果等同于按 Esc。
 - 空状态时居中的输入框和停靠在底部的输入框共用同一个 ViewModel，只有获得焦点的那个会打开弹出层。
 - 有查询词时按模糊匹配得分合并排序，不分组。没有查询词时按分组显示，顺序如下：
@@ -254,14 +254,14 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
 - **发送**：
   1. 转录里显示 command tag 加用户输入的文字。
   2. Host 读取 `.md` 正文，后面接上用户输入的文字，作为本轮实际的用户消息发给模型。展开后的全文存进 JSONL 的 `expanded` 字段，方便回放。
-  3. 外部运行时同样发送展开后的文本，因为 TCode 的 command 运行时并不认识。
+  3. 外部运行时同样发送展开后的文本，因为 TKCode 的 command 运行时并不认识。
 
 ### 9.3 内置提示词命令（发给模型）
 
 `/init`、`/commit` 需要模型参与，因此是“提示词型”内置命令：
 - 选中后和自定义 command 一样插入 command tag，用户可以在后面补充说明（如 `/commit 只提交 src/ 下的改动`）。
 - 发送时 Host（`ExpandCommands`，`BuiltinPromptCommands.Render`）用内置正文替代 `.md` 文件，正文在用户文字之前发给模型。转录显示 tag 加用户文字，展开全文存进 JSONL 的 `Content`。
-- 正文是 `src/TCode.Agent.Coding/Assets/BuiltinPrompts/*.md` 嵌入资源，改动要经过本节的审阅。占位符 `{{model_name}}`、`{{model_id}}` 在展开时替换为当前会话的模型，每次发送都取当前模型。
+- 正文是 `src/TKCode.Agent.Coding/Assets/BuiltinPrompts/*.md` 嵌入资源，改动要经过本节的审阅。占位符 `{{model_name}}`、`{{model_id}}` 在展开时替换为当前会话的模型，每次发送都取当前模型。
 - 与同名自定义 command 重名时内置优先；Desktop 的 `BuiltinCommandProvider.Names` 把自定义同名项隐藏。
 - 外部运行时同样发送展开后的文本。
 
@@ -307,12 +307,12 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
 |---|---|---|
 | Claude Agent | `initialize` 应答的 `commands`（含描述与参数提示），比 `system/init` 的 `slash_commands` 信息更全 | Plan → 原生 `plan` 权限模式（启动参数 `--permission-mode` 或在线 `set_permission_mode`），优先于权限档位；ACP 与自定义模式只发说明。支持子 Agent，可以用 ACP |
 | Codex | 规格中没有列出命令或 skills 的方法，不提供 | Plan → 只读沙箱（线程级 `sandbox: "read-only"`，轮次级 `sandboxPolicy: {type: "readOnly"}`，sticky）；自定义模式只发说明。不支持子 Agent，不提供 ACP |
-| ACP Agent | `available_commands_update`（整体替换；可能在 `session/new` 响应之前到达，走现有的暂存回放） | 只发说明；不提供 ACP。用 Agent 自己的模式列表（`modes` / `category:"mode"`）替换 TCode 模式列表，留到后续版本 |
+| ACP Agent | `available_commands_update`（整体替换；可能在 `session/new` 响应之前到达，走现有的暂存回放） | 只发说明；不提供 ACP。用 Agent 自己的模式列表（`modes` / `category:"mode"`）替换 TKCode 模式列表，留到后续版本 |
 
 - **说明怎么发**：模式变化后，下一条用户消息发给运行时之前，在最前面加一个 `<system-reminder>` 文本块（§18.8）。只发一次，不进入转录。这一轮出错或被中止时，留到下一轮再发。消息以 `/命令` 开头时也留到下一轮，因为运行时只认文字开头的斜杠命令（ACP 规格 §6.2）。新会话一开始就是 Agent 时不发。
 - **ACP 依赖子 Agent**：`RuntimeCapabilities.SupportsSubagents` 经由 `ModelDto.SupportsSubagents` 告诉界面，当前模型的运行时不支持时，模式列表里不出现 ACP。Host 也会拒绝在这类会话上切到 ACP，保持原来的模式。
 - **自带命令**：Host 以会话事件 `commandsChanged` 推送，界面保存在 `SessionViewModel.RuntimeCommands`。`/` 列表里归为运行时分组，右侧显示运行时名称。选中后插入 `RuntimeCommand` tag，发送时原样是 `/名称` 文字，Host 不展开。运行时进程启动（第一轮）之后才有列表。
-- TCode 自己的 command、skill 在外部运行时上照常由 Host 展开后发送，因为运行时并不认识它们。
+- TKCode 自己的 command、skill 在外部运行时上照常由 Host 展开后发送，因为运行时并不认识它们。
 
 ## 12. 消息序列化与转录
 
@@ -337,7 +337,7 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
 
 - 设置页新增"命令、Skills 与模式"分区（`AssetsSettingsViewModel`），内容由 `assets/list` 提供，收到 `assets/changed` 时自动刷新：
   - **默认模式**（`settings.json` 的 `defaultRole`）：可选 Agent / Plan / ACP 和当前项目的自定义模式。选回 Agent 时从 settings.json 删除该字段。新会话从默认模式开始；没有改过模式时，空状态沿用当前模式。
-  - **目录**：全局（`~/.tcode`）和项目（`<项目根>/.agents`）各自的路径。
+  - **目录**：全局（`~/.tkcode`）和项目（`<项目根>/.agents`）各自的路径。
   - **命令、Skills、自定义模式三个列表**：每一项显示名称、描述、来源标记，模式还会显示工具和模型。可以在编辑器中打开，也可以在文件夹中显示。
   - **新建**：分为"新建（全局）"和"新建（项目）"，按 §18.9 的模板写入一个不重名的文件（`new-command.md`、`skills/new-skill/SKILL.md`、`new-mode.md`，重名时加序号），然后用系统默认程序打开。没有项目时，"新建（项目）"不可用。
   - **需要注意**：列出被覆盖、被遮住的项和解析问题，点一下就打开对应的文件。
@@ -394,7 +394,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
   - `CompletionViewModel` 的输入只有文档和当前获得焦点的输入框（`ICompletionHost`）。两个 `ComposerView`（空状态时居中的那个、停靠在底部的那个）共用同一个 ViewModel，由获得焦点的那个提供光标。
   - 新的查询立即询问提供者，之后的输入再防抖 60 ms。
   - 按 Esc 关闭后，同一个查询（起点和触发字符都相同）不会再自动打开。
-  - 模糊匹配 `FuzzyMatcher` 放在 `TCode.Config`，Host 的文件索引（C5）也用它。
+  - 模糊匹配 `FuzzyMatcher` 放在 `TKCode.Config`，Host 的文件索引（C5）也用它。
 - **C5 文件索引**：
   - 列表来源与 glob 工具相同：有 rg 时用 `rg --files`，否则用 `FileWalker`。设计里写的 `git ls-files` 没有采用，以免同一套忽略规则有两种实现。
   - 文件变化不做增量更新，只把索引标记为过期；下一次搜索时在后台重建，期间继续返回旧结果并标记 `indexing`。
@@ -403,8 +403,8 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
   - 协议版本升到 15，新增 `workspace/searchFiles`。
   - 最近 @ 过的文件记在 `state.json` 的 `recentMentions` 里（按工作区，每个最多 50 条）。
 - **C6 资产**：
-  - `Frontmatter`（放在 TCode.Config）只解析 YAML 的一个子集：标量、加引号的字符串、行尾注释、流式列表和块列表、`|` 与 `>` 多行文本；嵌套映射只记下键名。
-  - `AgentAssetLoader` 负责扫描与合并，`AgentAssetStore` 按项目根缓存结果。全局目录监听整个 `~/.tcode`，但只响应 commands、skills、roles 三个目录下的变化，会话记录的写入不会触发。项目监听根目录下 `.agents` 的创建和删除，以及 `.agents` 内部的变化，300 ms 防抖。
+  - `Frontmatter`（放在 TKCode.Config）只解析 YAML 的一个子集：标量、加引号的字符串、行尾注释、流式列表和块列表、`|` 与 `>` 多行文本；嵌套映射只记下键名。
+  - `AgentAssetLoader` 负责扫描与合并，`AgentAssetStore` 按项目根缓存结果。全局目录监听整个 `~/.tkcode`，但只响应 commands、skills、roles 三个目录下的变化，会话记录的写入不会触发。项目监听根目录下 `.agents` 的创建和删除，以及 `.agents` 内部的变化，300 ms 防抖。
   - 内置命令与自定义 command 的重名由 Desktop 判断（C7），Host 不知道有哪些内置命令。
   - RPC 新增 `assets/list` 和 `assets/changed`（同一协议版本 15 内）。冒烟模式新增 `assets.list` 检查。
 - **补全列表改为弹出层**（用户反馈）：最初放在输入框框内的上方，会把输入框撑高；现在改为浮在上方的 `Popover`。AtomUI 的 Popup 不使用 `PlacementRect`，所以改用 `HorizontalOffset` 对齐到查询起点。
@@ -437,7 +437,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
   - 运行时契约新增 `TurnOptions.Mode`（`RuntimeMode`）、`IRuntimeHost.OnCommands`（默认实现为空，旧的测试宿主不受影响）、`RuntimeCapabilities.SupportsSubagents`。
   - `IExternalAgentLoop` 新增 `SetMode`、`SupportsSubagents`、`CommandsChanged`。`AgentSession.Role` 的 setter 负责组装说明，用 `SessionRole.ExternalReminder` 生成。
   - 协议版本升到 18：新增 `commandsChanged` 会话事件和 `ModelDto.SupportsSubagents`。
-  - 没有做的：用 ACP Agent 自己的模式列表替换 TCode 模式（需要新的界面和协议对接），以及 Codex 自带命令（规格中没有对应的方法）。
+  - 没有做的：用 ACP Agent 自己的模式列表替换 TKCode 模式（需要新的界面和协议对接），以及 Codex 自带命令（规格中没有对应的方法）。
 - **C11 设置页**：见 §14。打开文件统一走 `ShellOpen`，从 `SettingsViewModel` 中提出来复用。解析问题的说明来自 Host，目前只有英文。
 - **MCP 资源改为内联 tag**：输入框上方的资源胶囊已经去掉，资源以 `McpResource` tag（值为 `服务器:URI`）留在输入框里。发送时从 tag 取出引用；转录中已经出现在正文里的资源块不再重复显示。MCP 提示词选中后仍是输入框上方的参数卡片。
 
@@ -552,7 +552,7 @@ Load a skill's instructions. Returns the content of its SKILL.md and the absolut
 
 ### 18.8 外部运行时的模式说明
 
-外部运行时无法过滤工具，工具名也和 TCode 不同（Claude 是 Task / TodoWrite，Codex 没有任务清单工具），所以 Plan 和 ACP 各有一份不提 TCode 工具名、措辞改为"不要做"的版本。只读由运行时原生手段保证（§11）。模式变化后的第一条用户消息前面加：
+外部运行时无法过滤工具，工具名也和 TKCode 不同（Claude 是 Task / TodoWrite，Codex 没有任务清单工具），所以 Plan 和 ACP 各有一份不提 TKCode 工具名、措辞改为"不要做"的版本。只读由运行时原生手段保证（§11）。模式变化后的第一条用户消息前面加：
 
 ```
 <system-reminder>

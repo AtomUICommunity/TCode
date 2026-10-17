@@ -1,7 +1,7 @@
-# OpenAI Responses API 协议规格（TCode 实现用）
+# OpenAI Responses API 协议规格（TKCode 实现用）
 
 > 版本基线：2026-10-16 抓取的官方文档 + openai-python v3.31.0（commit `9998c1a`，2026-10-14）。
-> 用途：TCode（C#/.NET 10）以**无状态**方式（`store:false`，每轮全量回放 input，回放带 `encrypted_content` 的 reasoning item）调用 `POST /v1/responses` 流式接口。
+> 用途：TKCode（C#/.NET 10）以**无状态**方式（`store:false`，每轮全量回放 input，回放带 `encrypted_content` 的 reasoning item）调用 `POST /v1/responses` 流式接口。
 > 本文所有结论都标了出处。标为「社区」的条目不是官方文档，只是经验性说明。
 
 ## 0. 来源
@@ -48,9 +48,9 @@
 | `instructions` | string \| null | null | 以 system/developer 身份插入的消息。与 `previous_response_id` 一起用时**不会继承**上一轮的 instructions。**不能**放 prompt cache breakpoint [G-Cache]。在 Response 对象中它的类型是 `string \| InputItem[] \| null`。 |
 | `stream` | bool | false | 流式开关。 |
 | `stream_options.include_obfuscation` | bool | true（服务端默认开启） | 开启后，delta 事件会带一个 `obfuscation` 随机填充字段，用来对抗侧信道攻击。设为 false 可以节省带宽。只能在 `stream:true` 时设置。 |
-| `store` | bool \| null | **true** | 是否在服务端保存 response（≥30 天）。TCode 必须显式发送 `false`。 |
+| `store` | bool \| null | **true** | 是否在服务端保存 response（≥30 天）。TKCode 必须显式发送 `false`。 |
 | `previous_response_id` | string \| null | null | 服务端链式续接。不能与 `conversation` 同时使用。无状态模式下**不发送**。 |
-| `conversation` | string \| `{id}` | null | Conversations API。TCode 不使用。 |
+| `conversation` | string \| `{id}` | null | Conversations API。TKCode 不使用。 |
 | `include` | string[] | — | 取值见 §2.1。 |
 | `reasoning` | object | — | 见 §2.2。 |
 | `tools` | Tool[] | [] | 见 §2.3。 |
@@ -69,7 +69,7 @@
 | `top_logprobs` | int 0–20 | — | |
 | `metadata` | map（≤16 对，key ≤64，value ≤512） | — | |
 | `context_management` | `[{type:"compaction", compact_threshold:int}]` | — | 服务端自动压缩，见 §4.8。 |
-| `background` | bool | — | 后台模式。TCode 不使用。 |
+| `background` | bool | — | 后台模式。TKCode 不使用。 |
 | `user` | string | — | 已被 `safety_identifier` 和 `prompt_cache_key` 取代。 |
 | `moderation`、`access_programs`、`prompt` | — | — | 当前不需要。 |
 
@@ -78,7 +78,7 @@
 可选值 [SDK `response_includable.py`]：`file_search_call.results`、`web_search_call.results`、`web_search_call.action.sources`、`message.input_image.image_url`、`computer_call_output.output.image_url`、`code_interpreter_call.outputs`、**`reasoning.encrypted_content`**、`message.output_text.logprobs`。
 
 > **与常见认知不同**：现行官方文档说明，在无状态模式（`store:false` 或 ZDR）下，reasoning item **默认**就带 `encrypted_content`。`include:["reasoning.encrypted_content"]` 属于「legacy，仍然接受，但不再需要」[G-Reasoning §Preserve reasoning without stored responses；SDK `response_reasoning_item.py` 注释]。
-> **TCode 的做法**：仍然发送 `include:["reasoning.encrypted_content"]`。官方 API 对它无副作用，而较旧或第三方兼容的服务端可能仍依赖它。
+> **TKCode 的做法**：仍然发送 `include:["reasoning.encrypted_content"]`。官方 API 对它无副作用，而较旧或第三方兼容的服务端可能仍依赖它。
 
 ### 2.2 `reasoning`
 
@@ -141,9 +141,9 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 - `strict:true` 时，每个 object 都必须设 `additionalProperties:false`，并且 `properties` 中**所有**字段都要列进 `required`。可选字段写成 `"type":[...,"null"]`。不满足这些条件时，请求会被**拒绝**（400）。
 - **不设置 `strict`**：Responses 会尝试把 schema 规范化成 strict。如果规范化失败，就回退到非 strict，此时响应里的 tool 显示 `strict:false`。（Chat Completions 默认是非 strict。）
 - 想在 Responses 中明确使用非 strict，必须显式写 `strict:false`。
-- 结论：TCode 要么把 schema 转换成 strict 兼容形式并发送 `true`，要么显式发送 `false`。
+- 结论：TKCode 要么把 schema 转换成 strict 兼容形式并发送 `true`，要么显式发送 `false`。
 
-其他工具类型（需要知道它们存在，TCode 暂不使用）：`namespace`（`{type:"namespace",name,description,tools:[function|custom]}`）、`custom`（自由文本输入，可选 lark/regex 语法约束，输出为 `custom_tool_call`）、`tool_search`、`web_search`、`file_search`、`mcp`、`shell`、`apply_patch`、`computer` 等。
+其他工具类型（需要知道它们存在，TKCode 暂不使用）：`namespace`（`{type:"namespace",name,description,tools:[function|custom]}`）、`custom`（自由文本输入，可选 lark/regex 语法约束，输出为 `custom_tool_call`）、`tool_search`、`web_search`、`file_search`、`mcp`、`shell`、`apply_patch`、`computer` 等。
 
 工具定义会被注入模型上下文并按 input token 计费。官方的软性建议是：一轮开始时可用的函数少于 20 个 [G-FC]。
 
@@ -158,7 +158,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 - `{"type":"allowed_tools","mode":"auto|required","tools":[{"type":"function","name":"read_file"}, ...]}`：在**不改变 `tools` 列表**的前提下限制可调用的工具子集，因此不破坏 prompt cache。
 - 还有 `{"type":"custom","name"}`、`{"type":"mcp",...}`、`{"type":"shell"}`、`{"type":"apply_patch"}`、内置工具类型和 `{"type":"programmatic_tool_calling"}`。
 
-### 2.5 一个完整的 TCode 典型请求
+### 2.5 一个完整的 TKCode 典型请求
 
 ```json
 {
@@ -169,7 +169,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
   "instructions": null,
   "input": [
     { "type": "message", "role": "developer",
-      "content": [{ "type": "input_text", "text": "You are TCode, a coding agent..." }] },
+      "content": [{ "type": "input_text", "text": "You are TKCode, a coding agent..." }] },
     { "type": "message", "role": "user",
       "content": [{ "type": "input_text", "text": "Fix the failing test." }] }
   ],
@@ -180,7 +180,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
   "reasoning": { "effort": "medium", "summary": "auto" },
   "text": { "verbosity": "medium" },
   "max_output_tokens": 32000,
-  "prompt_cache_key": "tcode:<session-id>",
+  "prompt_cache_key": "tkcode:<session-id>",
   "truncation": "disabled"
 }
 ```
@@ -191,16 +191,16 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 
 - 缓存按**前缀**匹配，要求从开头到 breakpoint 的渲染内容完全一致。GPT-5.6 及以上模型的最小可缓存长度是 1,024 个可见 input token。在旧模型上，`cached_tokens` 按 128 的倍数向下取整。
 - **会使缓存失效的改动**：修改断点之前的任何内容，包括编辑历史消息、原地追加内容；修改 `model`；修改 `tools`（名称、描述、schema、**顺序**）；修改 `parallel_tool_calls`、`text.format`、`reasoning.effort`（GPT-6 可以改用 `configuration_update` input item 来调整，不破坏前缀）、`text.verbosity`；compaction 或 truncation。
-- 由此对 TCode 的要求：tools 的序列化必须**确定性**（顺序和字段顺序稳定）；历史 item 必须原样回放，不能重新格式化；developer 提示放在最前面并保持稳定。
+- 由此对 TKCode 的要求：tools 的序列化必须**确定性**（顺序和字段顺序稳定）；历史 item 必须原样回放，不能重新格式化；developer 提示放在最前面并保持稳定。
 - `prompt_cache_key`：旧模型用它影响路由，单个 key 大约每分钟 15 个请求，超过后可能溢出到其他机器。GPT-5.6 及以上模型自动路由，这个 key 主要用于隔离缓存统计，防止缓存命中探测。
 - `prompt_cache_options`（GPT-5.6 及以上）：`mode: implicit`（默认，自动放 1 个隐式 breakpoint，另外最多 3 个显式）或 `explicit`（最多 4 个显式；没有显式 breakpoint 时不缓存）；`ttl:"30m"` 是目前唯一可选值；`prewarm:true` 只预热缓存，不生成内容。显式 breakpoint 写在内容块上，形式为 `"prompt_cache_breakpoint":{"mode":"explicit"}`（`input_text`、`input_image`、`input_file` 都支持）。
 - 计费：GPT-5.6 及以上模型写缓存按普通 input 的 1.25 倍计费，读缓存按 0.1 倍。
 
 ---
 
-## 3. Input items（TCode 必须发送或回放的结构）
+## 3. Input items（TKCode 必须发送或回放的结构）
 
-`input` 数组的元素是一个按 `type` 区分的联合类型 [SDK `response_input_item_param.py`]。下面列出 TCode 用到的类型。
+`input` 数组的元素是一个按 `type` 区分的联合类型 [SDK `response_input_item_param.py`]。下面列出 TKCode 用到的类型。
 
 ### 3.1 user / developer / system 消息
 
@@ -218,7 +218,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 - Message [SDK]：`role` 取 `user|system|developer`；`content` 必须是数组；可选 `status`。
 - 内容块：
   - `input_text`：`{type, text, prompt_cache_breakpoint?}`。
-  - `input_image`：`{type, detail, image_url?, file_id?, prompt_cache_breakpoint?}`。`detail` 取 `low|high|auto|original`，默认 `auto`。在 Param 类型中 `detail` 标为 Required，**TCode 要始终发送**。`image_url` 可以是完整 URL 或 base64 data URL。
+  - `input_image`：`{type, detail, image_url?, file_id?, prompt_cache_breakpoint?}`。`detail` 取 `low|high|auto|original`，默认 `auto`。在 Param 类型中 `detail` 标为 Required，**TKCode 要始终发送**。`image_url` 可以是完整 URL 或 base64 data URL。
   - `input_file`：`{type, file_data?(base64), file_id?, file_url?, filename?, detail?: auto|low|high}`。
 - `developer` 和 `system` 指令的优先级高于 `user`。建议使用 `developer`。
 
@@ -242,7 +242,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 - ResponseOutputMessageParam 的必填字段：`id`、`content`、`role:"assistant"`、`status`（`in_progress|completed|incomplete`）、`type:"message"`。
 - 内容块：`output_text{text, annotations(必填,可为[]), logprobs?}` 或 `refusal{refusal}`。
 - **`phase`**：取值 `"commentary"`（中间说明，例如工具调用前的 preamble）或 `"final_answer"`。对 gpt-5.3-codex 及之后的模型，「**所有 assistant 消息都要保留并回传 phase**，丢失会降低效果」[SDK 注释]。官方还提到，丢失 phase 会导致 preamble 被当成最终答案，从而过早停止 [G-Reasoning §phase]。不要给 user 消息设置 phase。
-- 也可以用 EasyInputMessage 的写法 `{role:"assistant", phase, content:"..."}` 回放（官方 phase 示例就是这么写的），但 TCode 应当原样回放 output item，以保持缓存前缀稳定。
+- 也可以用 EasyInputMessage 的写法 `{role:"assistant", phase, content:"..."}` 回放（官方 phase 示例就是这么写的），但 TKCode 应当原样回放 output item，以保持缓存前缀稳定。
 
 ### 3.3 `function_call`（回放模型发起的调用）
 
@@ -283,7 +283,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 ```
 
 - `output` 可以是 `string`，也可以是 `(input_text|input_image|input_file)[]`。字符串格式由调用方自行决定（JSON、纯文本或错误描述都可以）。没有返回值的函数也要返回一个表示成功或失败的字符串 [G-FC]。
-- `call_id` 在 SDK 和 Ref 中都标为 `optional/null`，但**实际上必须提供**，否则无法与调用配对。TCode 必须始终发送。
+- `call_id` 在 SDK 和 Ref 中都标为 `optional/null`，但**实际上必须提供**，否则无法与调用配对。TKCode 必须始终发送。
 - 可选：`id`、`status`、`name`、`namespace`、`caller`。
 - **每个回放的 `function_call` 都必须有对应的 `function_call_output`**。即使用户取消或执行出错，也要回一条 output，例如 `"error: cancelled by user"`。（官方 [G-FC] 的流程是：先追加 output，再为**每个**调用追加一条 call_id 匹配的 function_call_output。「缺少 output 的 function_call 会导致 400 或行为异常」这一点是工程上的推断，文档没有明确写出。）
 
@@ -350,7 +350,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 
 `output_text` 是 **SDK 提供的便捷属性**（把所有 message 中的 output_text 拼接起来），**不是**线上协议字段。
 
-### 4.2 Output item 类型（TCode 关心的部分）
+### 4.2 Output item 类型（TKCode 关心的部分）
 
 [SDK `response_output_item.py`]
 
@@ -457,7 +457,7 @@ Responses 的 function tool 是**扁平**结构，不像 Chat Completions 那样
 |---|---|
 | `response.compaction.compacting` | `{item_id, output_index, sequence_number}`。表示压缩正在进行，最多每 30 秒发一次，不含内容。压缩 item 的最终 `encrypted_content` 在 `output_item.done` 中 [Ref-Stream 开头说明]。 |
 | `error` | `{type:"error", code:string\|null, message, param:string\|null, sequence_number}` |
-| 内置工具进度事件 | `response.web_search_call.*`、`response.file_search_call.*`、`response.code_interpreter_call*.*`、`response.image_generation_call.*`、`response.mcp_call*.*`、`response.mcp_list_tools.*`、`response.shell_call_command.*`、`response.shell_call_output_content.*`、`response.audio.*`。TCode 暂时忽略。 |
+| 内置工具进度事件 | `response.web_search_call.*`、`response.file_search_call.*`、`response.code_interpreter_call*.*`、`response.image_generation_call.*`、`response.mcp_call*.*`、`response.mcp_list_tools.*`、`response.shell_call_command.*`、`response.shell_call_output_content.*`、`response.audio.*`。TKCode 暂时忽略。 |
 | 未知类型 | 必须忽略，不能抛异常 [OpenResp]。 |
 
 ### 5.5 典型事件顺序
@@ -496,13 +496,13 @@ Open Responses 规定的单个 item 内事件顺序为 `output_item.added → co
 1. **单个 item 的最终状态**：以 `response.output_item.done.item` 为准，包括 status、完整 arguments、annotations、refusal、`encrypted_content`、phase。delta 累加的结果只用于 UI 实时展示。
 2. **整个 response 的最终状态**：以终态事件中的 `response` 为准，包括 status、usage、incomplete_details、error。
 3. **`response.completed.response.output`** 通常是完整的 output 列表。但 SDK 的防御性实现说明它**可能为 null 或缺失**，这时要用各个 `output_item.done` 按 `output_index` 排序后重建（SDK 的注释是「Recover finalized items; deltas can omit final status, annotations, or refusals」）。SDK 还会校验 completed 中的 item 身份与 done 事件是否一致 [SDK `_responses.py:accumulate_event`]。
-   - **TCode 的策略**：用 `output_item.done` 的结果组成历史。如果 completed 中有 output，用它来校验或覆盖（同一个 id 时以 completed 为准）。如果 completed 没有 output，就用 done 的结果。
+   - **TKCode 的策略**：用 `output_item.done` 的结果组成历史。如果 completed 中有 output，用它来校验或覆盖（同一个 id 时以 completed 为准）。如果 completed 没有 output，就用 done 的结果。
 4. `response.failed` 和 `response.incomplete` 中的 `output` 也可能为空（官方示例就是 `output:[]`）。SDK 会用已收到的 done item（或者 added 后已累加的 item）补全。
 5. `encrypted_content` **只能**从 `output_item.done`（或终态 response 的 output）中取，绝不能用 `added` 中的值。
 
 ### 5.7 流中断与错误
 
-- 收到 `error` 事件：SDK 的做法是：如果 data 的 JSON 中有顶层 `error` 键，就抛出 APIError [SDK `_streaming.py`]。官方 schema 定义的 `error` 事件则是平铺结构 `{type:"error",code,message,param}`。**TCode 两种结构都要兼容**：`type=="error"` 时读取 `message`、`code`、`param`；JSON 中出现顶层 `error` 对象时读取 `error.message`、`error.code`、`error.type`。
+- 收到 `error` 事件：SDK 的做法是：如果 data 的 JSON 中有顶层 `error` 键，就抛出 APIError [SDK `_streaming.py`]。官方 schema 定义的 `error` 事件则是平铺结构 `{type:"error",code,message,param}`。**TKCode 两种结构都要兼容**：`type=="error"` 时读取 `message`、`code`、`param`；JSON 中出现顶层 `error` 对象时读取 `error.message`、`error.code`、`error.type`。
 - Open Responses 规定：流式过程中出现错误后，「followed by `response.failed`」[OpenResp]。OpenAI 的实际行为可能是 `error` 之后直接断开。→ 收到 `error` 后，再等待一个终态事件，但要有超时，并以连接关闭为准。
 - **流在没有终态事件的情况下结束（EOF）**：视为传输错误，可以重试。这一轮中未收到 `output_item.done` 的 item 不得写入历史（见 §3.6 第 7 条）。
 
@@ -510,9 +510,9 @@ Open Responses 规定的单个 item 内事件顺序为 `output_item.added → co
 
 ## 6. 状态、停止原因与错误结构
 
-### 6.1 映射到 TCode 的 StopReason
+### 6.1 映射到 TKCode 的 StopReason
 
-| 终态事件 / `response.status` | 条件 | TCode StopReason |
+| 终态事件 / `response.status` | 条件 | TKCode StopReason |
 |---|---|---|
 | `completed` | output 中有 `function_call`（或 custom_tool_call） | `ToolUse` |
 | `completed` | 没有工具调用，message 中有 refusal 内容块 | `Refusal` |
@@ -589,7 +589,7 @@ Open Responses 规定的单个 item 内事件顺序为 `output_item.added → co
 
 ### 8.2 WebSocket 模式、steering
 
-存在 `response.create` / `response.steer` 等 WebSocket 事件，以及 `incomplete_details.reason="steered"`。HTTP SSE 不涉及这些，TCode 第一版可以不实现。
+存在 `response.create` / `response.steer` 等 WebSocket 事件，以及 `incomplete_details.reason="steered"`。HTTP SSE 不涉及这些，TKCode 第一版可以不实现。
 
 ---
 

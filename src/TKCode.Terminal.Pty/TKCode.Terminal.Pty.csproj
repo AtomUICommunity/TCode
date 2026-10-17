@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>TKCode.Terminal.Pty</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TKCode.Terminal.Core\TKCode.Terminal.Core.csproj" />
+        <InternalsVisibleTo Include="TKCode.Terminal.Pty.Tests" />
+    </ItemGroup>
+</Project>

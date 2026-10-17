@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\TKCode.Mcp\TKCode.Mcp.csproj" />
+        <!-- 测试用 MCP 服务器：测试通过 `dotnet TKCode.Mcp.TestServer.dll` 以 stdio 启动它 -->
+        <ProjectReference Include="..\TKCode.Mcp.TestServer\TKCode.Mcp.TestServer.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\TKCode.Mcp.HttpTestServer\TKCode.Mcp.HttpTestServer.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+</Project>

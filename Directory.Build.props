@@ -5,8 +5,8 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-        <Company>TCode</Company>
-        <Product>TCode</Product>
+        <Company>TKCode</Company>
+        <Product>TKCode</Product>
         <!-- 本地构建为 0.0.0-dev（不做自动更新检查）；发布 CI 用 -p:Version=<git tag 去掉 v> 覆盖（docs/design/auto-update.md §3） -->
         <Version>0.0.0-dev</Version>
     </PropertyGroup>

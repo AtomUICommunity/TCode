@@ -1,0 +1,51 @@
+<!-- 终端标签：终端视图 + 状态提示（启动中、退出、断开）。快捷键与指针在视图的 code-behind 中转交给视图模型。 -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:tv="using:TKCode.Terminal.Avalonia"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             xmlns:atom="https://atomui.net"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             x:Class="TKCode.Desktop.Views.TerminalTabView"
+             x:DataType="vm:TerminalTabViewModel">
+    <Grid RowDefinitions="*,Auto">
+        <tv:TerminalView x:Name="Terminal" Grid.Row="0" Snapshot="{Binding Frame}" Padding="8" ClipToBounds="True" />
+        <Border Grid.Row="0" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,6" Background="{DynamicResource TKCode.PopupBg}">
+            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TKCode.TextSecondary}" FontSize="12" TextWrapping="Wrap" />
+        </Border>
+        <!-- 搜索栏（⌘F 打开；Esc 关闭；Enter / Shift+Enter 切换匹配）：浮在终端右上角 -->
+        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                Margin="0,8,12,0" Padding="6,4" CornerRadius="6" Background="{DynamicResource TKCode.MenuBg}" BorderBrush="{DynamicResource TKCode.Divider}" BorderThickness="1">
+            <Grid ColumnDefinitions="Auto,160,Auto,Auto,Auto,Auto" ColumnSpacing="4">
+                <icons:LucideIcon Grid.Column="0" Kind="Search" Width="13" Height="13" StrokeBrush="{DynamicResource TKCode.TextSecondary}" Margin="4,0,2,0" VerticalAlignment="Center" />
+                <atom:LineEdit x:Name="SearchBox" Grid.Column="1" SizeType="Small" StyleVariant="Borderless" Background="Transparent"
+                               PlaceholderText="{loc:TKCodeLangResource TerminalSearchPlaceholder}"
+                               Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Grid.Column="2" Text="{Binding SearchCountText}" Foreground="{DynamicResource TKCode.TextSecondary}" FontSize="12" VerticalAlignment="Center" MinWidth="36" TextAlignment="Right" />
+                <Button Grid.Column="3" Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                        ToolTip.Tip="{loc:TKCodeLangResource TerminalSearchPrevious}" Command="{Binding StepSearchPreviousCommand}">
+                    <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" RenderTransform="rotate(180deg)" />
+                </Button>
+                <Button Grid.Column="4" Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                        ToolTip.Tip="{loc:TKCodeLangResource TerminalSearchNext}" Command="{Binding StepSearchNextCommand}">
+                    <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" />
+                </Button>
+                <Button Grid.Column="5" Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
+                        ToolTip.Tip="{loc:TKCodeLangResource TerminalSearchClose}" Command="{Binding CloseSearchBarCommand}">
+                    <icons:LucideIcon Kind="X" Width="12" Height="12" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- 需要确认的粘贴（含换行的内容）；关闭仍在运行的程序由工作台弹窗确认 -->
+        <Border Grid.Row="0" IsVisible="{Binding HasPrompt}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                Padding="12,8" Background="{DynamicResource TKCode.PopupBg}" BorderBrush="{DynamicResource TKCode.Divider}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Text="{Binding PromptMessage}" Foreground="{DynamicResource TKCode.TextPrimary}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="{loc:TKCodeLangResource Cancel}" Command="{Binding CancelPromptCommand}" />
+                <Button Grid.Column="2" Content="{Binding PromptActionText}" Command="{Binding ConfirmPromptCommand}" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-NAMESPACE = "TCode.Terminal.Core.Interop"
+NAMESPACE = "TKCode.Terminal.Core.Interop"
 LIB = "ghostty-vt"
 
 PRIM = {
@@ -108,7 +108,7 @@ class Generator:
         return "\n".join(out).rstrip() + "\n"
 
     def gen_public(self):
-        out = [HEADER, "", "namespace TCode.Terminal.Core;", ""]
+        out = [HEADER, "", "namespace TKCode.Terminal.Core;", ""]
         for native, (public, doc) in sorted(PUBLIC_ENUMS.items()):
             out += self.gen_enum(public, self.types[native], public=True, doc=doc)
         return "\n".join(out).rstrip() + "\n"
@@ -197,9 +197,9 @@ class Generator:
                     cs = self.c_param_type(ptype)
                     attr = "[MarshalAs(UnmanagedType.U1)] " if cs == "bool" else ""
                     args.append(f"{attr}{cs} {ident(camel(pname))}")
-            method = pascal(name.removeprefix("ghostty_").removeprefix("tcode_ghostty_"))
-            if name.startswith("tcode_ghostty_"):
-                method = "Tcode" + method
+            method = pascal(name.removeprefix("ghostty_").removeprefix("tkcode_ghostty_"))
+            if name.startswith("tkcode_ghostty_"):
+                method = "Tkcode" + method
             out.append(f"    /// <summary>{name}（{header}）</summary>")
             out.append(f"    [LibraryImport(Lib, EntryPoint = \"{name}\")]")
             if cs_ret == "bool":

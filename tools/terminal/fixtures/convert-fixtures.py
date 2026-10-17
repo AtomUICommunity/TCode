@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""把第三方回放素材转换为 TCode 夹具（docs/terminal/11-testing-benchmarks.md §1.1.1）。
+"""把第三方回放素材转换为 TKCode 夹具（docs/terminal/11-testing-benchmarks.md §1.1.1）。
 
-输出到 tests/TCode.Terminal.Core.Tests/Fixtures/<source>/：
-  <name>.cast     asciicast v2 + TCode 扩展（§2.1）：头部 + 一个 "ob"（base64 原始字节）事件
+输出到 tests/TKCode.Terminal.Core.Tests/Fixtures/<source>/：
+  <name>.cast     asciicast v2 + TKCode 扩展（§2.1）：头部 + 一个 "ob"（base64 原始字节）事件
   <name>.ref.txt  上游给出的期望屏幕文本（视口各行去掉行尾空白，共 rows 行）
-.grid 黄金样本不由本脚本生成：由测试在 TCODE_UPDATE_GOLDEN=1 时用 TCode 自己的核心写出（回归锁定）；
-.ref.txt 是一致性参照，与 TCode 的差异记录在 known-differences.txt。
+.grid 黄金样本不由本脚本生成：由测试在 TKCODE_UPDATE_GOLDEN=1 时用 TKCode 自己的核心写出（回归锁定）；
+.ref.txt 是一致性参照，与 TKCode 的差异记录在 known-differences.txt。
 
 用法：
   convert-fixtures.py xtermjs   <xterm.js 仓库目录>
@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-OUT = os.path.join(ROOT, "tests", "TCode.Terminal.Core.Tests", "Fixtures")
+OUT = os.path.join(ROOT, "tests", "TKCode.Terminal.Core.Tests", "Fixtures")
 
 
 def commit_of(repo):
@@ -30,7 +30,7 @@ def commit_of(repo):
 def write_fixture(source, name, data, cols, rows, ref_lines, extra):
     d = os.path.join(OUT, source)
     os.makedirs(d, exist_ok=True)
-    header = {"version": 2, "width": cols, "height": rows, "tcode": extra}
+    header = {"version": 2, "width": cols, "height": rows, "tkcode": extra}
     with open(os.path.join(d, name + ".cast"), "w", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(header, ensure_ascii=False, sort_keys=True) + "\n")
         f.write(json.dumps([0.0, "ob", base64.b64encode(data).decode("ascii")]) + "\n")

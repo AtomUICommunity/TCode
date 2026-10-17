@@ -6,7 +6,7 @@ index 820455e..7d56d96 100644
      return page_rac.cell;
  }
  
-+/// TCode overlay O5: mark the row above the cursor dirty (its last cell was
++/// TKCode overlay O5: mark the row above the cursor dirty (its last cell was
 +/// changed, e.g. a stale spacer_head cleared when overwriting a wrapped wide char).
 +pub fn cursorPrevRowMarkDirty(self: *Screen) void {
 +    assert(self.cursor.y > 0);
@@ -21,13 +21,13 @@ index 820455e..7d56d96 100644
  
      // This row does not wrap and the next row is not wrapped to
      page_row.wrap = false;
-+    page_row.dirty = true; // TCode overlay O5
++    page_row.dirty = true; // TKCode overlay O5
  
      if (self.cursor.page_pin.down(1)) |next_row| {
 -        next_row.rowAndCell().row.wrap_continuation = false;
 +        const next = next_row.rowAndCell().row;
 +        next.wrap_continuation = false;
-+        next.dirty = true; // TCode overlay O5
++        next.dirty = true; // TKCode overlay O5
      }
  
      // If the last cell in the row is a spacer head we need to clear it.
@@ -35,7 +35,7 @@ index 820455e..7d56d96 100644
                  .initial, .right => .prompt,
                  .continuation, .secondary => .prompt_continuation,
              };
-+            // TCode overlay O5: row metadata changed, the row must be redrawn.
++            // TKCode overlay O5: row metadata changed, the row must be redrawn.
 +            cursor.page_row.dirty = true;
          },
      }
@@ -51,7 +51,7 @@ index 2667c51..d27eae5 100644
 -                    if (head_cell.wide == .spacer_head) head_cell.wide = .narrow;
 +                    if (head_cell.wide == .spacer_head) {
 +                        head_cell.wide = .narrow;
-+                        self.screens.active.cursorPrevRowMarkDirty(); // TCode overlay O5
++                        self.screens.active.cursorPrevRowMarkDirty(); // TKCode overlay O5
 +                    }
                  }
              },
@@ -63,7 +63,7 @@ index 2667c51..d27eae5 100644
 -                    if (head_cell.wide == .spacer_head) head_cell.wide = .narrow;
 +                    if (head_cell.wide == .spacer_head) {
 +                        head_cell.wide = .narrow;
-+                        self.screens.active.cursorPrevRowMarkDirty(); // TCode overlay O5
++                        self.screens.active.cursorPrevRowMarkDirty(); // TKCode overlay O5
 +                    }
                  }
              },
@@ -75,7 +75,7 @@ index 2667c51..d27eae5 100644
 -        .prompt => cursor.page_row.semantic_prompt = .prompt_continuation,
 +        .prompt => {
 +            cursor.page_row.semantic_prompt = .prompt_continuation;
-+            cursor.page_row.dirty = true; // TCode overlay O5
++            cursor.page_row.dirty = true; // TKCode overlay O5
 +        },
      }
  
@@ -84,7 +84,7 @@ index 2667c51..d27eae5 100644
                  self.screens.active.cursor.x == 0)
              {
                  self.screens.active.cursor.page_row.semantic_prompt = .none;
-+                self.screens.active.cursor.page_row.dirty = true; // TCode overlay O5
++                self.screens.active.cursor.page_row.dirty = true; // TKCode overlay O5
              }
          },
  
@@ -92,7 +92,7 @@ index 2667c51..d27eae5 100644
              // type later and outputs something. We handle that in the
              // semanticPrompt function.
              screen.cursor.page_row.semantic_prompt = .prompt_continuation;
-+            screen.cursor.page_row.dirty = true; // TCode overlay O5
++            screen.cursor.page_row.dirty = true; // TKCode overlay O5
          }
      } else {
          // This should never be set in the output mode.

@@ -8,4 +8,4 @@ native="$root/artifacts/native/$os-$arch"
 python3 "$root/tools/terminal/ghostty_bindgen.py" generate \
   --lib "$native/libghostty-vt.$ext" \
   --include "$native/include/ghostty" --include "$root/native/ghostty/include" \
-  --out "$root/src/TCode.Terminal.Core/Interop/Generated"
+  --out "$root/src/TKCode.Terminal.Core/Interop/Generated"

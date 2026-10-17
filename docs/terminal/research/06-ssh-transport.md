@@ -81,7 +81,7 @@
 | `Match exec "true"` | **`NotImplementedException`** |
 | 不匹配当前主机的 `Host other` 块里的 `ProxyCommand` | 成功（只对匹配块报错） |
 
-> 结论：Tmds.Ssh 是 .NET 里最接近「与系统一致」的托管实现，但它对未知关键字是**失败关闭**的。只要用户 config 里有一行 `SetEnv` 或 `ProxyCommand`（非常常见），直接用 `SshConfigSettings.DefaultConfig` 就会连不上；TCode 若采用，必须用 `ssh -G` 结果或自写预处理来兜底。
+> 结论：Tmds.Ssh 是 .NET 里最接近「与系统一致」的托管实现，但它对未知关键字是**失败关闭**的。只要用户 config 里有一行 `SetEnv` 或 `ProxyCommand`（非常常见），直接用 `SshConfigSettings.DefaultConfig` 就会连不上；TKCode 若采用，必须用 `ssh -G` 结果或自写预处理来兜底。
 
 ---
 
@@ -99,7 +99,7 @@
 | `IdentityAgent` / `SSH_AUTH_SOCK` | 支持，含 `none`、`SSH_AUTH_SOCK` 字面值 | Tmds.Ssh 忽略 `IdentityAgent`，只读环境变量 → **1Password（`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`）、Secretive（`~/Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh`）这类按主机配置的 agent 会失效** | 低-中：自己解析后传 agent 地址 |
 | Windows agent | Win32-OpenSSH 服务监听 `\\.\pipe\openssh-ssh-agent`；1Password Windows 也接管该管道；Pageant 0.75 起有命名管道，0.77 起 `--openssh-config` 写 `IdentityAgent` 片段；Git for Windows 自带 ssh 不用该管道 | Tmds.Ssh 默认就连该管道；Pageant 的私有管道需要 `IdentityAgent` | 低 |
 | `IdentitiesOnly`、`IdentityFile`、`CertificateFile` | 支持；agent 里 key 过多会撞 `MaxAuthTries`（1Password 文档称 "six-key limit"） | Tmds.Ssh 支持 `IdentitiesOnly`/`IdentityFile`/`CertificateFile` | — |
-| `ControlMaster`/`ControlPath`/`ControlPersist` | 复用已有 master，用户期望「第二个 tab 不再输密码」 | 托管库**完全无法复用 OpenSSH 的 master**（PROTOCOL.mux 是私有 Unix socket 协议）；只能在自己进程内复用会话 | 高（实现 mux 客户端）；或接受「TCode 内部复用」 |
+| `ControlMaster`/`ControlPath`/`ControlPersist` | 复用已有 master，用户期望「第二个 tab 不再输密码」 | 托管库**完全无法复用 OpenSSH 的 master**（PROTOCOL.mux 是私有 Unix socket 协议）；只能在自己进程内复用会话 | 高（实现 mux 客户端）；或接受「TKCode 内部复用」 |
 | known_hosts：哈希主机名 `|1|salt|hash`、`@cert-authority`、`@revoked`、`[host]:port`、`UpdateHostKeys`、`KnownHostsCommand`、`HostKeyAlias`、`CheckHostIP` | 全部（`hostfile.h:59-63`；`sshd.8:717-844`） | Tmds.Ssh 支持读写（含哈希、CA、revoked [推断：源码有 `TrustedHostKeys`/`HostCertificateInfo`]）；无 `KnownHostsCommand`/`HostKeyAlias`/`UpdateHostKeys` | 主机密钥确认 UI：中（必须做，指纹 SHA256 + 随机艺术可选） |
 | keyboard-interactive / MFA（Duo、Google Authenticator、PAM） | 支持 | **Tmds.Ssh 不支持**；SSH.NET 支持 | Tmds.Ssh 内补：中（RFC 4256，需 fork 或上游 PR） |
 | FIDO2（`sk-ssh-ed25519@openssh.com`、`sk-ecdsa…`） | 通过 `SecurityKeyProvider`/libfido2，触摸与 PIN 提示 | 托管库均**不支持私钥文件签名**；**经 ssh-agent 签名可行**（agent 驱动硬件），前提是库认识 sk 公钥算法——Tmds.Ssh 源码无 sk 字样 [推断：经 agent 也会失败] | 高（CTAP2/HID 6 平台） |
@@ -124,7 +124,7 @@
 | keepalive | 客户端 `ServerAliveInterval` 发全局请求 `keepalive@openssh.com`（want_reply）；新的 transport 层 `SSH2_MSG_PING/PONG`（ext-info `ping@openssh.com`） | `ServerAliveCountMax` 次无回复即断 | `clientloop.c:502`；PROTOCOL §1.8 |
 | 断线重连 | SSH 协议**没有会话恢复**；断线 = shell 死亡（除非远端有 tmux/mosh/持久 host） | 重连只能新开 shell；要「不丢会话」得在远端放持久进程（VS Code Server ptyHost、WezTerm mux、Zed `remote_server proxy --reconnect`） | `zed transport/ssh.rs:628-700` |
 | 端口转发 | `tcpip-forward`/`direct-tcpip`/`forwarded-tcpip`；OpenSSH 扩展 `streamlocal` | 托管库都有 | RFC 4254 §7；PROTOCOL §2.4 |
-| SFTP | subsystem `sftp`，v3 + OpenSSH 扩展（`posix-rename`、`statvfs`、`limits`、`copy-data`、`home-directory`…） | 以后给 TCode 文件树用；SSH.NET 2026.0.0 大幅降低分配；Tmds.Ssh 有完整 async SFTP | PROTOCOL §4 |
+| SFTP | subsystem `sftp`，v3 + OpenSSH 扩展（`posix-rename`、`statvfs`、`limits`、`copy-data`、`home-directory`…） | 以后给 TKCode 文件树用；SSH.NET 2026.0.0 大幅降低分配；Tmds.Ssh 有完整 async SFTP | PROTOCOL §4 |
 | agent 转发 | 旧：`auth-agent-req@openssh.com` + 通道 `auth-agent@openssh.com`；**新：RFC 9987（2026-05）`agent-req` + `agent-connect`，服务端 ext-info 宣告 `agent-forward`**（OpenSSH 10.3 起） | 客户端需兼容两套名字；会话绑定 `session-bind@openssh.com` | RFC 9987 §7；`clientloop.c:2829-2840`；`kex.c:330-345,480-495`；PROTOCOL.agent |
 
 ---
@@ -139,7 +139,7 @@
 | bootstrap 脚本经 tty 传输 | `kitten ssh` 在远端执行 POSIX sh（或 Python）引导脚本，从 tty 读取 base64 的 tar（含 terminfo + shell 集成 + env），用一次性口令防伪；env 由脚本设置，**绕开 AcceptEnv** | kitty | [KITTY-SSH] |
 | 远端常驻 server | 远端装二进制，经 SSH stdio 通信，提供 pty、文件、索引 | VS Code Server、Zed remote_server、Warp SSH extension、WezTerm mux | §1 |
 
-**建议**：TCode 终端核心默认 `TERM=xterm-256color`，自定义能力（OSC 133 提示符标记、OSC 7 cwd、OSC 633 命令行）全部走**不依赖 terminfo 的 OSC 序列**。远端 shell 集成注入分两级：①默认不注入（零侵入）；②用户开启时采用 kitty 式「经 tty 传 bootstrap」或 Ghostty 式「ControlMaster 上 scp 片段到 `~/.tcode/shell/` 并 `exec $SHELL` 时 source」。[推断]
+**建议**：TKCode 终端核心默认 `TERM=xterm-256color`，自定义能力（OSC 133 提示符标记、OSC 7 cwd、OSC 633 命令行）全部走**不依赖 terminfo 的 OSC 序列**。远端 shell 集成注入分两级：①默认不注入（零侵入）；②用户开启时采用 kitty 式「经 tty 传 bootstrap」或 Ghostty 式「ControlMaster 上 scp 片段到 `~/.tkcode/shell/` 并 `exec $SHELL` 时 source」。[推断]
 
 ---
 
@@ -148,7 +148,7 @@
 设计约束：NativeAOT（无反射、无动态代理）；字节流不解码（编码交给 VT 解析器，SSH/PTY 都只是字节）；背压从 UI 消费端一路传到 PTY/SSH 窗口；零拷贝优先（`PipeReader` / `ReadOnlySequence<byte>`）；所有异步可取消。
 
 ```csharp
-namespace TCode.Terminal.Transport;
+namespace TKCode.Terminal.Transport;
 
 /// 终端尺寸：字符与像素（像素可为 0）。
 public readonly record struct TerminalSize(int Columns, int Rows, int PixelWidth = 0, int PixelHeight = 0);
@@ -236,13 +236,13 @@ public interface ITerminalConnector
 | **Zed** | **进程内**：`alacritty_terminal` 的 Term + 自己的 event loop（`spawn_event_loop`），UI 直接锁网格渲染；远程时终端 = 本地 PTY 里的 `ssh -t` | Agent 的 terminal 工具与 ACP `terminal/create` 都创建同一种 `Terminal` 实体，用户在面板里可见 | `zed/crates/terminal/src/terminal.rs:1306,1509-1530`；`crates/acp_thread/src/terminal.rs:936-990`；`crates/agent/src/tools/terminal_tool.rs` |
 | **WezTerm** | 进程内或 mux server（本地/远端） | mux domain 让会话独立于 GUI | `docs/multiplexing.md` |
 
-### 7.2 TCode 现状
+### 7.2 TKCode 现状
 
-- UI ↔ AgentHost：stdio 上的 `JsonRpcConnection`，Content-Length 分帧；发送端 `Enqueue` 每条消息 `ArrayBufferWriter` → `ToArray()`，**无界 `Channel<byte[]>`**；接收端每帧 `new byte[length]` + `JsonDocument.Parse` + `RootElement.Clone()`；通知在读循环里同步分发（`src/TCode.Rpc.Contracts/JsonRpcConnection.cs:78,280-339,413-459`）。
-- AgentHost 按需拉起、崩溃后下次调用重新拉起（`src/TCode.Desktop/Services/AgentHostConnection.cs:27-95`）。
-- bash 工具：`ProcessStartInfo` 重定向 stdout/stderr、关闭 stdin，非 PTY；250 ms 一次把**截至目前的输出快照**（最多 16 K 字符）作为 `ToolExecutionUpdated.Text` 推给 UI（`src/TCode.Agent.Coding/Tools/Shell/BashTool.cs:186-209,232-253`；`OutputCapture.cs:66-72`）。
+- UI ↔ AgentHost：stdio 上的 `JsonRpcConnection`，Content-Length 分帧；发送端 `Enqueue` 每条消息 `ArrayBufferWriter` → `ToArray()`，**无界 `Channel<byte[]>`**；接收端每帧 `new byte[length]` + `JsonDocument.Parse` + `RootElement.Clone()`；通知在读循环里同步分发（`src/TKCode.Rpc.Contracts/JsonRpcConnection.cs:78,280-339,413-459`）。
+- AgentHost 按需拉起、崩溃后下次调用重新拉起（`src/TKCode.Desktop/Services/AgentHostConnection.cs:27-95`）。
+- bash 工具：`ProcessStartInfo` 重定向 stdout/stderr、关闭 stdin，非 PTY；250 ms 一次把**截至目前的输出快照**（最多 16 K 字符）作为 `ToolExecutionUpdated.Text` 推给 UI（`src/TKCode.Agent.Coding/Tools/Shell/BashTool.cs:186-209,232-253`；`OutputCapture.cs:66-72`）。
 - ACP：声明 `terminal:false`、`auth.terminal:false`；v2 草案删除 Client 侧 terminal，改为 Agent 自有、只读的终端输出（输出块 base64）（`docs/protocols/acp-v1.md:152-153,918`）。ACP v1 `terminal/create{command,args,env,cwd,outputByteLimit}` → `terminalId`；`terminal/output` 返回 `{output,truncated,exitStatus}`，超限**从头部截断且在字符边界**；`wait_for_exit`/`kill`/`release`；可把 `{type:"terminal",terminalId}` 嵌入工具调用内容，Client 实时显示 [ACP-TERM]。
-- Codex：`item/commandExecution/outputDelta`（每片段 UTF-8 lossy 解码）与 `item/commandExecution/terminalInteraction{processId, stdin}`（向交互式终端写入的内容）（`docs/protocols/codex-app-server.md:304-305`）——终端由 Codex 自己持有，TCode 只做展示。
+- Codex：`item/commandExecution/outputDelta`（每片段 UTF-8 lossy 解码）与 `item/commandExecution/terminalInteraction{processId, stdin}`（向交互式终端写入的内容）（`docs/protocols/codex-app-server.md:304-305`）——终端由 Codex 自己持有，TKCode 只做展示。
 
 ### 7.3 实测：现有 JSON-RPC 承载终端字节的代价
 
@@ -267,8 +267,8 @@ public interface ITerminalConnector
 | 需求 | 对架构的要求 |
 |---|---|
 | bash 工具在用户可见终端执行（VS Code 式），或用户能「接管」Agent 卡住的交互命令 | Agent（AgentHost 进程）要能 create/write/read/wait 终端 → 终端会话必须在 **AgentHost 可达**的地方：AgentHost 内，或独立 pty host（AgentHost 与 UI 都连它） |
-| ACP `terminal:true` | Client 必须实现 5 个方法 + 输出缓冲/截断 + 进程树清理；终端由 TCode 持有，位置同上 |
-| ACP v2 / Codex | 终端由外部 Agent 持有，TCode 只读展示 → 只需「回放型」连接（`ITerminalConnection` 的只读实现，输出来自事件） |
+| ACP `terminal:true` | Client 必须实现 5 个方法 + 输出缓冲/截断 + 进程树清理；终端由 TKCode 持有，位置同上 |
+| ACP v2 / Codex | 终端由外部 Agent 持有，TKCode 只读展示 → 只需「回放型」连接（`ITerminalConnection` 的只读实现，输出来自事件） |
 | 判断命令结束 / 取输出 | 需要 headless 终端模型 + shell 集成标记（OSC 133/633）在**持有 PTY 的进程**里解析——这正是 VS Code 在 ptyHost 里放 headless xterm 的原因 |
 | UI 重载 / 新窗口接管会话 | 会话必须活在 UI 之外，且有 serialize 回放 |
 
@@ -297,7 +297,7 @@ public interface ITerminalConnector
 ## 9. 推荐
 
 1. **SSH：路线 C，分两步。** 第一阶段只做 A（本地 PTY 里 `ssh -t`，TERM 默认 `xterm-256color`，主机列表来自 `ssh -G`/`Host` 解析，Windows 用 `%SystemRoot%\System32\OpenSSH\ssh.exe`）；文件树/SFTP 上线时引入 **Tmds.Ssh**（MIT、AOT 0 警告、async、背压正确），并加一层「config 兜底」：先用 `ssh -G <host>` 得到 OpenSSH 的最终解析结果再映射到 `SshClientSettings`，绕开其对未知关键字抛异常的问题；不支持的认证（kbd-interactive、FIDO 私钥）回退到 PTY 里跑 `sftp`。不选 SSH.NET（无 agent/ProxyJump/config），不选 DevTunnels.Ssh（AOT 警告且算法缺失），不选 FFI 路线（6 RID 原生构建 + LGPL/Rust 工具链，收益不抵成本）。
-2. **传输抽象**按 §6 接口落地在终端库中，库本身不依赖 TCode RPC；本地 PTY 与回放两个实现随第一阶段交付。
+2. **传输抽象**按 §6 接口落地在终端库中，库本身不依赖 TKCode RPC；本地 PTY 与回放两个实现随第一阶段交付。
 3. **进程架构**：第一阶段 **UI 进程内**，但满足三条约束以便将来零改动迁出：①终端核心（VT 解析 + 网格）不依赖 Avalonia，可 headless 运行；②连接层只通过 `ITerminalConnection` 交互；③为跨进程预留「二进制数据帧 + JSON 控制面 + ack 流控」协议（不复用现有 `JsonRpcConnection` 承载数据）。当要做「Agent 在用户可见终端执行命令 / ACP `terminal:true` / UI 重载保活」时，迁到**独立 pty host**（不放 AgentHost）。
 
 ---
@@ -355,4 +355,4 @@ public interface ITerminalConnector
 **本机实测（2026-10-16，Apple M5，macOS，.NET SDK 10.0.301；探针在会话临时目录中构建，未保留）**
 - SSH.NET 2026.0.0 / Tmds.Ssh 0.26.0 / DevTunnels.Ssh 3.12.42 的 `PublishAot` osx-arm64 发布与运行；Tmds.Ssh ssh_config 兼容性探针（§2.3 表）。
 - `JsonRpcConnection` 吞吐基准（§7.3 表）。
-- TCode 仓库：`docs/architecture.md`、`docs/protocols/acp-v1.md`、`docs/protocols/codex-app-server.md`、`src/TCode.Rpc.Contracts/*`、`src/TCode.Agent.Coding/Tools/Shell/*`、`src/TCode.Desktop/Services/AgentHostConnection.cs`（工作区当前版本，基于 commit dfd3657）。
+- TKCode 仓库：`docs/architecture.md`、`docs/protocols/acp-v1.md`、`docs/protocols/codex-app-server.md`、`src/TKCode.Rpc.Contracts/*`、`src/TKCode.Agent.Coding/Tools/Shell/*`、`src/TKCode.Desktop/Services/AgentHostConnection.cs`（工作区当前版本，基于 commit dfd3657）。

@@ -1,7 +1,7 @@
-# Codex app-server 协议规格（TCode 实现用）
+# Codex app-server 协议规格（TKCode 实现用）
 
 > 版本基线：**codex-cli 0.162.1**（用户本机安装版本）。字段、枚举、必填性一律以该版本生成的 JSON Schema 为准；较新源码（2026-10-16 main，commit `e790ce2`）只用来解释行为，凡是只在新源码中出现、0.162.1 schema 里没有的内容都单独标注。
-> 用途：TCode（C#/.NET 10 NativeAOT）把 `codex app-server` 作为子进程，通过 stdio 上的 JSON-RPC 驱动 Codex Agent：握手、线程/轮次管理、流式渲染、审批。
+> 用途：TKCode（C#/.NET 10 NativeAOT）把 `codex app-server` 作为子进程，通过 stdio 上的 JSON-RPC 驱动 Codex Agent：握手、线程/轮次管理、流式渲染、审批。
 > 每条结论都标了出处。标为 [Probe] 的条目是本机对 0.162.1 实测（只做了 `initialize` / `model/list` / `account/read` 等只读调用，没有启动模型轮次）；标为 [Zeron] 的条目是生产驱动里沉淀的经验，不是官方承诺。
 
 ## 0. 来源
@@ -24,7 +24,7 @@
 ### 1.1 启动
 
 - 命令：`codex app-server`。默认就是 `--listen stdio://`（等价于 `--stdio`），显式写上 `--listen stdio://` 也可以 [Probe `codex app-server --help`；PySDK `client.py:start`]。
-- 全局配置覆盖写在子命令**之前或之后**都可以：`codex app-server -c key=value`、`--enable <feature>`、`--disable <feature>`、`--strict-config`。值按 TOML 解析，解析失败时当作字面字符串 [Probe help]。TCode 优先用 `thread/start.config`（§3.1）按线程覆盖，只在需要进程级设置时才用 `-c`。
+- 全局配置覆盖写在子命令**之前或之后**都可以：`codex app-server -c key=value`、`--enable <feature>`、`--disable <feature>`、`--strict-config`。值按 TOML 解析，解析失败时当作字面字符串 [Probe help]。TKCode 优先用 `thread/start.config`（§3.1）按线程覆盖，只在需要进程级设置时才用 `-c`。
 - 子进程 `cwd`：设成会话 cwd，但线程实际使用的工作目录以 `thread/start.cwd` 为准（§3.1）。
 - 环境变量：
   - `CODEX_HOME`：配置/会话/凭据目录，默认 `~/.codex`。`initialize` 的响应会回报实际值 [Schema `InitializeResponse.codexHome`]。
@@ -36,7 +36,7 @@
 
 - **换行分隔的 JSON（JSONL）**：一行一条消息，UTF-8 编码，以 `\n` 结尾。服务端用 `serde_json::to_string` 写出后追加 `'\n'`，所以输出里不会有未转义的换行 [Src `app-server-transport/src/transport/stdio.rs:138-141`]。
 - 服务端按行读 stdin（`std::io::stdin().lock().lines()`），**没有长度上限**；客户端读 stdout 也不能设行长上限，`aggregatedOutput`、diff、`turns` 历史都可能有几 MB [Src `stdio.rs`]。
-- **没有 `"jsonrpc":"2.0"` 字段**：服务端不发送，也不要求客户端发送。源码原文：`We do not do true JSON-RPC 2.0, as we neither send nor expect the "jsonrpc": "2.0" field.` [Src `app-server-protocol/src/rpc.rs:1-2`；Docs]。反序列化时多出的未知字段会被忽略，但 TCode **不发送**这个字段。
+- **没有 `"jsonrpc":"2.0"` 字段**：服务端不发送，也不要求客户端发送。源码原文：`We do not do true JSON-RPC 2.0, as we neither send nor expect the "jsonrpc": "2.0" field.` [Src `app-server-protocol/src/rpc.rs:1-2`；Docs]。反序列化时多出的未知字段会被忽略，但 TKCode **不发送**这个字段。
 - 消息类型按字段区分（`untagged`）[Src `rpc.rs`；Schema `JSONRPCMessage.json`]：
 
 | 形状 | 含义 |
@@ -48,9 +48,9 @@
 
 - **服务端通知的信封上多一个 `emittedAtMs` 字段**（Unix 毫秒），与 `method`/`params` 同级。JSON Schema 里没有它，但线上每条通知都带 [Probe：`{"method":"remoteControl/status/changed","params":{…},"emittedAtMs":1792127431282}`；Src `outgoing_message.rs:904-909`、`transport/mod.rs:328-352`]。服务端发出的请求和响应不带这个字段。
 - 客户端发出的通知没有 `params` 时**省略**这个键，例如 `{"method":"initialized"}` [Schema `ClientNotification.json`：`InitializedNotification` 只有 `method`；PySDK `notify`]。
-- **请求 id**：`string | int64` [Schema `RequestId.json`]。两个方向的 id 空间相互独立。服务端发起的请求 id 是**整数，按进程从 0 开始递增** [Src `outgoing_message.rs:332-333`]。TCode 发出的请求用自增整数 id（从 1 开始），并按「是否有 `method`」区分「服务端请求」和「对我方请求的响应」，不能只看 id。
+- **请求 id**：`string | int64` [Schema `RequestId.json`]。两个方向的 id 空间相互独立。服务端发起的请求 id 是**整数，按进程从 0 开始递增** [Src `outgoing_message.rs:332-333`]。TKCode 发出的请求用自增整数 id（从 1 开始），并按「是否有 `method`」区分「服务端请求」和「对我方请求的响应」，不能只看 id。
 - **非法 JSON 行会被静默丢弃**：服务端只在 stderr 记一条 `Failed to deserialize JSONRPCMessage`，不回 `-32700` [Src `transport/mod.rs:214-229`；Probe]。所以一条写坏的请求永远不会有响应，客户端必须给每个请求设超时。
-- 可选字段 `trace: {traceparent, tracestate}`（W3C Trace Context）[Schema `JSONRPCRequest.json`]，TCode 不使用。
+- 可选字段 `trace: {traceparent, tracestate}`（W3C Trace Context）[Schema `JSONRPCRequest.json`]，TKCode 不使用。
 
 ### 1.3 并发与顺序
 
@@ -69,14 +69,14 @@
 ### 1.5 stderr
 
 - stderr 只有日志，**不是协议的一部分**。必须持续读取（否则管道写满后服务端会阻塞），保留最近 N 行（建议 200 行），用于进程意外退出时的错误信息 [Zeron `mod.rs:808-816`、`crash_message`；PySDK `_stderr_tail`]。
-- 默认格式带 ANSI 颜色码 [Probe]。TCode 启动时设 `LOG_FORMAT=json`，或者在展示前去掉 ANSI 序列。
+- 默认格式带 ANSI 颜色码 [Probe]。TKCode 启动时设 `LOG_FORMAT=json`，或者在展示前去掉 ANSI 序列。
 
 ### 1.6 关闭
 
 - stdio 是单客户端模式：stdin 收到 EOF 时连接关闭，服务端随即清理线程并退出 [Src `lib.rs:795,1173-1194`]。空闲时实测 0.07 s 内以退出码 0 结束 [Probe]。
 - EOF 或 SIGTERM（Unix）都会启动一个 **45 s 看门狗**，超时后 `exit(1)` [Src `stdio.rs:168-182`]。stdio 模式下 SIGTERM 的效果等同于 EOF [Src `stdio.rs:start_stdio_connection`]。
 - 服务端进入优雅关闭阶段后，新的请求会得到 `-32600`，`data: {"reason":"serverShuttingDown"}` [README「Shutdown admission errors」；Src `error_code.rs:server_draining_error`]。
-- TCode 的关闭顺序（§10.3）：关 stdin → 等待 ≤5 s → SIGTERM（仅 Unix）→ 等待 ≤2 s → 杀进程树。
+- TKCode 的关闭顺序（§10.3）：关 stdin → 等待 ≤5 s → SIGTERM（仅 Unix）→ 等待 ≤2 s → 杀进程树。
 
 ---
 
@@ -90,15 +90,15 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `clientInfo.name` | string，必填 | 必须是合法的 HTTP header 值，否则返回 `-32600 Invalid clientInfo.name` [Src `initialize_processor.rs`]。它会成为 **originator**，也就是 `userAgent` 的前缀和线程的 `originator`。TCode 固定用 `"tcode"`。 |
-| `clientInfo.title` | string \| null | 展示名，用 `"TCode"`。 |
-| `clientInfo.version` | string，必填 | TCode 版本号。 |
+| `clientInfo.name` | string，必填 | 必须是合法的 HTTP header 值，否则返回 `-32600 Invalid clientInfo.name` [Src `initialize_processor.rs`]。它会成为 **originator**，也就是 `userAgent` 的前缀和线程的 `originator`。TKCode 固定用 `"tkcode"`。 |
+| `clientInfo.title` | string \| null | 展示名，用 `"TKCode"`。 |
+| `clientInfo.version` | string，必填 | TKCode 版本号。 |
 | `capabilities` | object \| null | 见 §2.3。 |
 
 响应 `InitializeResponse`（0.162.1 的 4 个字段全部必填）[Schema `v1/InitializeResponse.json`；Probe]：
 
 ```json
-{"id":1,"result":{"userAgent":"tcode_probe/0.162.1 (Mac OS 26.6.2; arm64) vscode/1.142.0 (tcode_probe; 0.0.1)","codexHome":"/Users/token/.codex","platformFamily":"unix","platformOs":"macos"}}
+{"id":1,"result":{"userAgent":"tkcode_probe/0.162.1 (Mac OS 26.6.2; arm64) vscode/1.142.0 (tkcode_probe; 0.0.1)","codexHome":"/Users/token/.codex","platformFamily":"unix","platformOs":"macos"}}
 ```
 
 - `userAgent` 的格式是 `<clientInfo.name>/<codex 版本> (<OS>) <终端/IDE 信息> (<clientInfo.name>; <clientInfo.version>)`。**前缀是我们自己的 client name，不是 `codex`**。Codex 版本取第一个 `/` 到第一个空格之间的部分 [Probe；PySDK `_initialize_metadata.py:_split_user_agent`]。
@@ -114,7 +114,7 @@
 
 ### 2.3 Capabilities（`InitializeCapabilities`）[Schema]
 
-| 字段 | 类型 | TCode 取值 | 说明 |
+| 字段 | 类型 | TKCode 取值 | 说明 |
 |---|---|---|---|
 | `experimentalApi` | bool（默认 false） | **false** | 为 true 时，可以调用实验方法和字段，也会收到实验通知。为 false 时：调用实验方法或字段返回 `-32600 "<descriptor> requires experimentalApi capability"`；**实验通知直接不发**；`item/commandExecution/requestApproval` 中的实验字段（例如 `availableDecisions`）被剥离 [Src `message_processor.rs:984-988`、`transport.rs:104-200`；Docs]。本规格以 stable surface 为准，fixture 也是在 false 下构造的。 |
 | `optOutNotificationMethods` | string[] \| null | 见下 | 按**完整方法名**屏蔽通知，不支持通配符，未知名字会被忽略，不影响请求、响应和错误 [Docs；Src `transport.rs:104-127`]。 |
@@ -122,10 +122,10 @@
 | `mcpServerOpenaiFormElicitation` / `extensions` | — | 不设 | MCP 扩展。 |
 | `explicitGatewayOauth` | bool | 不设 | 网关 OAuth。 |
 
-建议的 `optOutNotificationMethods`（TCode 不消费、量大或者纯噪声）：
+建议的 `optOutNotificationMethods`（TKCode 不消费、量大或者纯噪声）：
 `remoteControl/status/changed`、`thread/realtime/outputAudio/delta`、`thread/realtime/transcript/delta`、`fuzzyFileSearch/sessionUpdated`、`item/fileChange/outputDelta`（已弃用，服务端不再发送）、`command/exec/outputDelta`。**不能**屏蔽 §5 渲染所需的任何方法，也不能屏蔽 `serverRequest/resolved`。
 
-> 关于 experimentalApi：zeron 一直设为 true [Zeron `mod.rs:1144`]，它也因此依赖了实验字段。TCode 先走 stable surface。将来要开启时，必须同时做好两件事：重新对比 [Schema-exp]，并容忍新字段和新通知。
+> 关于 experimentalApi：zeron 一直设为 true [Zeron `mod.rs:1144`]，它也因此依赖了实验字段。TKCode 先走 stable surface。将来要开启时，必须同时做好两件事：重新对比 [Schema-exp]，并容忍新字段和新通知。
 
 ### 2.4 握手错误 [Src `message_processor.rs:981`、`initialize_processor.rs:72,145`；Probe]
 
@@ -139,11 +139,11 @@
 
 ## 3. 线程（thread）
 
-线程对应一个持久化的 Codex 会话（rollout）。线程 id 是 UUIDv7 字符串；`thread.sessionId` 是会话树的 id，根线程的 sessionId 等于线程 id [Schema `Thread`；Docs「Use `thread.sessionId` rather than deriving the session from the thread id」]。TCode 的 NativeSessionId 用 **`thread.id`**（`thread/resume` 需要的就是它）。
+线程对应一个持久化的 Codex 会话（rollout）。线程 id 是 UUIDv7 字符串；`thread.sessionId` 是会话树的 id，根线程的 sessionId 等于线程 id [Schema `Thread`；Docs「Use `thread.sessionId` rather than deriving the session from the thread id」]。TKCode 的 NativeSessionId 用 **`thread.id`**（`thread/resume` 需要的就是它）。
 
 ### 3.1 `thread/start` → `ThreadStartParams`（全部可选）[Schema]
 
-| 字段 | 类型 | TCode 用法 |
+| 字段 | 类型 | TKCode 用法 |
 |---|---|---|
 | `cwd` | string \| null | 会话工作目录，必须是**绝对路径**。不传时用服务端进程 cwd。 |
 | `model` | string \| null | 取 `model/list` 结果里的 `model` 字段（§8.1）。 |
@@ -152,8 +152,8 @@
 | `approvalsReviewer` | `"user"` \| `"auto_review"` \| `"guardian_subagent"` \| null | 不传（默认 `user`，由用户审批）。 |
 | `sandbox` | `SandboxMode` \| null | **kebab-case 字符串**：`read-only` \| `workspace-write` \| `danger-full-access`（§7.2）。 |
 | `config` | `map<string, any>` \| null | 按线程覆盖 `config.toml`。key 是点分路径（与 `-c` 一致，例如 `"model_reasoning_summary"`、`"features.xxx"`、`"mcp_servers.<name>.enabled"`），value 是 JSON 值 [Zeron `mod.rs:1083-1118`]。 |
-| `baseInstructions` | string \| null | **替换** Codex 内置的基础系统提示词。TCode 不传，否则会丢掉 Codex 自带的工具使用说明。 |
-| `developerInstructions` | string \| null | 追加一条 developer 消息。TCode 的附加系统提示放在这里。 |
+| `baseInstructions` | string \| null | **替换** Codex 内置的基础系统提示词。TKCode 不传，否则会丢掉 Codex 自带的工具使用说明。 |
+| `developerInstructions` | string \| null | 追加一条 developer 消息。TKCode 的附加系统提示放在这里。 |
 | `ephemeral` | bool \| null | true 表示不落盘（不能在进程外恢复）。只用于临时任务，例如生成标题 [Zeron `mod.rs:1086-1091`]。 |
 | `serviceTier` | string \| null | 线程默认的服务档位（§8.1 `serviceTiers[].id`）。 |
 | `serviceName` | string \| null | 统计用，可不传。 |
@@ -168,7 +168,7 @@
 必填：`thread`、`model`、`modelProvider`、`cwd`、`approvalPolicy`、`approvalsReviewer`、`sandbox`。可选：`reasoningEffort`、`serviceTier`、`instructionSources`（已加载的 AGENTS.md 等文件路径）、`disabledPluginIds`。
 
 - **`sandbox` 在响应里是 `SandboxPolicy` 对象**（`{"type":"workspaceWrite",…}`），而请求里是 kebab-case 字符串，两边形状不同（§7.2）。
-- `model` 和 `reasoningEffort` 是**实际生效值**，用它们修正 TCode 显示的模型。
+- `model` 和 `reasoningEffort` 是**实际生效值**，用它们修正 TKCode 显示的模型。
 
 响应之后会有一条 `thread/started {thread}` 通知 [Src `thread_processor.rs:1655-1664`]。
 
@@ -178,8 +178,8 @@
 
 - 线程已在本进程运行时，服务端直接重新挂接；否则从磁盘加载 rollout [Schema 描述]。
 - 响应 `ThreadResumeResponse` 比 start 多了 `collaborationMode?`、`turnsBackwardsCursor?`、`itemsBackwardsCursor?`。`thread.turns` 会填充历史（除非 `excludeTurns: true`）[Schema]。
-- 恢复失败（rollout 不存在、不属于当前 CODEX_HOME 等）时返回错误响应。TCode 的处理：**回退为 `thread/start`**，再通过 `IRuntimeHost.OnNativeSessionId` 报告新的 id [Zeron `mod.rs:1178-1196`]。
-- TCode 自己保存了消息历史，所以 resume 时设 `excludeTurns: true`，避免传回大量历史数据。
+- 恢复失败（rollout 不存在、不属于当前 CODEX_HOME 等）时返回错误响应。TKCode 的处理：**回退为 `thread/start`**，再通过 `IRuntimeHost.OnNativeSessionId` 报告新的 id [Zeron `mod.rs:1178-1196`]。
+- TKCode 自己保存了消息历史，所以 resume 时设 `excludeTurns: true`，避免传回大量历史数据。
 
 ### 3.4 `thread/fork` → `ThreadForkParams`
 
@@ -190,7 +190,7 @@
 - `thread/list`（`ThreadListParams`）：`cursor`、`limit`、`sortKey`（`created_at` \| `updated_at` \| `recency_at` \| `section_position`，**snake_case**）、`sortDirection`（`asc` \| `desc`，默认 desc）、`cwd`（一个或多个精确匹配的路径）、`archived`、`searchTerm`、`modelProviders`、`sourceKinds`、`useStateDbOnly` [Schema]。
   - 响应：`{data: Thread[], nextCursor?: string|null, backwardsCursor?}`。`nextCursor: null` 表示没有更多数据。`data` 中的 `Thread.turns` 恒为 `[]` [Schema `Thread.turns` 描述]。
   - `-32603` 只表示这次查询失败（例如状态 DB 暂不可用），**不代表**已经到底，可以重试 [README「Thread list exclusions」]。
-  - `sourceKinds` 不传时只返回交互式来源的线程。TCode 列出自己创建的线程时传 `["appServer"]`。
+  - `sourceKinds` 不传时只返回交互式来源的线程。TKCode 列出自己创建的线程时传 `["appServer"]`。
 - `thread/read`（`{threadId, includeTurns?}`）→ `{thread}`。`includeTurns: true` 时带上历史 turns 和 items [Schema]。
 
 ### 3.6 多线程、订阅、卸载
@@ -198,7 +198,7 @@
 - 一个 app-server 进程可以承载多个线程，连接对自己 start/resume/fork 的线程**自动订阅**。
 - `thread/unsubscribe {threadId}` → `{status: "notLoaded"|"notSubscribed"|"unsubscribed"}`：停止接收该线程的通知 [Schema]。
 - 线程被卸载时会收到 `thread/closed {threadId}`。
-- TCode 的选择：**一个 TCode 会话对应一个 app-server 进程、一个主线程**，与其他运行时保持一致，进程崩溃时互不影响。子 Agent 线程按 §1.3 过滤。
+- TKCode 的选择：**一个 TKCode 会话对应一个 app-server 进程、一个主线程**，与其他运行时保持一致，进程崩溃时互不影响。子 Agent 线程按 §1.3 过滤。
 
 ### 3.7 `Thread` 对象（0.162.1）[Schema]
 
@@ -223,7 +223,7 @@
 | `input` | `UserInput[]`，必填 | 见下。 |
 | `model` | string \| null | 覆盖**本轮及之后各轮**（下同，「sticky」）。 |
 | `effort` | `ReasoningEffort` \| null | 推理档位（§7.4），sticky。 |
-| `summary` | `"auto"\|"concise"\|"detailed"\|"none"` \| null | 推理摘要，sticky。**TCode 每轮都发 `"auto"`**。用户配置没打开摘要时，不发这个字段就收不到任何 `summaryTextDelta`，界面会长时间没有反馈 [Zeron `mod.rs:1270-1275`]。 |
+| `summary` | `"auto"\|"concise"\|"detailed"\|"none"` \| null | 推理摘要，sticky。**TKCode 每轮都发 `"auto"`**。用户配置没打开摘要时，不发这个字段就收不到任何 `summaryTextDelta`，界面会长时间没有反馈 [Zeron `mod.rs:1270-1275`]。 |
 | `approvalPolicy` | `AskForApproval` \| null | sticky。 |
 | `sandboxPolicy` | `SandboxPolicy` \| null | **对象形状**（§7.2），sticky。注意线程级用的是 `sandbox` 字符串。 |
 | `cwd` | string \| null | sticky。 |
@@ -231,7 +231,7 @@
 | `serviceTierForTurn` | string \| null | 只对本轮生效；`"default"` 表示标准速度。 |
 | `outputSchema` | JSON Schema | 只对本轮生效，约束最终回答的格式。 |
 | `clientUserMessageId` | string \| null | 客户端给这条用户消息分配的 id，会出现在 `userMessage` item 的 `clientId` 中。 |
-| `approvalsReviewer`、`personality`、`disabledPluginIds`、`toolOutput`、`parentTurnId`、`rootTurnId`、`turnTrigger` | — | TCode 不用。`toolOutput` 要求 `input` 为空数组 [Docs]。 |
+| `approvalsReviewer`、`personality`、`disabledPluginIds`、`toolOutput`、`parentTurnId`、`rootTurnId`、`turnTrigger` | — | TKCode 不用。`toolOutput` 要求 `input` 为空数组 [Docs]。 |
 
 `UserInput`（按 `type` 区分）[Schema]：
 
@@ -243,11 +243,11 @@
 | `audio` / `localAudio` | `url` / `path` |
 | `skill` / `mention` | `name`、`path` |
 
-TCode 把文本附件拼进 `text`；图片附件（已保存在 `~/.tcode/attachments`，提示词里带路径）作为 `image` 传入，`url` 为 base64 data URL。只有模型的 `inputModalities` 包含 `"image"` 时才允许附图（§8.1）。
+TKCode 把文本附件拼进 `text`；图片附件（已保存在 `~/.tkcode/attachments`，提示词里带路径）作为 `image` 传入，`url` 为 base64 data URL。只有模型的 `inputModalities` 包含 `"image"` 时才允许附图（§8.1）。
 
 响应 `TurnStartResponse = {turn: Turn}`，其中 `turn.status = "inProgress"`，`items = []` [Schema；Docs]。
 
-**轮次进行中又发 `turn/start`**：服务端会把它当作对活动轮次的 steer，并返回同一个 turn id（schema 原文：`turnTrigger` "Ignored when this request steers an already-active turn"）[Schema `TurnStartParams.turnTrigger`；Zeron `TurnRouter.adopt_started`]。TCode 不依赖这个行为，需要插入消息时显式使用 `turn/steer`。
+**轮次进行中又发 `turn/start`**：服务端会把它当作对活动轮次的 steer，并返回同一个 turn id（schema 原文：`turnTrigger` "Ignored when this request steers an already-active turn"）[Schema `TurnStartParams.turnTrigger`；Zeron `TurnRouter.adopt_started`]。TKCode 不依赖这个行为，需要插入消息时显式使用 `turn/steer`。
 
 ### 4.2 `turn/steer` → `{threadId, expectedTurnId, input, clientUserMessageId?}` → `{turnId}`
 
@@ -257,14 +257,14 @@ TCode 把文本附件拼进 `text`；图片附件（已保存在 `~/.tcode/attac
   - ``"expected active turn id `X` but found `Y`"``
   - `"cannot steer a review turn"` / `"cannot steer a compact turn"`，`data` 为 `TurnError`，`codexErrorInfo = {"activeTurnNotSteerable":{"turnKind":"review"|"compact"}}`
   - `"input must not be empty"`
-- TCode 的处理：失败时 `SteerAsync` 返回 false，由调用方排队到下一轮 [Zeron `mod.rs:1797-1820`]。成功时以 `clientId == clientUserMessageId` 的 `userMessage` item 出现在流中作为确认点，在这个位置插入用户消息，而不是在响应到达时插入 [Zeron `mod.rs:1452-1469`]。
+- TKCode 的处理：失败时 `SteerAsync` 返回 false，由调用方排队到下一轮 [Zeron `mod.rs:1797-1820`]。成功时以 `clientId == clientUserMessageId` 的 `userMessage` item 出现在流中作为确认点，在这个位置插入用户消息，而不是在响应到达时插入 [Zeron `mod.rs:1452-1469`]。
 
 ### 4.3 `turn/interrupt` → `{threadId, turnId}` → `{}`
 
 - **响应会延迟**：服务端先记下请求，等核心真正中止（TurnAborted）后才回 `{}`，随后发出 `turn/completed`，其中 `status: "interrupted"` [Src `turn_processor.rs:1621-1680`、`bespoke_event_handling.rs:1208-1223`]。
 - 错误（`-32600`）：`"no active turn to interrupt"`（轮次已结束，或者服务端还没登记这个轮次，例如在 `turn/started` 之前就中断）、`"expected active turn id {turnId} but found {active}"`、`"thread not found: …"`、`"invalid thread id: …"`。
-- 竞态：在 `turn/start` 响应之后、`turn/started` 之前发出的中断，可能得到 "no active turn"，而轮次照常跑完 [Zeron `mod.rs` `TurnRouter.announced` 注释，0.159.3 实测]。TCode 的处理：如果还没收到 `turn/started`，就记下「待中断」，等 `turn/started` 到达时再发送。
-- `turnId` 传空串表示中断线程启动过程（startup interrupt），会立即返回 `{}`。TCode 不使用。
+- 竞态：在 `turn/start` 响应之后、`turn/started` 之前发出的中断，可能得到 "no active turn"，而轮次照常跑完 [Zeron `mod.rs` `TurnRouter.announced` 注释，0.159.3 实测]。TKCode 的处理：如果还没收到 `turn/started`，就记下「待中断」，等 `turn/started` 到达时再发送。
+- `turnId` 传空串表示中断线程启动过程（startup interrupt），会立即返回 `{}`。TKCode 不使用。
 
 ### 4.4 `Turn` 对象 [Schema]
 
@@ -289,7 +289,7 @@ TurnError { message: string; codexErrorInfo?: CodexErrorInfo|null; additionalDet
 
 ### 5.1 一览（params 字段均来自 0.162.1 schema）
 
-| method | params | TCode 处理 |
+| method | params | TKCode 处理 |
 |---|---|---|
 | `thread/started` | `{thread}` | 记录线程。 |
 | `thread/status/changed` | `{threadId, status: ThreadStatus}` | 可选：`activeFlags` 含 `waitingOnApproval` 时显示「等待审批」。 |
@@ -318,18 +318,18 @@ TurnError { message: string; codexErrorInfo?: CodexErrorInfo|null; additionalDet
 | `model/rerouted` | `{threadId, turnId, fromModel, toModel, reason: "highRiskCyberActivity"}` | 提示用户，并修正显示的模型。 |
 | `serverRequest/resolved` | `{threadId, requestId}` | §6.1。 |
 | `thread/closed` | `{threadId}` | 线程已卸载。 |
-| `account/updated`、`account/rateLimits/updated`、`mcpServer/startupStatus/updated`、`skills/changed`、`thread/name/updated`、`hook/*` 等 | — | TCode 首版忽略。 |
+| `account/updated`、`account/rateLimits/updated`、`mcpServer/startupStatus/updated`、`skills/changed`、`thread/name/updated`、`hook/*` 等 | — | TKCode 首版忽略。 |
 
 **规则：未知 method 一律忽略（记一条 debug 日志）**，这样 Codex 升级新增通知时不会出错 [Zeron `mod.rs:1758-1760`]。
 
-已不存在的旧通知：`turn/failed`、`turn/aborted`（zeron 仍兼容这两个），以及 `error` 的平铺形状 `params.message`（0.146 之前）。**0.162.1 只用 `turn/completed` 表示终态，`error` 一律是嵌套形状** [Schema `ServerNotification.json` 中没有前两者；Zeron `mod.rs:1644,1694,1742`]。TCode 可以把 `turn/failed`、`turn/aborted` 当作 `turn/completed` 的别名来容错，但不能依赖它们。
+已不存在的旧通知：`turn/failed`、`turn/aborted`（zeron 仍兼容这两个），以及 `error` 的平铺形状 `params.message`（0.146 之前）。**0.162.1 只用 `turn/completed` 表示终态，`error` 一律是嵌套形状** [Schema `ServerNotification.json` 中没有前两者；Zeron `mod.rs:1644,1694,1742`]。TKCode 可以把 `turn/failed`、`turn/aborted` 当作 `turn/completed` 的别名来容错，但不能依赖它们。
 
 ### 5.2 Item 生命周期规则
 
 1. 每个 item 先有 `item/started`，再有若干增量，最后是 `item/completed`。增量里的 `itemId` 等于 `item.id` [Docs]。
-2. **`item/completed` 中的 item 是权威值**，增量只用于预览。completed 的文本与已收到的增量不一致时，以 completed 为准（TCode `TurnWriter.EndBlockAsync(finalText)` 已经支持）。
+2. **`item/completed` 中的 item 是权威值**，增量只用于预览。completed 的文本与已收到的增量不一致时，以 completed 为准（TKCode `TurnWriter.EndBlockAsync(finalText)` 已经支持）。
 3. **有的 item 永远等不到 `item/completed`**：轮次被中断时，正在执行的前台命令会被杀掉，不发 completed；审批被 turnTransition 取消的命令也一样 [Zeron `mod.rs` `prune_at` 注释；Src `bespoke_event_handling.rs:2039`]。所以收到 `turn/completed` 时，客户端必须把本轮仍然打开的块和工具调用全部关闭。
-4. **后台命令可能跨轮次**：一个 `commandExecution`（例如 dev server）的 `item/completed` 可能在若干轮之后、进程退出时才到达，而且带的是**原来那一轮**的 `turnId` [Zeron `mod.rs` `open_commands` 注释，0.159.3 实测]。TCode 收到已结束轮次的 item 时，只更新工具状态，不重新打开轮次。
+4. **后台命令可能跨轮次**：一个 `commandExecution`（例如 dev server）的 `item/completed` 可能在若干轮之后、进程退出时才到达，而且带的是**原来那一轮**的 `turnId` [Zeron `mod.rs` `open_commands` 注释，0.159.3 实测]。TKCode 收到已结束轮次的 item 时，只更新工具状态，不重新打开轮次。
 5. 一轮可能有**多条 `agentMessage`**（commentary 前言加 final answer），它们之间的增量没有分隔符。每条 agentMessage 必须是独立的文本块，否则会渲染成「…等待。Beta 的…」这样连在一起的句子 [Zeron `mod.rs:1490-1503`]。
 6. 一个 reasoning item 包含多个摘要段（`summaryIndex`），段与段之间也没有分隔符。切换到新段（或新的 reasoning item）时补 `"\n\n"`，否则 Markdown 标题会粘在一起，变成 `**one****two**` [Zeron `normalize.rs:37-95`]。
 7. 带审批的命令：`item/started`（`status: "inProgress"`）**先于** `item/commandExecution/requestApproval` 到达 [Docs；Src `bespoke_event_handling.rs:671-790`：`start_command_execution_item` 在 `send_request` 之前]。fileChange 也一样 [Docs]。即便如此，客户端仍要容忍审批请求先到：此时按 `itemId` 先建一个占位的工具调用。
@@ -363,7 +363,7 @@ TurnError { message: string; codexErrorInfo?: CodexErrorInfo|null; additionalDet
 ### 5.4 推理与文本增量
 
 - 推理摘要的顺序：`item/started{reasoning}` → 对每个段依次发 `summaryPartAdded{summaryIndex:i}` 和若干 `summaryTextDelta{summaryIndex:i}` → `item/completed{reasoning, summary:[…]}` [Src `core/src/session/turn.rs:3165-3215`；`codex-api/src/sse/responses.rs:487-493`]。
-- 只有请求了摘要（`summary != "none"`，且模型支持）才会出现 `summaryTextDelta`。`item/reasoning/textDelta` 是原始推理，大多数 OpenAI 模型不会发送。两种都收到时，TCode 只渲染摘要。
+- 只有请求了摘要（`summary != "none"`，且模型支持）才会出现 `summaryTextDelta`。`item/reasoning/textDelta` 是原始推理，大多数 OpenAI 模型不会发送。两种都收到时，TKCode 只渲染摘要。
 - 有些 reasoning item 只有 started 和 completed，没有任何增量，completed 时 `summary` 为空。这种情况不要渲染空的思考块。
 
 ### 5.5 Usage
@@ -377,7 +377,7 @@ TokenUsageBreakdown { inputTokens; cachedInputTokens; outputTokens; reasoningOut
 - 每次模型请求（sampling）完成后，就发一次 `thread/tokenUsage/updated`，**一轮里可能有多次**（每次工具调用后都会再请求模型），而且都在 `turn/completed` 之前 [Src `core/src/session/turn.rs:3085-3107`、`bespoke_event_handling.rs:handle_token_count_event`]。
 - `last` 是**最近一次请求**的用量，`total` 是**线程累计**用量 [Zeron `normalize.rs:125-141`]。语义同 OpenAI：`inputTokens` **已经包含** `cachedInputTokens`，`outputTokens` **已经包含** `reasoningOutputTokens`，`totalTokens = inputTokens + outputTokens` [Src `protocol/src/protocol.rs:2368-2387,2557-2568`]。
 - 整轮用量 = 轮末的 `total` − 轮初的 `total`。轮初基线取本轮之前最后一次收到的 `total`。恢复后的线程还没有基线时，用本轮第一条通知的 `total − last` 作为基线。**不要**把各次 `last` 简单相加：同一个 TokenCount 在压缩或恢复时可能被重复发送。
-- 换算成 TCode `Usage`（`Input` 不含缓存）：`Input = max(0, inputTokens − cachedInputTokens − (cacheWriteInputTokens ?? 0))`，`CacheRead = cachedInputTokens`，`CacheWrite = cacheWriteInputTokens ?? 0`，`Output = outputTokens`，`Reasoning = reasoningOutputTokens`。（`cacheWriteInputTokens` 按 OpenAI 语义也视为包含在 `inputTokens` 内。）
+- 换算成 TKCode `Usage`（`Input` 不含缓存）：`Input = max(0, inputTokens − cachedInputTokens − (cacheWriteInputTokens ?? 0))`，`CacheRead = cachedInputTokens`，`CacheWrite = cacheWriteInputTokens ?? 0`，`Output = outputTokens`，`Reasoning = reasoningOutputTokens`。（`cacheWriteInputTokens` 按 OpenAI 语义也视为包含在 `inputTokens` 内。）
 - 上下文占用 = `last.totalTokens / modelContextWindow` [Src `protocol.rs:tokens_in_context_window`；Zeron `normalize.rs:143-162`]。
 
 ### 5.6 错误与终止
@@ -410,9 +410,9 @@ S→ thread/status/changed{idle}
 
 ### 6.1 通用规则
 
-- 服务端请求的形状是 `{"id": <int>, "method": …, "params": {…}}`，**没有** `emittedAtMs`。TCode 必须回 `{"id": <同一 id>, "result": {…}}` 或 `{"id", "error"}`。
-- **每个服务端请求都必须得到回应**，否则 Agent 会一直阻塞（线程状态停在 `active` + `waitingOnApproval`）。界面关闭或会话销毁时，TCode 要对所有未决请求回 decline 或 cancel。
-- **`serverRequest/resolved {threadId, requestId}`**：请求已被回答**或被清除**时发出 [Src `thread_lifecycle.rs:1019-1041`、`bespoke_event_handling.rs:1651,1738,1814,1940,1987`]。TCode 收到后立即关闭对应的审批 UI（例如另一个客户端已经回答，或者轮次已经结束）。
+- 服务端请求的形状是 `{"id": <int>, "method": …, "params": {…}}`，**没有** `emittedAtMs`。TKCode 必须回 `{"id": <同一 id>, "result": {…}}` 或 `{"id", "error"}`。
+- **每个服务端请求都必须得到回应**，否则 Agent 会一直阻塞（线程状态停在 `active` + `waitingOnApproval`）。界面关闭或会话销毁时，TKCode 要对所有未决请求回 decline 或 cancel。
+- **`serverRequest/resolved {threadId, requestId}`**：请求已被回答**或被清除**时发出 [Src `thread_lifecycle.rs:1019-1041`、`bespoke_event_handling.rs:1651,1738,1814,1940,1987`]。TKCode 收到后立即关闭对应的审批 UI（例如另一个客户端已经回答，或者轮次已经结束）。
 - **轮次结束（完成或中断）时，服务端会清除本线程所有未决请求**：内部给回调一个带 `data.reason = "turnTransition"` 的错误，然后发出 `serverRequest/resolved`。这时**客户端不会收到任何错误消息**，只能靠 `serverRequest/resolved`（可能**晚于** `turn/completed` 到达）得知请求已失效。之后再回复会被忽略 [Src `outgoing_message.rs:221-236,604-637`、`server_request_error.rs`]。
 - 客户端回 error，或者 `result` 无法反序列化时：command 和 fileChange 审批都按**拒绝**处理（`denied("approval request failed")`，命令 item 的 status 为 `failed`）；`requestUserInput` 按空答案处理 [Src `bespoke_event_handling.rs:1642-1680,1931-2060`]。所以「回 error」不能代替 cancel。
 - `params.threadId` 和 `params.turnId` 都会给出。审批 UI 用 `itemId` 关联到 `item/started` 创建的工具调用。
@@ -478,18 +478,18 @@ params：`{threadId, turnId, itemId, isBlocking: bool, questions: ToolRequestUse
 
 response：`{answers: {<question.id>: {answers: string[]}}}`。答案的 key 用**线上的 question id**，选项题回填 `label` [Schema；Zeron `mod.rs:2066-2090`]。用户取消时回 `{"answers":{}}`。
 
-补充（codex-cli 0.163.0 与 `rust-v0.163.0` 源码，2026-10-18 核对；TCode 实现见 docs/design/ask-user.md §8）：
+补充（codex-cli 0.163.0 与 `rust-v0.163.0` 源码，2026-10-18 核对；TKCode 实现见 docs/design/ask-user.md §8）：
 
 - **门控**：模型侧的 `request_user_input` 工具默认注册（`tools.experimental_request_user_input.enabled` 默认为 true），但调用时只有满足以下任一条件才可用，否则模型收到 `request_user_input is unavailable in Default mode`：
   - 协作模式为 Plan。设置 Plan 要用 `turn/start.collaborationMode`，这是实验字段，需要 `experimentalApi: true`。
   - 打开了特性 `default_mode_request_user_input`（UnderDevelopment 阶段，默认关闭）。
-  - 结论：TCode 用 `experimentalApi:false`，**只有用户在自己的 config 里打开该特性时才会收到这个请求**。TCode 照常处理，但不主动开启。
+  - 结论：TKCode 用 `experimentalApi:false`，**只有用户在自己的 config 里打开该特性时才会收到这个请求**。TKCode 照常处理，但不主动开启。
 - **模型侧约定**：1–3 个问题；每题 `{id (snake_case), header (≤12 字符), question, options: 2–3 个 {label, description}}`；推荐项放第一个并加 “(Recommended)”；不写 “Other”；只有根线程可用。`isOther` 由 Codex 强制为 true，`isSecret` 保持 false。
 - **`isBlocking`**：Plan 模式下为 true。非阻塞的请求可能由客户端自动结束；`autoResolutionMs` 已弃用。
-- **回答约定**（与 Codex TUI 一致）：选中的 label 原样放入；用户自己输入的文本写成 `"user_note: <文本>"` 追加在后面；未回答的问题给空列表。TCode 拒绝回答时每个问题都给空列表。
+- **回答约定**（与 Codex TUI 一致）：选中的 label 原样放入；用户自己输入的文本写成 `"user_note: <文本>"` 追加在后面；未回答的问题给空列表。TKCode 拒绝回答时每个问题都给空列表。
 - **模型看到的结果**：回答的 JSON 原文（`{"answers":{…}}`）；被取消时是 `request_user_input was cancelled before receiving a response`。
-- **相关信号**：`serverRequest/resolved`；`thread/status/changed` 的 `activeFlags` 含 `waitingOnUserInput`。这个请求**没有对应的 ThreadItem**，TCode 在转录里合成一个 `request_user_input` 工具调用。
-- **非阻塞变体** `request_user_input_async`：只在模型目录的 `experimental_supported_tools` 列出时提供，以 `agentMessage` 条目（`delivery:"async"`，带 `questions`）出现，立即返回 `{"accepted":true}`，用户在下一条普通消息里回答，不产生服务端请求。TCode 暂不特别处理。
+- **相关信号**：`serverRequest/resolved`；`thread/status/changed` 的 `activeFlags` 含 `waitingOnUserInput`。这个请求**没有对应的 ThreadItem**，TKCode 在转录里合成一个 `request_user_input` 工具调用。
+- **非阻塞变体** `request_user_input_async`：只在模型目录的 `experimental_supported_tools` 列出时提供，以 `agentMessage` 条目（`delivery:"async"`，带 `questions`）出现，立即返回 `{"accepted":true}`，用户在下一条普通消息里回答，不产生服务端请求。TKCode 暂不特别处理。
 
 ### 6.6 `mcpServer/elicitation/request`
 
@@ -499,19 +499,19 @@ params：`{threadId, serverName, turnId?}`，再加上下面几种 mode 之一 [
 - `{"mode":"url","message","url","elicitationId","_meta"?}`
 - `{"mode":"openai/form"|"openaiForm",…}`（扩展，未声明对应能力时不会出现）
 
-response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`。accept 时 `content` 是符合 `requestedSchema` 的对象。TCode 首版：url 模式在浏览器中打开链接后回 accept；form 模式用 §6.8 的通用确认框，accept 时回 `content: {}`；其他情况回 decline。
+response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`。accept 时 `content` 是符合 `requestedSchema` 的对象。TKCode 首版：url 模式在浏览器中打开链接后回 accept；form 模式用 §6.8 的通用确认框，accept 时回 `content: {}`；其他情况回 decline。
 
 ### 6.7 其他服务端请求
 
-| method | 何时出现 | TCode 回应 |
+| method | 何时出现 | TKCode 回应 |
 |---|---|---|
-| `item/tool/call`（DynamicToolCall） | 只有通过实验 API 注册了 `dynamicTools` 才会出现 | `{"success":false,"contentItems":[{"type":"inputText","text":"TCode does not provide dynamic tools"}]}` |
+| `item/tool/call`（DynamicToolCall） | 只有通过实验 API 注册了 `dynamicTools` 才会出现 | `{"success":false,"contentItems":[{"type":"inputText","text":"TKCode does not provide dynamic tools"}]}` |
 | `account/chatgptAuthTokens/refresh` | 只在 `chatgptAuthTokens` 外部认证模式下出现 | error `-32601` |
 | `attestation/generate` | 只有声明了 `requestAttestation` 才会出现 | error `-32601` |
 | `applyPatchApproval`、`execCommandApproval` | v1 旧 API，v2 线程不会发送 | error `-32601` |
 | 未知 method | — | error `-32601 "unsupported method: <m>"` [Zeron `mod.rs:2099`] |
 
-### 6.8 映射到 TCode 审批（`IRuntimeHost.RequestApprovalAsync`）
+### 6.8 映射到 TKCode 审批（`IRuntimeHost.RequestApprovalAsync`）
 
 `RuntimeApprovalRequest` 的构造：
 
@@ -525,15 +525,15 @@ response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`�
 
 `ApprovalOutcome` → 线上响应：
 
-| TCode | commandExecution | fileChange | permissions | elicitation |
+| TKCode | commandExecution | fileChange | permissions | elicitation |
 |---|---|---|---|---|
 | AllowOnce | `"accept"` | `"accept"` | `{permissions: <请求值>, scope:"turn"}` | `{action:"accept", content:{}}` |
 | AllowForSession | `"acceptForSession"` | `"acceptForSession"` | `{permissions: <请求值>, scope:"session"}` | 同 AllowOnce |
 | Deny | `"decline"` | `"decline"` | `{permissions:{}}` | `{action:"decline"}` |
 | Cancel | `"cancel"` | `"cancel"` | `{permissions:{}}`，随后发送 `turn/interrupt` | `{action:"cancel"}` |
 
-- `ApprovalDecision.Message`（拒绝理由）**无法传给 Codex**，协议里没有这个字段，只能在 TCode 本地显示。
-- `TurnOptions.AutoApprove = true` 时，TCode 不再发审批请求，而是把 `approvalPolicy` 设为 `"never"`（§7.3），从源头上不产生审批。偶尔还是收到审批请求时，自动回 `accept` [Zeron `mod.rs:2101-2104`；PySDK 默认 handler]。
+- `ApprovalDecision.Message`（拒绝理由）**无法传给 Codex**，协议里没有这个字段，只能在 TKCode 本地显示。
+- `TurnOptions.AutoApprove = true` 时，TKCode 不再发审批请求，而是把 `approvalPolicy` 设为 `"never"`（§7.3），从源头上不产生审批。偶尔还是收到审批请求时，自动回 `accept` [Zeron `mod.rs:2101-2104`；PySDK 默认 handler]。
 - 用户中止轮次（取消令牌）时，**不要**逐个回答未决审批，直接发 `turn/interrupt`，服务端会自己清除这些请求（§6.1）。宿主侧 `RequestApprovalAsync` 的取消令牌要同时触发，以关闭 UI。
 
 ---
@@ -547,7 +547,7 @@ response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`�
 | `"untrusted"` | 只有「受信任」的只读命令自动执行，其他命令都要审批。 |
 | `"on-request"` | 由模型决定何时申请提权（越出沙箱、联网等）。这是 Codex 的默认交互模式。 |
 | `"never"` | 从不询问。越出沙箱的操作直接失败，失败结果回传给模型。 |
-| `{"granular":{"sandbox_approval":bool,"rules":bool,"mcp_elicitations":bool,"request_permissions"?:bool,"skill_approval"?:bool}}` | 细粒度开关（键名为 **snake_case**）。TCode 不使用。 |
+| `{"granular":{"sandbox_approval":bool,"rules":bool,"mcp_elicitations":bool,"request_permissions"?:bool,"skill_approval"?:bool}}` | 细粒度开关（键名为 **snake_case**）。TKCode 不使用。 |
 
 注意：0.162.1 已经**没有** `"on-failure"`。
 
@@ -562,9 +562,9 @@ response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`�
 
 不传 `sandbox` 时使用 config.toml 的 `sandbox_mode`。没有配置时：项目已信任则为 `workspace-write`，否则为 `read-only` [PySDK `_sandbox.py` 注释]。
 
-### 7.3 TCode 预设
+### 7.3 TKCode 预设
 
-| TCode 档位 | `approvalPolicy` | `sandbox`（thread）/ `sandboxPolicy`（turn） |
+| TKCode 档位 | `approvalPolicy` | `sandbox`（thread）/ `sandboxPolicy`（turn） |
 |---|---|---|
 | 只读 | `on-request` | `read-only` / `{"type":"readOnly"}` |
 | 默认（Agent） | `on-request` | `workspace-write` / `{"type":"workspaceWrite"}` |
@@ -577,7 +577,7 @@ response：`{action: "accept"|"decline"|"cancel", content?: any, _meta?: any}`�
 
 0.162.1 中它是**开放字符串**（`minLength: 1`），**不是枚举** [Schema `ReasoningEffort`]。每个模型支持的取值以 `model/list` 的 `supportedReasoningEfforts[].reasoningEffort` 为准。实测 0.162.1 返回 `low, medium, high, xhigh, max, ultra` [Probe]。
 
-TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `medium`，High → `high`，XHigh → `xhigh`，Max → `max`。目标值不在模型支持列表中时，取支持列表里**最接近且不高于**目标的那一档；列表为空时不发送 `effort`。`Off` 映射为 `"none"`（仅当模型声明支持时），否则取支持列表的最低档，同时把 `summary` 设为 `"none"` [Zeron `catalog.rs:to_effort`：Codex 在启用默认工具时拒绝 `minimal`]。
+TKCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `medium`，High → `high`，XHigh → `xhigh`，Max → `max`。目标值不在模型支持列表中时，取支持列表里**最接近且不高于**目标的那一档；列表为空时不发送 `effort`。`Off` 映射为 `"none"`（仅当模型声明支持时），否则取支持列表的最低档，同时把 `summary` 设为 `"none"` [Zeron `catalog.rs:to_effort`：Codex 在启用默认工具时拒绝 `minimal`]。
 
 ### 7.5 `ReasoningSummary`
 
@@ -599,12 +599,12 @@ TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `mediu
 | `model` | **传给 `thread/start.model` 和 `turn/start.model` 的值**。实测与 `id` 相同，但以 `model` 为准 [Zeron `parse_model_list_page`]。 |
 | `displayName` | 显示名，例如 `"GPT-6.1-Sol"`。 |
 | `description` | 描述。 |
-| `hidden` | 是否不出现在默认选择器中。TCode 过滤掉 `hidden:true` 的模型（请求时 `includeHidden:false`）。 |
-| `isDefault` | 默认模型，只有一个为 true。TCode 把它排到列表最前。 |
+| `hidden` | 是否不出现在默认选择器中。TKCode 过滤掉 `hidden:true` 的模型（请求时 `includeHidden:false`）。 |
+| `isDefault` | 默认模型，只有一个为 true。TKCode 把它排到列表最前。 |
 | `supportedReasoningEfforts` | `[{reasoningEffort, description}]`。 |
 | `defaultReasoningEffort` | string。 |
 
-可选字段：`inputModalities`（`"text"|"image"|"audio"`，**缺失时视为 `["text","image"]`** [Docs]）、`serviceTiers: [{id, name, description}]`（实测有 `{"id":"priority","name":"Fast"}`、`{"id":"ultrafast",…}`；TCode 的 FastMode 对应 `serviceTier:"priority"`，前提是该模型提供这一档）、`defaultServiceTier`、`additionalSpeedTiers`（已弃用）、`upgrade` / `upgradeInfo`（推荐升级到的模型）、`availabilityNux`、`supportsPersonality`（已弃用，恒为 false）、`modelSpecialty`、`multiAgentVersion`、`availableAccessPrograms`。
+可选字段：`inputModalities`（`"text"|"image"|"audio"`，**缺失时视为 `["text","image"]`** [Docs]）、`serviceTiers: [{id, name, description}]`（实测有 `{"id":"priority","name":"Fast"}`、`{"id":"ultrafast",…}`；TKCode 的 FastMode 对应 `serviceTier:"priority"`，前提是该模型提供这一档）、`defaultServiceTier`、`additionalSpeedTiers`（已弃用）、`upgrade` / `upgradeInfo`（推荐升级到的模型）、`availabilityNux`、`supportsPersonality`（已弃用，恒为 false）、`modelSpecialty`、`multiAgentVersion`、`availableAccessPrograms`。
 
 - 托管的模型提供方不满足当前要求时，`model/list` 返回 `-32600`，提示需要重启 Codex [README「Model catalog provider requirements」]。
 - `ProbeAsync` 的流程：启动一个短生命周期的 app-server，依次调用 `initialize`、`initialized`、`model/list`（翻完所有页）、`account/read`，然后关闭 stdin。整个过程**不会**启动模型轮次 [Zeron `discover_models`；Probe]。
@@ -618,7 +618,7 @@ TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `mediu
 
 判断规则：
 - `requiresOpenaiAuth == false`：当前模型提供方是**不需要 OpenAI 认证的自定义提供方**，这时 `account` 为 null 也算正常 [Src `account_processor.rs:1145-1155`；Probe：本机返回 `{"account":null,"requiresOpenaiAuth":false}`]。
-- `requiresOpenaiAuth == true && account == null`：未登录。`RuntimeStatus` 设为 Error，提示用户在终端执行 `codex login`。TCode 不代为登录。
+- `requiresOpenaiAuth == true && account == null`：未登录。`RuntimeStatus` 设为 Error，提示用户在终端执行 `codex login`。TKCode 不代为登录。
 
 其他说明：
 - `AuthMethod` 显示 `"ChatGPT (<planType>)"`、`"API key"` 或 `"Bedrock"`。
@@ -630,7 +630,7 @@ TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `mediu
 
 ## 9. JSON-RPC 错误码 [Src `app-server/src/error_code.rs`；PySDK `errors.py:86-109`；Probe]
 
-| code | 含义 | 典型 message | TCode 处理 |
+| code | 含义 | 典型 message | TKCode 处理 |
 |---|---|---|---|
 | `-32600` | 无效请求。**最常见**：未初始化、重复初始化、未知 method、线程不存在、轮次状态不符、实验字段缺少能力、服务端正在关闭（`data.reason="serverShuttingDown"`） | `"Not initialized"`、`"Invalid request: unknown variant …"`、`"thread not found: …"`、`"no active turn to steer"` | 按场景处理，不自动重试（serverShuttingDown 除外：重启进程）。 |
 | `-32601` | 方法不存在（少数显式拒绝的路径） | — | 视为不支持。 |
@@ -650,7 +650,7 @@ TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `mediu
 1. 如果已经收到 `turn/started`，发送 `turn/interrupt {threadId, turnId}`；否则设置「待中断」标志，收到 `turn/started` 后再发送（§4.3）。
 2. 继续读取消息流，直到收到本轮的 `turn/completed`（预期 `status:"interrupted"`）。期间 `turn/interrupt` 的响应 `{}` 会先于或紧挨着 `turn/completed` 到达。
 3. 等待上限 **10 s**。超时则视为进程卡死：杀掉进程，本轮按 Aborted 结束，下一轮通过 `thread/resume` 恢复 [Zeron `interrupt_grace` / `kill_grace`]。
-4. 本轮仍然打开的块和工具调用一律关闭，工具结果标为 isError，文本为「已中断」。未决审批由服务端清除，TCode 只需要关闭 UI（§6.1）。
+4. 本轮仍然打开的块和工具调用一律关闭，工具结果标为 isError，文本为「已中断」。未决审批由服务端清除，TKCode 只需要关闭 UI（§6.1）。
 
 ### 10.2 审批中的 Cancel
 
@@ -665,9 +665,9 @@ TCode 的 `ThinkingLevel` → effort：Minimal/Low → `low`，Medium → `mediu
 
 ---
 
-## 11. 映射到 TCode 事件
+## 11. 映射到 TKCode 事件
 
-TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageStarted` / `MessageEnded` 由 `TurnWriter` 在打开或关闭「草稿助手消息」时自动产生。驱动只调用 `TurnWriter` 的方法。
+TKCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageStarted` / `MessageEnded` 由 `TurnWriter` 在打开或关闭「草稿助手消息」时自动产生。驱动只调用 `TurnWriter` 的方法。
 
 | Codex | TurnWriter 调用 | 产生的 SessionEvent |
 |---|---|---|
@@ -700,7 +700,7 @@ TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageS
 | `error{willRetry:false}` | 记录 lastError | — |
 | `turn/completed` | 先关闭所有未结束的工具调用（`ToolCompletedAsync(isError:true, "已中断")`），然后调用 `CompleteAsync(stop, errorMessage)` | `messageEnded`（最后一条带用量和 stopReason）；`agentEnded` 由 ExternalAgent 在队列空时发出 |
 
-`turn.status` → `StopReason`：`completed` → `Stop`；`interrupted` → `Aborted`；`failed` → `Error`（errorMessage = `turn.error.message`，没有时用 lastError，再没有时用 `"Codex turn failed"`）；`contextWindowExceeded` 也按 `Error` 处理（TCode 没有单独的状态）。Codex 的轮次不会以 `ToolUse` 结束，因为工具都在 Codex 内部执行。
+`turn.status` → `StopReason`：`completed` → `Stop`；`interrupted` → `Aborted`；`failed` → `Error`（errorMessage = `turn.error.message`，没有时用 lastError，再没有时用 `"Codex turn failed"`）；`contextWindowExceeded` 也按 `Error` 处理（TKCode 没有单独的状态）。Codex 的轮次不会以 `ToolUse` 结束，因为工具都在 Codex 内部执行。
 
 `RuntimeCapabilities`：`SupportsSteering = true`、`SupportsResume = true`、`SupportsModelSwitch = true`（每次 `turn/start` 都带 model）、`StreamsToolArguments = false`（工具参数在 item/started 时一次给全）。
 
@@ -718,7 +718,7 @@ TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageS
 7. [ ] stdout EOF 或进程退出：所有未完成的请求失败，活动轮次以 Error 结束，错误信息附上 stderr 尾部。
 
 **握手与线程**
-8. [ ] `initialize`：`clientInfo {name:"tcode", title:"TCode", version}`，`capabilities {experimentalApi:false, optOutNotificationMethods:[…]}`；然后发 `{"method":"initialized"}`。从 `serverInfo.version` 或 `userAgent` 中解析出 Codex 版本，并且只在 ≥ 0.162 时启用本规格。
+8. [ ] `initialize`：`clientInfo {name:"tkcode", title:"TKCode", version}`，`capabilities {experimentalApi:false, optOutNotificationMethods:[…]}`；然后发 `{"method":"initialized"}`。从 `serverInfo.version` 或 `userAgent` 中解析出 Codex 版本，并且只在 ≥ 0.162 时启用本规格。
 9. [ ] 新会话发 `thread/start {cwd(绝对路径), model, approvalPolicy, sandbox, developerInstructions?, config?}`；恢复会话发 `thread/resume {threadId, excludeTurns:true, …}`，失败时回退到 `thread/start` 并上报新 id。NativeSessionId 取 `thread.id`。
 10. [ ] 用 `ThreadStartResponse` 的 `model` 和 `reasoningEffort` 修正显示。`sandbox` 字段按 `SandboxPolicy` 对象解析。
 11. [ ] 按 `threadId` 过滤通知，其他线程（包括子 Agent 线程）的 `turn/*` 不能影响当前轮次。
@@ -751,7 +751,7 @@ TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageS
 30. [ ] `ProbeAsync` 只调用 `initialize`、`model/list`（翻完所有页，过滤 hidden，默认模型排最前）、`account/read`，不调用 `thread/start`。
 31. [ ] 账号状态：`requiresOpenaiAuth && account==null` 时视为未登录。
 32. [ ] 关闭顺序：中断活动轮次 → 关 stdin → 等 5 s → SIGTERM（仅 Unix）→ 等 2 s → 杀进程树。
-33. [ ] 附录 C 的全部夹具作为单元测试：回放 `S>` 行，断言 TCode 写出的 `C>` 行（JSON 语义相等，忽略 key 顺序）和产生的事件序列。
+33. [ ] 附录 C 的全部夹具作为单元测试：回放 `S>` 行，断言 TKCode 写出的 `C>` 行（JSON 语义相等，忽略 key 顺序）和产生的事件序列。
 
 ---
 
@@ -783,7 +783,7 @@ TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageS
 
 ## 附录 C：测试夹具
 
-格式：每行一条消息。`C> ` 表示 TCode → app-server（写入 stdin），`S> ` 表示 app-server → TCode（从 stdout 读出）。前缀之后是这条消息的**精确线上 JSON**（单行、无 `jsonrpc` 字段；通知带 `emittedAtMs`）。测试回放 `S>` 行，断言 TCode 写出的 `C>` 行在 JSON 语义上相等。
+格式：每行一条消息。`C> ` 表示 TKCode → app-server（写入 stdin），`S> ` 表示 app-server → TKCode（从 stdout 读出）。前缀之后是这条消息的**精确线上 JSON**（单行、无 `jsonrpc` 字段；通知带 `emittedAtMs`）。测试回放 `S>` 行，断言 TKCode 写出的 `C>` 行在 JSON 语义上相等。
 
 所有夹具都用 0.162.1 schema（stable，加上「对象不允许额外属性」的严格模式）逐行校验过：请求和通知的 `params`、响应的 `result` 都对照对应类型；`initialize` 时 `experimentalApi:false`。夹具中的 id、时间戳、路径均为虚构；`emittedAtMs` 单调递增，`startedAtMs` 和 `completedAtMs` 与之一致。服务端请求 id 按进程从 0 开始。
 
@@ -796,12 +796,12 @@ TCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`MessageS
 ### C-a 握手 + thread/start + 带推理摘要和用量的文本轮次（`a-text-turn.jsonl`）
 
 ```text
-C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
-S> {"id":1,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
+S> {"id":1,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
-S> {"id":2,"result":{"thread":{"id":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","sessionId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
-S> {"method":"thread/started","params":{"thread":{"id":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","sessionId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
+C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TKCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
+S> {"id":2,"result":{"thread":{"id":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","sessionId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
+S> {"method":"thread/started","params":{"thread":{"id":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","sessionId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
 C> {"id":3,"method":"turn/start","params":{"threadId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","input":[{"type":"text","text":"这个仓库是做什么的？","text_elements":[]}],"effort":"medium","summary":"auto"}}
 S> {"id":3,"result":{"turn":{"id":"019a6f1e-3c4d-7e5f-9061-7b8c9d0e1f20","rootTurnId":"019a6f1e-3c4d-7e5f-9061-7b8c9d0e1f20","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}}}
 S> {"method":"turn/started","params":{"threadId":"019a6f1e-2b3c-7d4e-8f50-6a7b8c9d0e1f","turn":{"id":"019a6f1e-3c4d-7e5f-9061-7b8c9d0e1f20","rootTurnId":"019a6f1e-3c4d-7e5f-9061-7b8c9d0e1f20","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}},"emittedAtMs":1792127440074}
@@ -829,12 +829,12 @@ S> {"method":"thread/status/changed","params":{"threadId":"019a6f1e-2b3c-7d4e-8f
 ### C-b 命令执行需要审批 → accept → 输出增量 → 完成（`b-command-approval-accept.jsonl`）
 
 ```text
-C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
-S> {"id":1,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
+S> {"id":1,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
-S> {"id":2,"result":{"thread":{"id":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","sessionId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
-S> {"method":"thread/started","params":{"thread":{"id":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","sessionId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
+C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TKCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
+S> {"id":2,"result":{"thread":{"id":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","sessionId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
+S> {"method":"thread/started","params":{"thread":{"id":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","sessionId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
 C> {"id":3,"method":"turn/start","params":{"threadId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","input":[{"type":"text","text":"运行测试","text_elements":[]}],"effort":"medium","summary":"auto"}}
 S> {"method":"turn/started","params":{"threadId":"019a6f20-1a2b-7c3d-8e4f-5a6b7c8d9e0f","turn":{"id":"019a6f20-2b3c-7d4e-9f50-6a7b8c9d0e1f","rootTurnId":"019a6f20-2b3c-7d4e-9f50-6a7b8c9d0e1f","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}},"emittedAtMs":1792127440074}
 S> {"id":3,"result":{"turn":{"id":"019a6f20-2b3c-7d4e-9f50-6a7b8c9d0e1f","rootTurnId":"019a6f20-2b3c-7d4e-9f50-6a7b8c9d0e1f","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}}}
@@ -867,12 +867,12 @@ S> {"method":"thread/status/changed","params":{"threadId":"019a6f20-1a2b-7c3d-8e
 ### C-c 文件修改审批 → decline（`c-filechange-approval-decline.jsonl`）
 
 ```text
-C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
-S> {"id":1,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
+S> {"id":1,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"read-only","developerInstructions":"You are running inside TCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
-S> {"id":2,"result":{"thread":{"id":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","sessionId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
-S> {"method":"thread/started","params":{"thread":{"id":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","sessionId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
+C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"read-only","developerInstructions":"You are running inside TKCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
+S> {"id":2,"result":{"thread":{"id":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","sessionId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
+S> {"method":"thread/started","params":{"thread":{"id":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","sessionId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
 C> {"id":3,"method":"turn/start","params":{"threadId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","input":[{"type":"text","text":"把 README 的标题改成 Acme","text_elements":[]}],"effort":"medium","summary":"auto"}}
 S> {"id":3,"result":{"turn":{"id":"019a6f22-4d5e-7f60-9172-8c9d0e1f2031","rootTurnId":"019a6f22-4d5e-7f60-9172-8c9d0e1f2031","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}}}
 S> {"method":"turn/started","params":{"threadId":"019a6f22-3c4d-7e5f-8061-7b8c9d0e1f20","turn":{"id":"019a6f22-4d5e-7f60-9172-8c9d0e1f2031","rootTurnId":"019a6f22-4d5e-7f60-9172-8c9d0e1f2031","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}},"emittedAtMs":1792127440074}
@@ -899,12 +899,12 @@ S> {"method":"thread/status/changed","params":{"threadId":"019a6f22-3c4d-7e5f-80
 ### C-d 审批未决时 turn/interrupt（`d-turn-interrupt.jsonl`）
 
 ```text
-C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
-S> {"id":1,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
+S> {"id":1,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
-S> {"id":2,"result":{"thread":{"id":"019a6f24-5e6f-7071-8283-9d0e1f203142","sessionId":"019a6f24-5e6f-7071-8283-9d0e1f203142","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
-S> {"method":"thread/started","params":{"thread":{"id":"019a6f24-5e6f-7071-8283-9d0e1f203142","sessionId":"019a6f24-5e6f-7071-8283-9d0e1f203142","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
+C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TKCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
+S> {"id":2,"result":{"thread":{"id":"019a6f24-5e6f-7071-8283-9d0e1f203142","sessionId":"019a6f24-5e6f-7071-8283-9d0e1f203142","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
+S> {"method":"thread/started","params":{"thread":{"id":"019a6f24-5e6f-7071-8283-9d0e1f203142","sessionId":"019a6f24-5e6f-7071-8283-9d0e1f203142","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
 C> {"id":3,"method":"turn/start","params":{"threadId":"019a6f24-5e6f-7071-8283-9d0e1f203142","input":[{"type":"text","text":"清理构建产物","text_elements":[]}],"effort":"medium","summary":"auto"}}
 S> {"id":3,"result":{"turn":{"id":"019a6f24-6f70-7182-9394-ae0f1f304253","rootTurnId":"019a6f24-6f70-7182-9394-ae0f1f304253","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}}}
 S> {"method":"turn/started","params":{"threadId":"019a6f24-5e6f-7071-8283-9d0e1f203142","turn":{"id":"019a6f24-6f70-7182-9394-ae0f1f304253","rootTurnId":"019a6f24-6f70-7182-9394-ae0f1f304253","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}},"emittedAtMs":1792127440074}
@@ -932,12 +932,12 @@ S> {"method":"thread/status/changed","params":{"threadId":"019a6f24-5e6f-7071-82
 ### C-e 轮次失败：可重试错误 → 最终错误 → turn/completed(failed)（`e-turn-failed.jsonl`）
 
 ```text
-C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
-S> {"id":1,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":1,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"},"capabilities":{"experimentalApi":false,"optOutNotificationMethods":["remoteControl/status/changed"]}}}
+S> {"id":1,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
-S> {"id":2,"result":{"thread":{"id":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","sessionId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
-S> {"method":"thread/started","params":{"thread":{"id":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","sessionId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
+C> {"id":2,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app","model":"gpt-6.1-sol","approvalPolicy":"on-request","sandbox":"workspace-write","developerInstructions":"You are running inside TKCode. Prefer concise answers.","config":{"model_reasoning_summary":"auto"}}}
+S> {"id":2,"result":{"thread":{"id":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","sessionId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]},"model":"gpt-6.1-sol","modelProvider":"openai","serviceTier":null,"cwd":"/Users/dev/acme-app","instructionSources":["/Users/dev/acme-app/AGENTS.md"],"approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite","writableRoots":[],"networkAccess":false,"excludeTmpdirEnvVar":false,"excludeSlashTmp":false},"reasoningEffort":"medium"}}
+S> {"method":"thread/started","params":{"thread":{"id":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","sessionId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"projectId":null,"modelProvider":"openai","model":"gpt-6.1-sol","reasoningEffort":"medium","createdAt":1792127440,"updatedAt":1792127440,"recencyAt":1792127440,"status":{"type":"idle"},"path":null,"cwd":"/Users/dev/acme-app","cliVersion":"0.162.1","originator":"tkcode","source":"appServer","threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"turns":[]}},"emittedAtMs":1792127440037}
 C> {"id":3,"method":"turn/start","params":{"threadId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","input":[{"type":"text","text":"解释 src/main.ts","text_elements":[]}],"effort":"medium","summary":"auto"}}
 S> {"id":3,"result":{"turn":{"id":"019a6f26-8182-7394-95a6-b7c8d9e0f102","rootTurnId":"019a6f26-8182-7394-95a6-b7c8d9e0f102","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}}}
 S> {"method":"turn/started","params":{"threadId":"019a6f26-7071-7283-8495-a6b7c8d9e0f1","turn":{"id":"019a6f26-8182-7394-95a6-b7c8d9e0f102","rootTurnId":"019a6f26-8182-7394-95a6-b7c8d9e0f102","items":[],"itemsView":"notLoaded","status":"inProgress","error":null,"startedAt":1792127440,"completedAt":null,"durationMs":null}},"emittedAtMs":1792127440074}
@@ -964,10 +964,10 @@ S> {"method":"thread/status/changed","params":{"threadId":"019a6f26-7071-7283-84
 ```text
 C> {"id":1,"method":"thread/start","params":{"cwd":"/Users/dev/acme-app"}}
 S> {"error":{"code":-32600,"message":"Not initialized"},"id":1}
-C> {"id":2,"method":"initialize","params":{"clientInfo":{"name":"tcode","title":"TCode","version":"0.1.0"}}}
-S> {"id":2,"result":{"userAgent":"tcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
+C> {"id":2,"method":"initialize","params":{"clientInfo":{"name":"tkcode","title":"TKCode","version":"0.1.0"}}}
+S> {"id":2,"result":{"userAgent":"tkcode/0.162.1 (Mac OS 26.6.2; arm64) xterm-256color (tkcode; 0.1.0)","codexHome":"/Users/dev/.codex","platformFamily":"unix","platformOs":"macos"}}
 C> {"method":"initialized"}
-C> {"id":3,"method":"initialize","params":{"clientInfo":{"name":"tcode","version":"0.1.0"}}}
+C> {"id":3,"method":"initialize","params":{"clientInfo":{"name":"tkcode","version":"0.1.0"}}}
 S> {"error":{"code":-32600,"message":"Already initialized"},"id":3}
 C> {"id":4,"method":"turn/interrupt","params":{"threadId":"019a6f28-0000-7000-8000-000000000000","turnId":"019a6f28-0000-7000-8000-000000000001"}}
 S> {"error":{"code":-32600,"message":"thread not found: 019a6f28-0000-7000-8000-000000000000"},"id":4}
