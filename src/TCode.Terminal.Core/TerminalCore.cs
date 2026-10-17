@@ -514,6 +514,34 @@ public sealed unsafe class TerminalCore : IDisposable
         var options = GhosttyHelpers.FormatterOptions(GhosttyFormatterFormat.Plain);
         options.Unwrap = true;
         options.Trim = true;
+        return Format(options);
+    }
+
+    /// <summary>
+    /// VT 兼容格式（04 §8.5、§10）：回滚 + 屏幕的 VT 文本，附带恢复光标、样式、超链接、模式、调色板、滚动区域、制表位与 pwd 的序列。
+    /// 跨 libghostty 版本可用，精度低于二进制快照（解析到一半的序列、Kitty 图片无法还原）。
+    /// </summary>
+    public string FormatVt()
+    {
+        EnsureNotInCallback();
+        var options = GhosttyHelpers.FormatterOptions(GhosttyFormatterFormat.Vt);
+        options.Extra.Palette = true;
+        options.Extra.Modes = true;
+        options.Extra.ScrollingRegion = true;
+        options.Extra.Tabstops = true;
+        options.Extra.Pwd = true;
+        options.Extra.Keyboard = true;
+        options.Extra.Screen.Cursor = true;
+        options.Extra.Screen.Style = true;
+        options.Extra.Screen.Hyperlink = true;
+        options.Extra.Screen.Protection = true;
+        options.Extra.Screen.KittyKeyboard = true;
+        options.Extra.Screen.Charsets = true;
+        return Format(options);
+    }
+
+    private string Format(GhosttyFormatterTerminalOptions options)
+    {
         nint formatter;
         Check(GhosttyNative.FormatterTerminalNew(null, &formatter, Handle, options));
         try

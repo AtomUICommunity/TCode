@@ -14,6 +14,9 @@ public interface ITerminalConnection : IAsyncDisposable
 
     ConnectionCapabilities Capabilities { get; }
 
+    /// <summary>子进程（shell）的 pid；没有进程时为 0。</summary>
+    int ProcessId { get; }
+
     /// <summary>程序输出。消费方 AdvanceTo 之前，读线程最多再读一个缓冲窗口（约 256 KiB）的数据，再多就停止读取（背压）。</summary>
     PipeReader Output { get; }
 

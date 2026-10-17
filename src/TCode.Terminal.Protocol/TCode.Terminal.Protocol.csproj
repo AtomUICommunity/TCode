@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- pty host 的 IPC 协议（docs/terminal/04-pty-host.md §2–§4、§13）：帧、DTO、握手、PtyHostClient。只依赖 BCL，Desktop / AgentHost / host 共用。 -->
+    <PropertyGroup>
+        <RootNamespace>TCode.Terminal.Protocol</RootNamespace>
+        <IsAotCompatible>true</IsAotCompatible>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="TCode.Terminal.Protocol.Tests" />
+        <InternalsVisibleTo Include="tcode-ptyhost" />
+        <InternalsVisibleTo Include="TCode.Terminal.Host.Tests" />
+    </ItemGroup>
+</Project>
