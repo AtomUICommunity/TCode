@@ -30,6 +30,7 @@
         <PackageVersion Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" />
         <!-- 宿主 / 进程通信 -->
         <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+        <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
         <!-- 测试 -->
         <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
         <PackageVersion Include="xunit.v3" Version="3.2.2" />
