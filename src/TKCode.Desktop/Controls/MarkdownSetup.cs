@@ -25,7 +25,9 @@ public static class MarkdownSetup
         {
             Math = RaTeXMathRenderer.Shared,
             Highlighter = highlighter,
-            Diagrams = [new MermaidDiagramRenderer()],
+            // Mermaid 配色复刻 mermaid.js 官方主题（暗色 dark / 亮色 default），和浏览器里的效果一致；
+            // 想要灰阶的亮色改用 MermaidJsNeutral，想要 Mermaider 自己的风格改用 Native
+            Diagrams = [new MermaidDiagramRenderer { Theme = MermaidTheme.MermaidJs }],
             Images = new ImagePipeline(new ImagePipelineOptions
             {
                 DiskCacheDirectory = Path.Combine(ConfigPaths.Home, "cache", "images"),
