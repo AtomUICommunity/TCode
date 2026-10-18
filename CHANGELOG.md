@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+Updates StreamMark so Mermaid diagrams follow the mermaid.js theme and stay readable in the AtomUI themes.
+
+### Changed
+
+- StreamMark is updated to `0.1.0-alpha.21`. Mermaid diagrams reproduce the mermaid.js dark and default themes, composite translucent theme colors onto the real backdrop (no more white-on-white in the dark theme or black-on-black in the light theme), and fit tall diagrams by width instead of capping them at 900px.
+- The Mermaid theme is set explicitly to mermaid.js (`MermaidTheme.MermaidJs`).
+
+**Full Changelog**: https://github.com/AtomUICommunity/TKCode/compare/v0.1.2...v0.1.3
+
 ## 0.1.2
 
 Renames the project from TCode to TKCode and reduces work while thinking blocks stream.
