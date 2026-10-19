@@ -17,11 +17,13 @@ public sealed record StreamOptions
     public int? MaxTokens { get; init; }
     /// <summary>请求 fast mode；模型不支持（<see cref="ModelInfo.SupportsFastMode"/> 为 false）时忽略。</summary>
     public bool FastMode { get; init; }
-    /// <summary>用作 prompt_cache_key / 会话亲和头。</summary>
+    /// <summary>用作 prompt_cache_key、会话亲和头与 Anthropic metadata.user_id（<see cref="PromptCache"/>）。</summary>
     public string? SessionId { get; init; }
+    /// <summary>cache_control 断点的有效期（Anthropic Messages，以及经 Chat 调用的 Claude 模型）。</summary>
+    public PromptCacheTtl CacheTtl { get; init; }
     /// <summary>
-    /// 只读缓存、不写入新的缓存断点（一次性的分叉请求，例如压缩摘要）：Anthropic 不加随尾部移动的顶层 cache_control，
-    /// 系统提示上的断点保留（它已在缓存中，只会命中）。
+    /// 一次性的分叉请求（例如压缩摘要）：消息断点放在最后一条消息之前（共享前缀的末尾），
+    /// 只读取主循环已写入的缓存，不为本次独有的尾部写入新条目（同 Claude Code 的 skipCacheWrite）。
     /// </summary>
     public bool SkipCacheWrite { get; init; }
 }

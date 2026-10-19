@@ -12,27 +12,35 @@ namespace TKCode.Desktop.Services;
 /// 系统托盘（Windows 通知区域 / macOS 菜单栏 / Linux StatusNotifier）与「关闭窗口不退出」：
 /// 默认点窗口的关闭按钮只隐藏窗口，会话继续运行；从托盘菜单「退出 TKCode」、macOS ⌘Q 或安装更新时才真正退出。
 /// settings.json 的 closeToTray: false 恢复为关闭窗口即退出。
+/// 同一份「新会话 / 最近项目」还出现在 macOS Dock 右键菜单和 Windows 任务栏按钮的跳转列表（含「退出」）里，
+/// 它们的条目由 <see cref="BuildItems"/> / <see cref="BuildDockItems"/> / <see cref="BuildJumpList"/> 统一生成。
 /// </summary>
 public sealed class AppTray
 {
+    /// <summary>项目菜单最多列出的项目数（最近使用的在前）。</summary>
+    internal const int ProjectLimit = 8;
+
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
     private readonly Window _window;
     private readonly UserSettingsService _settings;
     private readonly UpdatesViewModel _updates;
     private readonly MainWindowViewModel _main;
+    private readonly WorkspaceService _workspaces;
     private readonly TrayIcon _icon;
 
-    /// <summary>托盘菜单只创建一次：Avalonia.Native 会把它导出为原生菜单，换成另一个实例时更新会失败（“menu being updated does not match”）。</summary>
+    /// <summary>托盘菜单只创建一次：Avalonia.Native 会把它导出为原生菜单，换成另一个实例时更新会失败（“menu being updated does not match”）。Dock 菜单同理。</summary>
     private readonly NativeMenu _menu = new();
+    private readonly NativeMenu? _dockMenu;
 
     public AppTray(Application app, IClassicDesktopStyleApplicationLifetime desktop, Window window, UserSettingsService settings, UpdatesViewModel updates,
-        MainWindowViewModel main)
+        MainWindowViewModel main, WorkspaceService workspaces)
     {
         _desktop = desktop;
         _window = window;
         _settings = settings;
         _updates = updates;
         _main = main;
+        _workspaces = workspaces;
         _icon = new TrayIcon
         {
             Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://TKCode/Assets/app-logo.png"))),
@@ -41,6 +49,11 @@ public sealed class AppTray
         };
         _icon.Clicked += (_, _) => ShowWindow();
         TrayIcon.SetIcons(app, [_icon]);
+        if (OperatingSystem.IsMacOS())
+        {
+            _dockMenu = new NativeMenu();
+            NativeDock.SetMenu(app, _dockMenu);
+        }
 
         window.Closing += OnWindowClosing;
         // macOS：窗口隐藏后点 Dock 图标重新显示
@@ -62,6 +75,9 @@ public sealed class AppTray
             }
         };
         Strings.LanguageChanged += (_, _) => Rebuild();
+        // 切换项目（含加入新项目）后「最近项目」随之变化
+        main.Conversation.WorkspaceChanged += Rebuild;
+        main.Sidebar.Projects.CollectionChanged += (_, _) => Rebuild();
         Rebuild();
     }
 
@@ -89,26 +105,59 @@ public sealed class AppTray
 
     private void Rebuild()
     {
-        _menu.Items.Clear();
-        foreach (var item in BuildItems(_updates))
+        var projects = _workspaces.Recent(ProjectLimit);
+        FillMenu(_menu, BuildItems(_updates, projects));
+        if (_dockMenu is not null)
         {
-            _menu.Items.Add(item.Text is null ? new NativeMenuItemSeparator() : ToNative(item));
+            FillMenu(_dockMenu, BuildDockItems(projects));
+        }
+        var (tasks, entries) = BuildJumpList(projects);
+        WindowsJumpList.Update(Strings.Get(TKCodeLangResourceKind.TrayProjects), entries, tasks);
+    }
+
+    private void FillMenu(NativeMenu menu, IReadOnlyList<TrayItem> items)
+    {
+        menu.Items.Clear();
+        foreach (var item in items)
+        {
+            menu.Items.Add(ToNative(item));
         }
     }
 
-    private NativeMenuItem ToNative(TrayItem item)
+    private NativeMenuItemBase ToNative(TrayItem item)
     {
-        var native = new NativeMenuItem(item.Text!) { IsEnabled = item.Action != TrayAction.None };
-        native.Click += (_, _) => Run(item.Action);
+        if (item.Text is null)
+        {
+            return new NativeMenuItemSeparator();
+        }
+        var native = new NativeMenuItem(item.Text) { IsEnabled = item.Action != TrayAction.None || item.Children is not null };
+        if (item.Children is { } children)
+        {
+            native.Menu = new NativeMenu();
+            foreach (var child in children)
+            {
+                native.Menu.Items.Add(ToNative(child));
+            }
+        }
+        else
+        {
+            native.Click += (_, _) => Run(item);
+        }
         return native;
     }
 
-    private void Run(TrayAction action)
+    private void Run(TrayItem item)
     {
-        switch (action)
+        switch (item.Action)
         {
             case TrayAction.Show:
-                ShowWindow();
+                Execute(AppCommand.Show);
+                break;
+            case TrayAction.NewSession:
+                Execute(AppCommand.NewSession);
+                break;
+            case TrayAction.OpenProject when item.Argument is { } path:
+                Execute(AppCommand.OpenProject(path));
                 break;
             case TrayAction.Download:
                 ShowWindow();
@@ -127,15 +176,46 @@ public sealed class AppTray
                 _main.OpenSettingsCommand.Execute(null);
                 break;
             case TrayAction.Quit:
+                Execute(AppCommand.Quit);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 执行一条指令：托盘 / Dock 菜单的点击、另一个 TKCode 进程转发来的命令行参数（跳转列表条目）、首次启动时带的参数。
+    /// 必须在 UI 线程上调用。
+    /// </summary>
+    internal void Execute(AppCommand command)
+    {
+        switch (command.Kind)
+        {
+            case AppCommandKind.Show:
+                ShowWindow();
+                break;
+            case AppCommandKind.NewSession:
+                ShowWindow();
+                _main.StartNewSession();
+                break;
+            case AppCommandKind.OpenProject when command.Argument is { } path:
+                ShowWindow();
+                _main.OpenProject(path);
+                break;
+            case AppCommandKind.Quit:
                 _desktop.Shutdown();
                 break;
         }
     }
 
     /// <summary>托盘菜单的内容（与平台无关，便于测试）；Text 为 null 表示分隔线。</summary>
-    internal static IReadOnlyList<TrayItem> BuildItems(UpdatesViewModel updates)
+    internal static IReadOnlyList<TrayItem> BuildItems(UpdatesViewModel updates, IReadOnlyList<WorkspaceInfo>? projects = null)
     {
-        var items = new List<TrayItem> { new(Strings.Get(TKCodeLangResourceKind.TrayShow), TrayAction.Show), TrayItem.Separator };
+        var items = new List<TrayItem>
+        {
+            new(Strings.Get(TKCodeLangResourceKind.TrayShow), TrayAction.Show),
+            new(Strings.Get(TKCodeLangResourceKind.NewSession), TrayAction.NewSession),
+            new(Strings.Get(TKCodeLangResourceKind.TrayProjects), TrayAction.None, Children: ProjectItems(projects ?? [], placeholder: true)),
+            TrayItem.Separator,
+        };
         switch (updates.Service.Status)
         {
             case UpdateStatus.Available when updates.CanInstallInApp:
@@ -159,12 +239,60 @@ public sealed class AppTray
         items.Add(new(Strings.Get(TKCodeLangResourceKind.TrayQuit), TrayAction.Quit));
         return items;
     }
+
+    /// <summary>
+    /// macOS Dock 右键菜单：新会话 + 平铺的最近项目（Dock 菜单习惯平铺）。
+    /// 「退出」「隐藏」等由系统自带，不重复添加。
+    /// </summary>
+    internal static IReadOnlyList<TrayItem> BuildDockItems(IReadOnlyList<WorkspaceInfo> projects)
+    {
+        var items = new List<TrayItem> { new(Strings.Get(TKCodeLangResourceKind.NewSession), TrayAction.NewSession) };
+        if (projects.Count > 0)
+        {
+            items.Add(TrayItem.Separator);
+            items.Add(new(Strings.Get(TKCodeLangResourceKind.TrayProjects), TrayAction.None));
+            items.AddRange(ProjectItems(projects, placeholder: false));
+        }
+        return items;
+    }
+
+    /// <summary>
+    /// Windows 任务栏按钮右键的跳转列表：任务（新会话、退出 TKCode）+「项目」类别（最近项目）。
+    /// 任务栏按钮的右键菜单由系统绘制，「关闭窗口」只会隐藏到托盘，所以这里单独提供真正的「退出」。
+    /// </summary>
+    internal static (IReadOnlyList<JumpListEntry> Tasks, IReadOnlyList<JumpListEntry> Projects) BuildJumpList(IReadOnlyList<WorkspaceInfo> projects)
+    {
+        IReadOnlyList<JumpListEntry> tasks =
+        [
+            new(Strings.Get(TKCodeLangResourceKind.NewSession), AppCommand.NewSession.ToCommandLine(), null),
+            new(Strings.Get(TKCodeLangResourceKind.TrayQuit), AppCommand.Quit.ToCommandLine(), null),
+        ];
+        var entries = projects.Select(p => new JumpListEntry(p.Name, AppCommand.OpenProject(p.Path).ToCommandLine(), p.Path)).ToList();
+        return (tasks, entries);
+    }
+
+    /// <summary>项目条目；重名的项目（不同目录下的同名文件夹）附上上级目录名以便区分。没有项目时可放一条灰色的占位。</summary>
+    private static List<TrayItem> ProjectItems(IReadOnlyList<WorkspaceInfo> projects, bool placeholder)
+    {
+        if (projects.Count == 0)
+        {
+            return placeholder ? [new(Strings.Get(TKCodeLangResourceKind.TrayNoProjects), TrayAction.None)] : [];
+        }
+        return projects.Select(p =>
+        {
+            var duplicated = projects.Count(o => string.Equals(o.Name, p.Name, StringComparison.OrdinalIgnoreCase)) > 1;
+            var parent = duplicated ? Path.GetFileName(Path.GetDirectoryName(p.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))) : null;
+            return new TrayItem(string.IsNullOrEmpty(parent) ? p.Name : $"{p.Name} ({parent})", TrayAction.OpenProject, p.Path);
+        }).ToList();
+    }
 }
 
 internal enum TrayAction
 {
     None,
     Show,
+    NewSession,
+    OpenProject,
     Download,
     Install,
     CheckUpdates,
@@ -172,7 +300,10 @@ internal enum TrayAction
     Quit,
 }
 
-internal sealed record TrayItem(string? Text, TrayAction Action)
+/// <param name="Text">null 表示分隔线。</param>
+/// <param name="Argument">OpenProject 的项目路径。</param>
+/// <param name="Children">非 null 表示子菜单（父条目自身不可点击）。</param>
+internal sealed record TrayItem(string? Text, TrayAction Action, string? Argument = null, IReadOnlyList<TrayItem>? Children = null)
 {
     public static readonly TrayItem Separator = new(null, TrayAction.None);
 }

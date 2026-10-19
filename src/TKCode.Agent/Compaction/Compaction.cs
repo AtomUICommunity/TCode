@@ -16,6 +16,9 @@ public enum CompactionTrigger
 
     /// <summary>请求因上下文超窗失败后。</summary>
     Reactive,
+
+    /// <summary>批准计划时选择了“清空上下文后执行”（docs/design/plan-mode.md §11）：不生成摘要，历史换成交接消息。</summary>
+    PlanHandoff,
 }
 
 /// <summary>交给压缩器的输入：当前会话的完整请求上下文。</summary>
@@ -34,6 +37,9 @@ public sealed record CompactionRequest(
 {
     /// <summary>压缩后没有新的用户输入：模型应直接接着干活（工具轮之间的自动压缩、超窗后的重试）。</summary>
     public bool ResumesWork { get; init; }
+
+    /// <summary>交接消息（<see cref="CompactionTrigger.PlanHandoff"/>）：不请求模型，直接作为替换后历史的第一条用户消息。</summary>
+    public string? Handoff { get; init; }
 }
 
 /// <summary>压缩结果：新的开头系统提示与替换后的历史（摘要消息 + 重新附加的内容）。</summary>

@@ -13,7 +13,9 @@ public sealed record SessionEventNotification(string SessionId, long Seq, Sessio
 [JsonDerivedType(typeof(AgentEnded), "agentEnded")]
 [JsonDerivedType(typeof(MessageStarted), "messageStarted")]
 [JsonDerivedType(typeof(TextDelta), "textDelta")]
+[JsonDerivedType(typeof(TextEnded), "textEnded")]
 [JsonDerivedType(typeof(ThinkingDelta), "thinkingDelta")]
+[JsonDerivedType(typeof(ThinkingEnded), "thinkingEnded")]
 [JsonDerivedType(typeof(ToolCallStarted), "toolCallStarted")]
 [JsonDerivedType(typeof(ToolCallDelta), "toolCallDelta")]
 [JsonDerivedType(typeof(ToolCallEnded), "toolCallEnded")]
@@ -26,7 +28,15 @@ public sealed record SessionEventNotification(string SessionId, long Seq, Sessio
 [JsonDerivedType(typeof(CompactionEnded), "compactionEnded")]
 [JsonDerivedType(typeof(CompactionSuspended), "compactionSuspended")]
 [JsonDerivedType(typeof(BackgroundTasksChanged), "backgroundTasksChanged")]
+[JsonDerivedType(typeof(SessionTitleChanged), "sessionTitleChanged")]
+[JsonDerivedType(typeof(SessionOptionsChanged), "optionsChanged")]
 public abstract record SessionEvent;
+
+/// <summary>
+/// Host 主动改变了模式或权限（计划审批、enter_plan_mode、外部运行时上报的模式变化；docs/design/plan-mode.md §13.2）。
+/// 界面据此更新选择器，不再回调 SetOptionsAsync。
+/// </summary>
+public sealed record SessionOptionsChanged(SessionOptionsDto Options) : SessionEvent;
 
 public sealed record AgentStarted : SessionEvent;
 
@@ -38,6 +48,9 @@ public sealed record RuntimeCommandDto(string Name, string? Description, string?
 
 public sealed record AgentEnded : SessionEvent;
 
+/// <summary>首条用户消息的自动标题已生成并保存。</summary>
+public sealed record SessionTitleChanged(string Title) : SessionEvent;
+
 /// <summary>Role：user / assistant / toolResult。用户消息附带文本与附图路径；助手消息内容随后以增量到达。</summary>
 /// <param name="Source">非用户输入的来源：task-notification / session-message；null 表示用户输入。</param>
 /// <param name="Segments">用户消息在输入框里的样子（含 tag）；没有 tag 时为 null。</param>
@@ -46,7 +59,13 @@ public sealed record MessageStarted(string MessageId, string Role, string? Text,
 
 public sealed record TextDelta(string MessageId, int ContentIndex, string Delta) : SessionEvent;
 
+/// <summary>正文块已结束；所在助手消息和轮次可能仍在继续。</summary>
+public sealed record TextEnded(string MessageId, int ContentIndex) : SessionEvent;
+
 public sealed record ThinkingDelta(string MessageId, int ContentIndex, string Delta) : SessionEvent;
+
+/// <summary>思考块已结束；所在助手消息和轮次可能仍在继续。</summary>
+public sealed record ThinkingEnded(string MessageId, int ContentIndex) : SessionEvent;
 
 public sealed record ToolCallStarted(string MessageId, int ContentIndex, string ToolCallId, string ToolName) : SessionEvent;
 

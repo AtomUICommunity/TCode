@@ -66,6 +66,16 @@ public static class SelfTest
             Check(string.Concat(read.Content.OfType<TextContent>().Select(t => t.Text)).StartsWith("     1\tneedle", StringComparison.Ordinal), "read");
 
             Check(ReadOnlyCommands.IsReadOnly("git status && rg -n x | head") && !ReadOnlyCommands.IsReadOnly("rm -rf x"), "read-only commands");
+            // Plan 模式（docs/design/plan-mode.md）：只读命令规则、审批 Details、plan/review 的源生成序列化
+            Check(!PermissionPolicy.Evaluate(new TKCode.Agent.ToolPermission(TKCode.Agent.ToolAccess.Execute, Command: "rm -rf x"),
+                TKCode.Agent.PermissionMode.FullAccess, new WorkspaceRoots(root), new SessionApprovals(), readOnly: true).Allowed, "plan read-only command");
+            Check(System.Text.Json.JsonDocument.Parse(TKCode.Agent.Plans.PlanReviews.DetailsJson("/p.md", "# P",
+                new TKCode.Agent.Plans.PlanReviewResult(TKCode.Agent.Plans.PlanReviewOutcome.Approved, TKCode.Agent.Plans.PlanReviewChoice.Auto)))
+                .RootElement.GetProperty("choice").GetString() == "auto", "plan review details");
+            var review = System.Text.Json.JsonSerializer.Serialize(new TKCode.Rpc.PlanReviewRequest("s", "r", "builtin", null, "/p.md", "# P", ["auto", "ask"], "ask"),
+                TKCode.Rpc.RpcJsonContext.Default.PlanReviewRequest);
+            Check(System.Text.Json.JsonSerializer.Deserialize(review, TKCode.Rpc.RpcJsonContext.Default.PlanReviewRequest) is { Choices.Count: 2 }, "plan/review json");
+            Check(TKCode.Agent.Coding.Assets.SessionRole.Plan.SectionFor("/p.md", false)!.Text.Contains("Plan file: /p.md\nIt does not exist yet"), "plan mode section");
             new TaskList().Create("t", "d", null);
             Directory.Delete(root, recursive: true);
 

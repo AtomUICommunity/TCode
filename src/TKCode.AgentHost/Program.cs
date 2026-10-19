@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using TKCode.AgentHost;
 using TKCode.Ai;
@@ -16,11 +17,15 @@ if (args.Contains("--mcp-bridge"))
     return await TKCode.AgentHost.McpBridgeClient.RunAsync();
 }
 
+var logs = Path.Combine(TKCode.Agent.Coding.TKCodePaths.Home, "logs");
+TKCode.Config.CrashLog.Install(logs, "host",
+    typeof(Program).Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?");
+
 // stdout 专用于 JSON-RPC 帧，所有日志必须写到 stderr。
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
-builder.Logging.AddProvider(new TKCode.AgentHost.FileLoggerProvider(Path.Combine(TKCode.Agent.Coding.TKCodePaths.Home, "logs")));
+builder.Logging.AddProvider(new TKCode.Config.FileLoggerProvider(logs, "host"));
 
 // 所有 HTTP 适配器共享一个 HttpClient；流式请求由适配器自己的空闲超时控制，这里不设总超时。
 builder.Services.AddSingleton(_ => new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) })

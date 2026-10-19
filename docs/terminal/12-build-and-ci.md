@@ -15,7 +15,7 @@
 | 主题 | 结论 |
 |---|---|
 | TKCode 现有 CI | **没有**：仓库根目录没有 `.github/`（2026-10-16 检查）[已核实]。本文的工作流是 TKCode 的第一个 CI，需要同时覆盖现有的 .NET 测试 |
-| 工具链 | .NET SDK 10.0.300+（`global.json` 已锁定，`rollForward: latestFeature`）[已核实]；**Zig 精确为 0.16.0**（官方 tarball + SHA-256 校验；本机 Homebrew 装的是 0.17.0，不可用）；Linux 的 libtkcodepty 与 helper 用 `zig cc`（不需要 gcc），macOS 用 Apple clang（03 §11.1）；Windows 上 libghostty 的 `x86_64-windows-msvc` 目标需要 VS 2022 Build Tools（MSVC + Windows SDK）；CMake 不需要 |
+| 工具链 | .NET SDK 11.0.100-rc.2.26504.105+（`global.json` 已锁定，`rollForward: latestFeature`，允许预发布）[已核实]；**Zig 精确为 0.16.0**（官方 tarball + SHA-256 校验；本机 Homebrew 装的是 0.17.0，不可用）；Linux 的 libtkcodepty 与 helper 用 `zig cc`（不需要 gcc），macOS 用 Apple clang（03 §11.1）；Windows 上 libghostty 的 `x86_64-windows-msvc` 目标需要 VS 2022 Build Tools（MSVC + Windows SDK）；CMake 不需要 |
 | 一条命令 | `tools/terminal/build-native.sh [rid]` / `build-native.ps1 -Rid <rid>`：只构建当前（或指定）RID；按"上游提交 + overlay 补丁 + Zig 版本 + 构建参数 + 脚本版本"的哈希做缓存；产物在 `artifacts/native/<rid>/` |
 | MSBuild | 仿照 StreamMark：根目录 `Directory.Build.targets` 按使用方的 RID 把 `artifacts/native/<rid>/` 中的文件平铺复制到输出与发布目录；`TKCode.Terminal.Core` / `.Pty` 另以 `runtimes/<rid>/native/` 打包，留给将来拆成独立仓库（D2） |
 | 动态 vs 静态 | **libghostty-vt：v1 全部动态**（Debug 与 AOT 同一条路径）；**libtkcodepty：按 03 §11.5，ptyhost 的 Unix AOT 发布静态链接 `.a`，Debug / 测试用动态库**；libghostty 静态链接作为 M6 之后的可选优化 |
@@ -35,7 +35,7 @@
 
 | 工具 | 版本 | macOS | Linux | Windows |
 |---|---|---|---|---|
-| .NET SDK | 10.0.300 及以上同一特性带（`global.json`）[已核实] | 官方安装包 / `dotnet-install.sh` | 同左 | 官方安装包 / `winget install Microsoft.DotNet.SDK.10` |
+| .NET SDK | 11.0.100-rc.2.26504.105 及以上同一主次版本（`global.json`，允许预发布）；构建完整 Desktop 时另需 .NET 10 Runtime 运行 AtomUI 构建工具 [已核实] | 官方安装包 / `dotnet-install.sh --channel 11.0 --quality preview` | 同左 | 官方预发布安装包 / `dotnet-install.ps1 -Channel 11.0 -Quality preview` |
 | NativeAOT 前置 | — | Xcode 命令行工具（`xcode-select --install`） | `clang`、`zlib1g-dev`（.NET NativeAOT 的链接需要）[推断：按 .NET 官方 AOT 先决条件] | VS 2022 Build Tools："使用 C++ 的桌面开发"工作负载（MSVC 链接器 + Windows SDK） |
 | **Zig** | **0.16.0（精确）** | 见 §1.2 | 见 §1.2 | 见 §1.2 |
 | Git | 任意现代版本 | 系统自带 | 包管理器 | Git for Windows（同时提供 Git Bash，用于 shell 集成测试） |
@@ -818,7 +818,7 @@ jobs:
     needs: native
     strategy: { matrix: { os: [ubuntu-latest, macos-latest] } }
     runs-on: ${{ matrix.os }}
-    steps: [ "dotnet run -c Release --project tests/TKCode.Terminal.Benchmarks -- --profile nightly --runtimes net10.0 nativeaot10.0 --exporters json github",
+    steps: [ "dotnet run -c Release --project tests/TKCode.Terminal.Benchmarks -- --profile nightly --runtimes net11.0 nativeaot11.0 --exporters json github",
              "推送结果到 bench-history 分支；回退 > 10% 时开 issue" ]
 ```
 

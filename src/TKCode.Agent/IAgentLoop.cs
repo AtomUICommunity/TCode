@@ -68,6 +68,12 @@ public interface IExternalAgentLoop : IAgentLoop, IAsyncDisposable
     bool SupportsSubagents { get; }
 
     /// <summary>
+    /// 运行时原生实现 plan 模式（自带提示词、计划文件与审批工具，例如 Claude Code）：切到 Plan 时不再发 TKCode 的模式说明
+    /// （docs/design/plan-mode.md §12.8）。
+    /// </summary>
+    bool NativePlanMode => false;
+
+    /// <summary>
     /// 设置会话的模式（docs/design/composer.md §11）：<paramref name="readOnly"/> 由运行时原生收紧；
     /// <paramref name="reminder"/> 在下一轮随用户消息发给 Agent 一次（只发给 Agent，不进转录），null 表示不需要说明。
     /// </summary>

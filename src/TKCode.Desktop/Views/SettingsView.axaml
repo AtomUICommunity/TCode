@@ -6,6 +6,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
              xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:controls="using:TKCode.Desktop.Controls"
              xmlns:vm="using:TKCode.Desktop.ViewModels"
              xmlns:icons="using:TKCode.Desktop.Icons"
              xmlns:loc="using:TKCode.Desktop.Localization"
@@ -107,6 +108,94 @@
                         <TextBlock Text="{loc:TKCodeLangResource SettingsGeneral}" FontSize="20" FontWeight="SemiBold" />
                         <Border Classes="card">
                             <StackPanel>
+                                <TextBlock Classes="strong" Text="{loc:TKCodeLangResource ModelConfiguration}" Margin="16,12,16,0" />
+                                <!-- 默认模型 -->
+                                <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                    <StackPanel Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Classes="strong" Text="{loc:TKCodeLangResource DefaultModelLabel}" />
+                                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource DefaultModelHint}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Panel Grid.Column="1" Margin="16,0,0,0">
+                                        <Button x:Name="DefaultModelButton" Theme="{StaticResource TKCode.ChipButton}" MinHeight="30" Padding="10,0"
+                                                Foreground="{DynamicResource TKCode.TextPrimary}" Click="OnDefaultModelClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding DefaultModelLabel}" MaxWidth="260"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <motion:Popover x:Name="DefaultModelPopup" PlacementTarget="{Binding #DefaultModelButton}" Placement="BottomEdgeAlignedRight"
+                                               VerticalOffset="6" IsLightDismissEnabled="True">
+                                            <controls:ZoomHost>
+                                            <Border Classes="menu" Width="320" Margin="16,0,16,16">
+                                                <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True">
+                                                    <ItemsControl ItemsSource="{Binding DefaultModels}" Margin="4">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
+                                                                <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="30"
+                                                                        Click="OnDefaultModelChosen"
+                                                                        Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Settings.ChooseDefaultModelCommand}"
+                                                                        CommandParameter="{Binding}">
+                                                                    <Grid ColumnDefinitions="*,Auto">
+                                                                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Check" Width="13" Height="13" IsVisible="{Binding IsSelected}" />
+                                                                    </Grid>
+                                                                </Button>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Border>
+                                            </controls:ZoomHost>
+                                        </motion:Popover>
+                                    </Panel>
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
+                                <!-- 快速模型 -->
+                                <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                    <StackPanel Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Classes="strong" Text="{loc:TKCodeLangResource FastModelLabel}" />
+                                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource FastModelHint}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Panel Grid.Column="1" Margin="16,0,0,0">
+                                        <Button x:Name="FastModelButton" Theme="{StaticResource TKCode.ChipButton}" MinHeight="30" Padding="10,0"
+                                                Foreground="{DynamicResource TKCode.TextPrimary}" Click="OnFastModelClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding FastModelLabel}" MaxWidth="260"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <motion:Popover x:Name="FastModelPopup" PlacementTarget="{Binding #FastModelButton}" Placement="BottomEdgeAlignedRight"
+                                               VerticalOffset="6" IsLightDismissEnabled="True">
+                                            <controls:ZoomHost>
+                                            <Border Classes="menu" Width="320" Margin="16,0,16,16">
+                                                <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True">
+                                                    <ItemsControl ItemsSource="{Binding FastModels}" Margin="4">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
+                                                                <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="30"
+                                                                        Click="OnFastModelChosen"
+                                                                        Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Settings.ChooseFastModelCommand}"
+                                                                        CommandParameter="{Binding}">
+                                                                    <Grid ColumnDefinitions="*,Auto">
+                                                                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                        <icons:LucideIcon Grid.Column="1" Kind="Check" Width="13" Height="13" IsVisible="{Binding IsSelected}" />
+                                                                    </Grid>
+                                                                </Button>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Border>
+                                            </controls:ZoomHost>
+                                        </motion:Popover>
+                                    </Panel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <StackPanel>
                                 <!-- 语言 -->
                                 <Grid ColumnDefinitions="*,Auto" Margin="16,12">
                                     <TextBlock Classes="strong" Text="{loc:TKCodeLangResource LanguageLabel}" VerticalAlignment="Center" />
@@ -147,6 +236,28 @@
                                     </Border>
                                 </Grid>
                                 <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
+                                <!-- 界面缩放 -->
+                                <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+                                    <StackPanel Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Classes="strong" Text="{loc:TKCodeLangResource UiScaleLabel}" />
+                                        <TextBlock Classes="tertiary" Text="{Binding UiScaleHint}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Center">
+                                        <motion:IndicatorPanel IndicatorBrush="{DynamicResource TKCode.SegmentSelectedBg}" IndicatorBorderBrush="{DynamicResource TKCode.SegmentSelectedBorder}" IndicatorRadius="6">
+                                        <ItemsControl ItemsSource="{Binding UiScales}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
+                                                    <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsSelected}" motion:IndicatorPanel.IsCurrent="{Binding IsSelected}" Content="{Binding Label}"
+                                                            Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Settings.ChooseUiScaleCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        </motion:IndicatorPanel>
+                                    </Border>
+                                </Grid>
+                                <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
                                 <!-- 关闭窗口时保留在托盘 -->
                                 <Grid ColumnDefinitions="*,Auto" Margin="16,12">
                                     <StackPanel Spacing="2" VerticalAlignment="Center">
@@ -174,45 +285,33 @@
                                     <atom:ToggleSwitch Grid.Column="1" SizeType="Small" VerticalAlignment="Center" IsChecked="{Binding OriginalImages}" />
                                 </Grid>
                                 <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
-                                <!-- 默认模型 -->
+                                <!-- 提示缓存有效期 -->
                                 <Grid ColumnDefinitions="*,Auto" Margin="16,12">
-                                    <StackPanel Spacing="2" VerticalAlignment="Center">
-                                        <TextBlock Classes="strong" Text="{loc:TKCodeLangResource DefaultModelLabel}" />
-                                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource DefaultModelHint}" TextWrapping="Wrap" />
+                                    <StackPanel Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Classes="strong" Text="{loc:TKCodeLangResource CacheTtlLabel}" />
+                                        <TextBlock Classes="tertiary" Text="{loc:TKCodeLangResource CacheTtlHint}" TextWrapping="Wrap" />
                                     </StackPanel>
-                                    <Panel Grid.Column="1" Margin="16,0,0,0">
-                                        <Button x:Name="DefaultModelButton" Theme="{StaticResource TKCode.ChipButton}" MinHeight="30" Padding="10,0"
-                                                Foreground="{DynamicResource TKCode.TextPrimary}" Click="OnDefaultModelClick">
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="{Binding DefaultModelLabel}" MaxWidth="260"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Button>
-                                        <motion:Popover x:Name="DefaultModelPopup" PlacementTarget="{Binding #DefaultModelButton}" Placement="BottomEdgeAlignedRight"
-                                               VerticalOffset="6" IsLightDismissEnabled="True">
-                                            <Border Classes="menu" Width="320" Margin="16,0,16,16">
-                                                <ScrollViewer MaxHeight="320" atom:ScrollViewer.IsLiteMode="True">
-                                                    <ItemsControl ItemsSource="{Binding DefaultModels}" Margin="4">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
-                                                                <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="30"
-                                                                        Click="OnDefaultModelChosen"
-                                                                        Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Settings.ChooseDefaultModelCommand}"
-                                                                        CommandParameter="{Binding}">
-                                                                    <Grid ColumnDefinitions="*,Auto">
-                                                                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                                        <icons:LucideIcon Grid.Column="1" Kind="Check" Width="13" Height="13" IsVisible="{Binding IsSelected}" />
-                                                                    </Grid>
-                                                                </Button>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </ScrollViewer>
-                                            </Border>
-                                        </motion:Popover>
-                                    </Panel>
+                                    <Border Grid.Column="1" Classes="segmented" VerticalAlignment="Center">
+                                        <motion:IndicatorPanel IndicatorBrush="{DynamicResource TKCode.SegmentSelectedBg}" IndicatorBorderBrush="{DynamicResource TKCode.SegmentSelectedBorder}" IndicatorRadius="6">
+                                        <ItemsControl ItemsSource="{Binding CacheTtls}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
+                                                    <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsSelected}" motion:IndicatorPanel.IsCurrent="{Binding IsSelected}" Content="{Binding Label}"
+                                                            Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Settings.ChooseCacheTtlCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        </motion:IndicatorPanel>
+                                    </Border>
                                 </Grid>
+                                <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
+                                <!-- Agent 的 bash 工具使用的 shell -->
+                                <views:ShellPickerView DataContext="{Binding AgentShell}" />
+                                <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
+                                <!-- 新建终端默认使用的 shell -->
+                                <views:ShellPickerView DataContext="{Binding TerminalShell}" />
                             </StackPanel>
                         </Border>
 

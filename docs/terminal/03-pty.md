@@ -1167,7 +1167,7 @@ GitHub runner 提供 `/dev/ptmx`；Docker 默认挂载 `/dev/pts`。
 | S5 | inbox 1809 / 21H2 上丢弃模式能否避免 Close 死锁 | W-T3 手动矩阵 | 在 Close 之前先 `CancelSynchronousIo` 并关闭 outRead |
 | S6 | W2 的 0xc0000142 窗口实际有多长 | T13 在 Windows 上统计 | 调整 500 ms |
 | S7 | 1809 是否支持 `PROC_THREAD_ATTRIBUTE_JOB_LIST`；运行时能否清除 `KILL_ON_JOB_CLOSE` | 单元测试 + 1809 虚拟机 | CREATE_SUSPENDED → AssignProcessToJobObject → ResumeThread |
-| S8 | `ConptyRequires*Host` 在 net10.0 AOT 发布中是否把 OpenConsole 放进两个架构子目录 | W-T6 | `GeneratePathProperty` + 显式 `<None Link>` |
+| S8 | `ConptyRequires*Host` 在 net11.0 AOT 发布中是否把 OpenConsole 放进两个架构子目录 | W-T6 | `GeneratePathProperty` + 显式 `<None Link>` |
 | S9 | 用 DirectPInvoke 把 libtkcodepty.a 静态链接进 4 个 RID 的 AOT 二进制，与 libghostty-vt 没有符号冲突 | AOT smoke | 改用动态库 |
 | S10 | pidfd 在 Docker 默认 seccomp 和 Flatpak 中是否可用 | T16 + `tcpty_init_info.pidfd_supported` | waitpid 线程回退（已实现） |
 | S11 | 环境变量中有非 UTF-8 字节时的影响 | 构造 `LANG=` 和 GBK 值进行测试 | C shim 直接读取 host 原始的 `environ` |

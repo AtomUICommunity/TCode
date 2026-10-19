@@ -1,4 +1,5 @@
 using TKCode.Agent;
+using TKCode.Agent.Plans;
 using TKCode.Agent.Questions;
 using TKCode.Ai.Messages;
 using TKCode.Ai.Models;
@@ -53,6 +54,12 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
     /// <summary>结构化信息请求（ACP elicitation）交给 UI 的表单卡片；未设置、异常或断连时 cancel。</summary>
     public Func<RuntimeElicitationRequest, CancellationToken, Task<RuntimeElicitationResult>>? ElicitationHandler { get; set; }
 
+    /// <summary>计划审批（Claude ExitPlanMode → TKCode 审批面板，docs/design/plan-mode.md §15）；批准时宿主切换模式与权限。</summary>
+    public Func<RuntimePlanReviewRequest, CancellationToken, Task<PlanReviewResult>>? PlanReviewHandler { get; set; }
+
+    /// <summary>运行时自己进入（true）或离开（false）了 plan 模式。</summary>
+    public event Action<bool>? PlanModeChanged;
+
     /// <summary>启动 CLI 时注入的 TKCode MCP 桥接（返回 null 表示不注入）。</summary>
     public Func<McpBridgeLaunch?>? McpBridge { get; set; }
 
@@ -62,6 +69,8 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
     private string? _pendingReminder;
 
     public bool SupportsSubagents => _runtime.Descriptor.Capabilities.SupportsSubagents;
+
+    public bool NativePlanMode => _runtime.Descriptor.Capabilities.NativePlanMode;
 
     public void SetMode(string name, bool readOnly, string? reminder)
     {
@@ -413,6 +422,51 @@ public sealed class ExternalAgent : IExternalAgentLoop, IRuntimeHost
             return UserInputResult.Declined;
         }
     }
+
+    async ValueTask<RuntimePlanReviewResult> IRuntimeHost.RequestPlanReviewAsync(RuntimePlanReviewRequest request, CancellationToken cancellationToken)
+    {
+        // 计划审批从不自动通过，与权限档位无关
+        if (PlanReviewHandler is not { } handler)
+        {
+            return new RuntimePlanReviewResult(PlanReviewResult.Dismissed, PermissionMode);
+        }
+        CancellationToken runToken;
+        lock (_gate)
+        {
+            runToken = _runCts?.Token ?? CancellationToken.None;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, runToken);
+        PlanReviewResult result;
+        try
+        {
+            result = await handler(request, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new RuntimePlanReviewResult(PlanReviewResult.Aborted, PermissionMode);
+        }
+        catch (Exception)
+        {
+            return new RuntimePlanReviewResult(PlanReviewResult.Dismissed, PermissionMode);
+        }
+        string? steer = null;
+        if (result.Outcome == PlanReviewOutcome.Approved)
+        {
+            // 审批引起的模式切换：切回 Agent 由运行时自己处理（不再发说明）；交给 ACP 时说明立即追加，不等下一轮
+            lock (_gate)
+            {
+                steer = _pendingReminder;
+                _pendingReminder = null;
+            }
+            if (result.Choice != PlanReviewChoice.Acp)
+            {
+                steer = null;
+            }
+        }
+        return new RuntimePlanReviewResult(result, PermissionMode, steer);
+    }
+
+    void IRuntimeHost.OnPlanModeChanged(bool planMode) => PlanModeChanged?.Invoke(planMode);
 
     async ValueTask<RuntimeElicitationResult> IRuntimeHost.RequestElicitationAsync(RuntimeElicitationRequest request,
         CancellationToken cancellationToken)

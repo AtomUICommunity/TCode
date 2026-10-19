@@ -14,6 +14,7 @@ public static class ComposerSegments
         TagKind.McpResource => "mcpResource",
         TagKind.McpPrompt => "mcpPrompt",
         TagKind.RuntimeCommand => "runtimeCommand",
+        TagKind.AttachedFile => "attachedFile",
         _ => "image",
     };
 
@@ -27,6 +28,7 @@ public static class ComposerSegments
         "mcpPrompt" => TagKind.McpPrompt,
         "image" => TagKind.Image,
         "runtimeCommand" => TagKind.RuntimeCommand,
+        "attachedFile" => TagKind.AttachedFile,
         _ => null,
     };
 

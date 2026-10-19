@@ -29,7 +29,7 @@ public sealed class QuestionPanelTests
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         var state = new StateService(Path.Combine(home, "state.json"));
         state.Current.Workspaces.Add(project);
         state.Current.LastWorkspace = project;

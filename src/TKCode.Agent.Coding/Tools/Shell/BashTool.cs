@@ -24,9 +24,10 @@ public sealed class BashTool(ToolContext context) : IAgentTool
     {
         get
         {
-            var shell = ShellResolver.Current;
-            return $"Execute a shell command ({shell.Name} on {(OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux")}) " +
-                   "in the workspace root and return its combined stdout/stderr. Each call runs in a fresh process: `cd` and environment variables do not persist between calls, so use `cd dir && command`. " +
+            // 不写具体的 shell：工具集在会话开始时冻结，而用户可以随时改 shell；当前的 shell 在系统提示的 environment 节里，会随之更新。
+            return $"Execute a shell command on {(OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsMacOS() ? "macOS" : "Linux")} " +
+                   "in the workspace root and return its combined stdout/stderr. Write the command in the syntax of the shell named on the Shell line of the environment section. " +
+                   "Each call runs in a fresh process: `cd` and environment variables do not persist between calls, so use `cd dir && command`. " +
                    $"timeout is in milliseconds (default {DefaultTimeoutMs}, max {MaxTimeoutMs}). " +
                    $"Output is truncated to the last {OutputCapture.MaxLines} lines or {OutputCapture.MaxBytes / 1024}KB; the full output is saved to a file whose path is included when truncated. " +
                    "Set run_in_background=true for long-running processes (dev servers, watchers); you will be notified when it finishes, can read its output file with the read tool, and can stop it with task_stop. " +
@@ -73,7 +74,7 @@ public sealed class BashTool(ToolContext context) : IAgentTool
         Process process;
         try
         {
-            process = Start(command, context.Cwd);
+            process = Start(command, context.Cwd, ShellResolver.Resolve(context.ShellProfile()));
         }
         catch (Exception ex)
         {
@@ -181,9 +182,8 @@ public sealed class BashTool(ToolContext context) : IAgentTool
             $"Exit code: {exitCode?.ToString() ?? "unknown"}. Output: {totalLines} lines (last lines below; read the output file for everything).\n{lastLines}");
     }
 
-    private static Process Start(string command, string cwd)
+    private static Process Start(string command, string cwd, ShellInfo shell)
     {
-        var shell = ShellResolver.Current;
         var info = new ProcessStartInfo(shell.Executable)
         {
             WorkingDirectory = cwd,
@@ -199,7 +199,7 @@ public sealed class BashTool(ToolContext context) : IAgentTool
         {
             info.ArgumentList.Add(arg);
         }
-        info.ArgumentList.Add(command);
+        info.ArgumentList.Add(shell.CommandPrefix + command);
         // 避免分页器与交互式提示卡住命令。
         info.Environment["PAGER"] = "cat";
         info.Environment["GIT_PAGER"] = "cat";

@@ -85,7 +85,7 @@ public static partial class ModelIcons
         foreach (var candidate in Candidates(id))
         {
             var key = ProviderAliases.GetValueOrDefault(candidate) ?? candidate;
-            if (ProviderIconPaths.Mono.ContainsKey(key))
+            if (ProviderIconPaths.Mono.ContainsKey(key) || ProviderRasterIcons.Keys.Contains(key))
             {
                 return key;
             }

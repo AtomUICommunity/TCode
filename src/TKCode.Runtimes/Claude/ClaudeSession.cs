@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using TKCode.Agent.Plans;
 using TKCode.Agent.Questions;
 using TKCode.Ai.Messages;
 using TKCode.Ai.Models;
@@ -318,6 +319,10 @@ internal sealed class ClaudeSession : IRuntimeSession
 
     private void OnSystem(JsonElement frame)
     {
+        if (frame.Str("subtype") is "init" or "status" && frame.Str("permissionMode") is { } reported)
+        {
+            OnPermissionModeReported(reported);
+        }
         if (frame.Str("subtype") != "init" || frame.Str("session_id") is not { } sessionId)
         {
             return;
@@ -333,6 +338,24 @@ internal sealed class ClaudeSession : IRuntimeSession
         {
             // 记录实际模型（别名解析后的 ID），但保持 Provider 不变
             turn.ActualModel = model;
+        }
+    }
+
+    /// <summary>
+    /// CLI 上报的权限模式（system/status、system/init，§8.1）。与已应用的值不同说明是 CLI 自己改的（例如模型调用了 EnterPlanMode）：
+    /// 记下实际值，下一轮不再误判；进入或离开 plan 时同步 TKCode 的模式（docs/design/plan-mode.md §15）。
+    /// </summary>
+    private void OnPermissionModeReported(string reported)
+    {
+        if (reported == _appliedPermissionMode)
+        {
+            return;
+        }
+        var wasPlan = _appliedPermissionMode == "plan";
+        _appliedPermissionMode = reported;
+        if (wasPlan != (reported == "plan"))
+        {
+            _host.OnPlanModeChanged(reported == "plan");
         }
     }
 
@@ -619,6 +642,12 @@ internal sealed class ClaudeSession : IRuntimeSession
             _ = AskAsync(turn, requestId, toolUseId, input, scope);
             return;
         }
+        if (toolName == "ExitPlanMode")
+        {
+            // 计划审批同样绕开权限档位：交给 TKCode 的审批面板（docs/design/plan-mode.md §15）
+            _ = ReviewPlanAsync(turn, requestId, toolUseId, input, scope);
+            return;
+        }
         var suggestions = request.Prop("permission_suggestions") is { ValueKind: JsonValueKind.Array } s ? s.Clone() : (JsonElement?)null;
         var canRemember = !request.Bool("suppress_always_allow_rule");
         var title = request.Str("description") ?? request.Str("title") ?? request.Str("display_name");
@@ -755,6 +784,131 @@ internal sealed class ClaudeSession : IRuntimeSession
             w.WriteString("toolUseID", toolUseId);
             w.WriteString("decisionClassification", "user_temporary");
         });
+        Enqueue(() => turn.Tools.TryGetValue(toolUseId, out var tool)
+            ? turn.Writer.ToolStartedAsync(tool.Id, tool.Name, tool.ArgumentsJson)
+            : ValueTask.CompletedTask);
+    }
+
+    internal const string PlanNotApprovedMessage =
+        "The user did not approve the plan yet and wants to keep planning. Stay in plan mode: end your turn now and wait for the user's next message.";
+
+    internal static string PlanFeedbackMessage(string feedback) =>
+        $"The user did not approve the plan yet. Stay in plan mode. Their feedback:\n\n{feedback.Trim()}\n\nUpdate the plan to address it, then call ExitPlanMode again.";
+
+    /// <summary>
+    /// ExitPlanMode（docs/design/plan-mode.md §15）：计划取 input.plan，没有时读 input.planFilePath。批准时 allow 并附 setMode
+    /// （按宿主切换后的档位），用户编辑过的计划替换 plan 并写回文件；交给 ACP 时立即追加模式说明。
+    /// 继续完善或关闭面板时 deny（模型可见反馈）。被撤回或轮次结束时不应答。
+    /// </summary>
+    private async Task ReviewPlanAsync(Turn turn, string requestId, string toolUseId, JsonElement input, CancellationTokenSource scope)
+    {
+        var planPath = input.Str("planFilePath");
+        var plan = input.Str("plan");
+        if (string.IsNullOrWhiteSpace(plan) && planPath is not null)
+        {
+            try
+            {
+                plan = await File.ReadAllTextAsync(planPath, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        if (string.IsNullOrWhiteSpace(plan))
+        {
+            Enqueue(() =>
+            {
+                turn.Approvals.Remove(requestId);
+                return ValueTask.CompletedTask;
+            });
+            RespondDeny(requestId, toolUseId, "No plan was provided.");
+            return;
+        }
+        plan = plan.Trim();
+        RuntimePlanReviewResult review;
+        try
+        {
+            review = await _host.RequestPlanReviewAsync(new RuntimePlanReviewRequest(toolUseId, plan, planPath), scope.Token);
+        }
+        catch (Exception) when (scope.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            review = new RuntimePlanReviewResult(PlanReviewResult.Dismissed, TKCode.Agent.PermissionMode.Ask);
+        }
+        var result = review.Result;
+        if (result.Outcome == PlanReviewOutcome.Aborted)
+        {
+            // 轮次被中断：先让队列处理已排入的中断，再判断请求是否已被撤销
+            await RunOnQueueAsync(() => ValueTask.CompletedTask);
+        }
+        if (scope.IsCancellationRequested)
+        {
+            return;
+        }
+        var details = PlanReviews.DetailsJson(planPath, plan, result);
+        Enqueue(() =>
+        {
+            turn.Approvals.Remove(requestId);
+            turn.QuestionDetails[toolUseId] = details;
+            return ValueTask.CompletedTask;
+        });
+        if (result.Outcome != PlanReviewOutcome.Approved)
+        {
+            var message = result.Outcome switch
+            {
+                PlanReviewOutcome.Aborted => DenyMessage,
+                PlanReviewOutcome.Revise when result.HasFeedback => PlanFeedbackMessage(result.Feedback!),
+                _ => PlanNotApprovedMessage,
+            };
+            RespondDeny(requestId, toolUseId, message, interrupt: result.Outcome == PlanReviewOutcome.Aborted);
+            return;
+        }
+        var edited = result.EditedPlan?.Trim();
+        if (edited is not null && planPath is not null)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(planPath, edited + "\n", CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        var mode = ClaudeRuntime.PermissionModeFor(review.Permission);
+        _appliedPermissionMode = mode;
+        Respond(requestId, w =>
+        {
+            w.WriteString("behavior", "allow");
+            w.WriteStartObject("updatedInput");
+            foreach (var property in input.EnumerateObject())
+            {
+                if (edited is null || property.Name != "plan")
+                {
+                    property.WriteTo(w);
+                }
+            }
+            if (edited is not null)
+            {
+                w.WriteString("plan", edited);
+            }
+            w.WriteEndObject();
+            w.WriteStartArray("updatedPermissions");
+            w.WriteStartObject();
+            w.WriteString("type", "setMode");
+            w.WriteString("mode", mode);
+            w.WriteString("destination", "session");
+            w.WriteEndObject();
+            w.WriteEndArray();
+            w.WriteString("toolUseID", toolUseId);
+            w.WriteString("decisionClassification", "user_temporary");
+        });
+        if (review.Steer is { } steer)
+        {
+            WriteUserMessage(UserMessage.FromText(steer), "next");
+        }
         Enqueue(() => turn.Tools.TryGetValue(toolUseId, out var tool)
             ? turn.Writer.ToolStartedAsync(tool.Id, tool.Name, tool.ArgumentsJson)
             : ValueTask.CompletedTask);

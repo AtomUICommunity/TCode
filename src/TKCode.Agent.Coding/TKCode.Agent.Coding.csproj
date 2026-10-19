@@ -6,6 +6,7 @@
     <ItemGroup>
         <ProjectReference Include="..\TKCode.Agent\TKCode.Agent.csproj" />
         <ProjectReference Include="..\TKCode.Config\TKCode.Config.csproj" />
+        <ProjectReference Include="..\TKCode.Shell\TKCode.Shell.csproj" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="AngleSharp" />

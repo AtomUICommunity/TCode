@@ -1,3 +1,4 @@
+using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,7 +31,7 @@ public sealed class MainWindowSnapshotTests
         Git(project, "branch", "feature");
         Environment.SetEnvironmentVariable("TKCODE_HOME", home);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         // 预置一个项目，避免首次启动时扫描 ~/code
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0"); // 不探测本机的 claude / codex CLI
@@ -49,6 +50,13 @@ public sealed class MainWindowSnapshotTests
             var vm = provider.GetRequiredService<MainWindowViewModel>();
             var window = new MainWindow { DataContext = vm, Width = 1100, Height = 720 };
             window.Show();
+            window.UpdateLayout();
+            // Host 尚在加载时，主界面和歇后语已经可见，无首屏遮罩或最短展示时间。
+            var welcome = window.FindControl<TextBlock>("WelcomeQuip")!;
+            Assert.True(welcome.IsEffectivelyVisible);
+            Assert.False(string.IsNullOrWhiteSpace(welcome.Text));
+            Assert.Equal(1, window.FindControl<Grid>("AppPage")!.Opacity);
+            Assert.True(window.FindControl<ComposerView>("EmptyComposer")!.IsEffectivelyVisible);
             await WaitUntil(() => vm.Conversation.Picker.Selected is not null, "models loaded");
             HeadlessApp.Save(window, "main-empty");
 

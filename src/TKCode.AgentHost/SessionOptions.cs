@@ -90,7 +90,7 @@ internal static class SessionOptions
     }
 
     /// <summary>不可用时先向上、再向下取最近的档位（与适配器的 effort 选择方向一致）。</summary>
-    private static ThinkingLevel Nearest(IReadOnlyList<ThinkingLevel> available, ThinkingLevel wanted)
+    internal static ThinkingLevel Nearest(IReadOnlyList<ThinkingLevel> available, ThinkingLevel wanted)
     {
         if (available.Count == 0 || available.Contains(wanted))
         {

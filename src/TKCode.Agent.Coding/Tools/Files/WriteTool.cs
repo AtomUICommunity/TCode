@@ -31,6 +31,11 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
 
     public ToolPermission DescribePermission(JsonElement arguments)
     {
+        if (context.InPlanMode)
+        {
+            // Plan 模式：计划文件免审批，其他路径在执行时直接拦截（docs/design/plan-mode.md §6）
+            return ToolPermission.NoAccess;
+        }
         var path = context.Workspace.Resolve(arguments.Required("path"));
         return new(ToolAccess.Write, [path], Title: path);
     }
@@ -38,7 +43,11 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
     public Task<AgentToolResult> ExecuteAsync(ToolInvocation invocation, CancellationToken cancellationToken)
     {
         var path = context.Workspace.Resolve(invocation.Arguments.Required("path"));
-        var content = TextFile.NormalizeNewLines(invocation.Arguments.Required("content"));
+        if (context.InPlanMode && !context.WritableInPlanMode(path))
+        {
+            return Task.FromResult(AgentToolResult.Error(context.PlanModeWriteMessage));
+        }
+        var content = context.PrepareWrite(path, TextFile.NormalizeNewLines(invocation.Arguments.Required("content")));
         return context.Mutations.RunAsync(path, () => WriteAsync(path, content, cancellationToken), cancellationToken);
     }
 
@@ -82,6 +91,10 @@ public sealed class WriteTool(ToolContext context) : IAgentTool
             Before: snapshot, AfterSha256: FileRevert.Sha256(bytes)).ToJson();
         var lineCount = LineDiff.SplitLines(content).Length;
         var message = exists ? $"Overwrote {path} ({lineCount} lines)." : $"Created {path} ({lineCount} lines).";
+        if (context.WriteReminder(path, content) is { } reminder)
+        {
+            message += "\n" + reminder;
+        }
         if (context.NestedInstructionsFor(path) is { } nested)
         {
             message += "\n" + nested;

@@ -1,7 +1,10 @@
+using System.Collections.Frozen;
 using AtomUI.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 
 namespace TKCode.Desktop.Icons;
 
@@ -61,7 +64,33 @@ public sealed class ProviderGlyph : Icon
 }
 
 /// <summary>
-/// 品牌图标：有彩色版本且 <see cref="PreferColor"/> 时用 Svg 渲染彩色 SVG（含渐变），否则用 <see cref="ProviderGlyph"/>。
+/// 官方只提供位图的品牌图标（Assets/ProviderIcons/png/&lt;key&gt;.png，已裁掉透明边距并缩小）。
+/// LobeHub 没有收录的厂商（如 NextCoWork）用它；位图在所有 <see cref="ProviderLogo"/> 之间共享。
+/// </summary>
+internal static class ProviderRasterIcons
+{
+    public static readonly FrozenSet<string> Keys = new[] { "nextcowork" }.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly Dictionary<string, Bitmap> Cache = new(StringComparer.Ordinal);
+
+    public static Bitmap Get(string key)
+    {
+        lock (Cache)
+        {
+            if (!Cache.TryGetValue(key, out var bitmap))
+            {
+                using var stream = AssetLoader.Open(new Uri($"avares://TKCode/Assets/ProviderIcons/png/{key}.png"));
+                bitmap = new Bitmap(stream);
+                Cache[key] = bitmap;
+            }
+            return bitmap;
+        }
+    }
+}
+
+/// <summary>
+/// 品牌图标：有彩色版本且 <see cref="PreferColor"/> 时用 Svg 渲染彩色 SVG（含渐变），否则用 <see cref="ProviderGlyph"/>；
+/// 只有位图的品牌（<see cref="ProviderRasterIcons"/>）用 Image。
 /// <see cref="Key"/> 为空或未知时显示通用的立方体图标。
 /// </summary>
 public sealed class ProviderLogo : Decorator
@@ -102,7 +131,13 @@ public sealed class ProviderLogo : Decorator
     private void Rebuild()
     {
         var key = Key;
-        if (key is not null && PreferColor && ProviderIconPaths.Colored.Contains(key))
+        if (key is not null && ProviderRasterIcons.Keys.Contains(key))
+        {
+            var image = new Image { Source = ProviderRasterIcons.Get(key), Stretch = Stretch.Uniform };
+            RenderOptions.SetBitmapInterpolationMode(image, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality);
+            Child = image;
+        }
+        else if (key is not null && PreferColor && ProviderIconPaths.Colored.Contains(key))
         {
             Child = new Avalonia.Svg.Svg(BaseUri) { Path = $"avares://TKCode/Assets/ProviderIcons/svg/{key}-color.svg", Stretch = Stretch.Uniform };
         }

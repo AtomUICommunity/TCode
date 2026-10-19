@@ -13,7 +13,7 @@ public sealed class RpcEndToEndTests
         // TKCODE_TEST_HOST_EXE 指向 NativeAOT 发布的 Host 可执行文件时，验证 AOT 版本的 RPC 链路。
         var aotHost = Environment.GetEnvironmentVariable("TKCODE_TEST_HOST_EXE");
         var hostDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0/TKCode.AgentHost.dll"));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0/TKCode.AgentHost.dll"));
         var start = aotHost is { Length: > 0 } ? new ProcessStartInfo(aotHost) : new ProcessStartInfo("dotnet", $"\"{hostDll}\"");
         Assert.True(File.Exists(aotHost is { Length: > 0 } ? aotHost : hostDll));
 
@@ -70,7 +70,9 @@ public sealed class RpcEndToEndTests
             }
 
             Assert.Contains(seen, e => e is TextDelta);
+            Assert.Contains(seen, e => e is TextEnded);
             Assert.Contains(seen, e => e is ThinkingDelta);
+            Assert.Contains(seen, e => e is ThinkingEnded);
             Assert.Contains(seen, e => e is ToolExecutionEnded { IsError: false, ToolName: "ls" });
 
             // 压缩上下文（docs/design/compaction.md §12）：作为一次运行执行，事件与摘要消息经 RPC 到达
@@ -103,14 +105,15 @@ public sealed class RpcEndToEndTests
             await server.CloseSessionAsync(session.SessionId);
             var restored = await server.OpenSessionAsync(listed.FilePath);
             Assert.Equal("Low", restored.Session.Options.ThinkingLevel);
-            // 完全授权不沿用：重新打开的会话回到“询问”
-            Assert.Equal("ask", restored.Session.Options.PermissionMode);
+            // 完全授权写入会话文件，重新打开后沿用
+            Assert.Equal("fullAccess", restored.Session.Options.PermissionMode);
             Assert.Equal(reopened.History.Count, restored.History.Count);
             await server.CloseSessionAsync(restored.Session.SessionId);
 
-            // 历史分页：打开时只取最近 1 轮。压缩摘要开始新的一轮，之前的 1 轮（4 条消息）按需加载
+            // 历史分页：打开时只取最近 1 轮。压缩摘要开始新的一轮，之前的 1 轮按需加载：
+            // 会话开头的记忆索引 + 4 条消息 + 压缩后重新注入的记忆索引（docs/design/memory.md §4.2，界面不显示系统消息）
             var paged = await server.OpenSessionAsync(listed.FilePath, 1);
-            Assert.Equal(4, paged.HistoryStart);
+            Assert.Equal(6, paged.HistoryStart);
             Assert.Equal("compact-summary", Assert.Single(paged.History).Source);
             var earlier = await server.GetHistoryAsync(paged.Session.SessionId, paged.HistoryStart, 10);
             Assert.Equal(0, earlier.Start);
@@ -131,6 +134,7 @@ public sealed class RpcEndToEndTests
             var fork = await server.ForkSessionAsync(listed.FilePath);
             Assert.NotEqual(session.SessionId, fork.Session.SessionId);
             Assert.Equal(restored.History.Count, fork.History.Count);
+            Assert.Equal("fullAccess", fork.Session.Options.PermissionMode);
             await server.CloseSessionAsync(fork.Session.SessionId);
             var two = await server.QuerySessionsAsync(cwd, 0, 1);
             Assert.Equal(2, two.Total);
@@ -206,6 +210,9 @@ public sealed class RpcEndToEndTests
         public List<UserInputRequest> Questions { get; } = [];
 
         /// <summary>每个问题选第一个选项。</summary>
+        public Task<PlanReviewResponse> ReviewPlanAsync(PlanReviewRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(PlanReviewResponse.Dismiss);
+
         public Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default)
         {
             Questions.Add(request);

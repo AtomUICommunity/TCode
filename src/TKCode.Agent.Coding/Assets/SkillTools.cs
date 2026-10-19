@@ -14,6 +14,8 @@ public sealed class SkillToolSource(AgentAssetStore store, ToolContext context, 
     /// <summary>系统提示里最多列出的 skill 数。</summary>
     public const int MaxListed = 100;
 
+    public const string SectionName = "skills";
+
     public ValueTask<DynamicToolSet> RefreshAsync(bool firstTurn, CancellationToken cancellationToken)
     {
         if (enabled?.Invoke() == false)
@@ -49,7 +51,7 @@ public sealed class SkillToolSource(AgentAssetStore store, ToolContext context, 
         {
             sb.Append($"\n\n[{skills.Count - MaxListed} more skills are not listed.]");
         }
-        return new PromptSection("skills", sb.ToString());
+        return new PromptSection(SectionName, sb.ToString());
     }
 
     private static string OneLine(string text) => string.Join(' ', text.Split((char[])['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -60,7 +62,9 @@ public sealed class SkillToolSource(AgentAssetStore store, ToolContext context, 
 /// <summary>读取一个 skill 的说明（SKILL.md 正文）与目录位置。只读、不涉及工作区外的写入，不需要审批。</summary>
 public sealed class SkillTool(AgentAssetStore store, ToolContext context) : IAgentTool
 {
-    public string Name => "skill";
+    public const string ToolName = "skill";
+
+    public string Name => ToolName;
     public string Label => "Tool.Skill";
 
     public string Description =>

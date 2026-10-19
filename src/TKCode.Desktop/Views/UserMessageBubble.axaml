@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:composer="using:TKCode.Desktop.Controls.Composer"
+             x:Class="TKCode.Desktop.Views.UserMessageBubble"
+             x:Name="Root"
+             x:DataType="vm:UserMessageItemViewModel">
+    <Border Background="{DynamicResource TKCode.UserBubble}" CornerRadius="14" Padding="14,9" HorizontalAlignment="Right">
+        <StackPanel Spacing="2">
+            <!-- 纯文本：收起时最多 8 行，末尾省略号 -->
+            <SelectableTextBlock x:Name="PlainText" Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                 IsVisible="{Binding !HasSegments}" />
+            <!-- 带 tag 的消息：与输入框相同的样子（只读，可选择复制）；收起时裁到 8 行 -->
+            <composer:ComposerEditor x:Name="RichText" IsReadOnly="True" ClipLines="True" Cursor="Arrow"
+                                     IsVisible="{Binding HasSegments}" Padding="0"
+                                     Document="{Binding Segments, FallbackValue={x:Null}}" />
+            <Button Theme="{StaticResource TKCode.TextButton}" HorizontalAlignment="Left"
+                    Padding="0,2" MinHeight="0" FontSize="12"
+                    Command="{Binding ToggleCommand}" Content="{Binding ToggleText}"
+                    IsVisible="{Binding #Root.ShowToggle}" />
+        </StackPanel>
+    </Border>
+</UserControl>

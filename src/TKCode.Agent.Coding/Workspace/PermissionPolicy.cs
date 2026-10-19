@@ -34,11 +34,24 @@ public sealed class SessionApprovals
 /// <summary>
 /// 内置 Agent 的审批策略（docs/design/builtin-agent-tools.md §10）：
 /// 工作区内只读免审批；工作区外读取、写文件、命令、网络在 Ask 档询问；AutoApprove 仍询问工作区外写入与敏感文件。
+/// 只读上下文（Plan 模式、explore / plan 子 Agent）里，可能修改工作区的命令在任何档位都要询问（docs/design/plan-mode.md §8）。
 /// </summary>
 public static class PermissionPolicy
 {
-    public static PermissionVerdict Evaluate(ToolPermission permission, PermissionMode mode, WorkspaceRoots workspace, SessionApprovals approvals)
+    /// <summary>只读上下文里需要询问的命令在审批卡上的类别。</summary>
+    public const string ReadOnlyCommandKind = "readOnlyCommand";
+
+    /// <param name="readOnly">只读上下文：非只读命令在任何档位（包括完全授权）都询问，只能逐次允许。</param>
+    public static PermissionVerdict Evaluate(ToolPermission permission, PermissionMode mode, WorkspaceRoots workspace, SessionApprovals approvals,
+        bool readOnly = false)
     {
+        if (readOnly && permission.Access == ToolAccess.Execute)
+        {
+            var command = permission.Command ?? "";
+            return ReadOnlyCommands.IsReadOnly(command) && StaysInWorkspace(command, workspace)
+                ? PermissionVerdict.Allow
+                : new(false, ReadOnlyCommandKind, permission.Title ?? command);
+        }
         if (mode == PermissionMode.FullAccess || permission.Access == ToolAccess.None)
         {
             return PermissionVerdict.Allow;
@@ -49,6 +62,11 @@ public static class PermissionPolicy
 
         switch (permission.Access)
         {
+            // 项目记忆目录（docs/design/memory.md §5）：读取视同工作区内，其中的 .md 写入在任何档位都放行
+            case ToolAccess.Read when !sensitive && paths.Count > 0 && outside.All(workspace.InMemoryDirectory):
+            case ToolAccess.Write when paths.Count > 0 && paths.All(workspace.IsMemoryFile):
+                return PermissionVerdict.Allow;
+
             case ToolAccess.Read:
                 if (!sensitive && (outside.Length == 0 || mode == PermissionMode.AutoApprove))
                 {
@@ -140,7 +158,7 @@ public static class PermissionPolicy
             var looksLikePath = value.StartsWith('/') || value.StartsWith('~') || value.Contains("..") || value.Contains('\\')
                                 || (value.Length > 1 && value[1] == ':');
             var path = workspace.Resolve(value);
-            if ((looksLikePath && !workspace.Contains(path)) || WorkspaceRoots.IsSensitive(path))
+            if ((looksLikePath && !workspace.Contains(path) && !workspace.InMemoryDirectory(path)) || WorkspaceRoots.IsSensitive(path))
             {
                 return false;
             }

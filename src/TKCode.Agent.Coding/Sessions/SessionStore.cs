@@ -18,6 +18,8 @@ public sealed class SessionStore
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private string? _leafId;
     private bool _created;
+    /// <summary>手动命名（包括清空）或自动标题已经写入，后台生成不得覆盖。</summary>
+    private bool _titleChanged;
     /// <summary>文件创建前追加的非消息记录（模型 / 参数变化），随第一条消息一起写入，避免空会话落盘。</summary>
     private readonly StringBuilder _pending = new();
 
@@ -58,7 +60,12 @@ public sealed class SessionStore
     public static (SessionStore Store, SessionSnapshot Snapshot) OpenSnapshot(string filePath, SessionSnapshot? snapshot = null)
     {
         snapshot ??= Read(filePath);
-        return (new SessionStore(filePath, snapshot.SessionId, snapshot.Cwd) { _leafId = snapshot.LeafId, _created = true }, snapshot);
+        return (new SessionStore(filePath, snapshot.SessionId, snapshot.Cwd)
+        {
+            _leafId = snapshot.LeafId,
+            _created = true,
+            _titleChanged = snapshot.CustomTitle is not null,
+        }, snapshot);
     }
 
     /// <summary>
@@ -210,18 +217,33 @@ public sealed class SessionStore
         => AppendTreeAsync(parent => new RuntimeSessionEntry(NewEntryId(), parent, runtime, nativeSessionId), ct);
 
     /// <summary>追加元数据（重命名 / 置顶）。文件尚未创建时随第一条消息写入。</summary>
-    public async Task AppendMetaAsync(string? title, bool? pinned, CancellationToken ct = default)
+    public Task AppendMetaAsync(string? title, bool? pinned, CancellationToken ct = default) =>
+        AppendMetaCoreAsync(title, pinned, onlyIfUntitled: false, ct);
+
+    /// <summary>仅在没有命名操作时保存自动标题；检查和写入共用同一把锁，保护生成期间发生的手动重命名。</summary>
+    public Task<bool> TryAppendGeneratedTitleAsync(string title, CancellationToken ct = default) =>
+        AppendMetaCoreAsync(title, null, onlyIfUntitled: true, ct);
+
+    private async Task<bool> AppendMetaCoreAsync(string? title, bool? pinned, bool onlyIfUntitled, CancellationToken ct)
     {
         await _writeLock.WaitAsync(ct);
         try
         {
+            if (onlyIfUntitled && _titleChanged)
+            {
+                return false;
+            }
             var line = Serialize(new SessionMetaEntry(title, pinned));
             if (!_created)
             {
                 _pending.AppendLine(line);
-                return;
             }
-            await File.AppendAllTextAsync(FilePath, line + Environment.NewLine, ct);
+            else
+            {
+                await File.AppendAllTextAsync(FilePath, line + Environment.NewLine, ct);
+            }
+            _titleChanged |= title is not null;
+            return true;
         }
         finally
         {

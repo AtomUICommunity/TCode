@@ -40,6 +40,11 @@ public sealed class EditTool(ToolContext context) : IAgentTool
 
     public ToolPermission DescribePermission(JsonElement arguments)
     {
+        if (context.InPlanMode)
+        {
+            // Plan 模式：计划文件免审批，其他路径在执行时直接拦截（docs/design/plan-mode.md §6）
+            return ToolPermission.NoAccess;
+        }
         var path = context.Workspace.Resolve(arguments.Required("path"));
         return new(ToolAccess.Write, [path], Title: path);
     }
@@ -47,6 +52,10 @@ public sealed class EditTool(ToolContext context) : IAgentTool
     public Task<AgentToolResult> ExecuteAsync(ToolInvocation invocation, CancellationToken cancellationToken)
     {
         var path = context.Workspace.Resolve(invocation.Arguments.Required("path"));
+        if (context.InPlanMode && !context.WritableInPlanMode(path))
+        {
+            return Task.FromResult(AgentToolResult.Error(context.PlanModeWriteMessage));
+        }
         var edits = ParseEdits(invocation.Arguments);
         return context.Mutations.RunAsync(path, () => EditAsync(path, edits, cancellationToken), cancellationToken);
     }
@@ -132,6 +141,7 @@ public sealed class EditTool(ToolContext context) : IAgentTool
             return AgentToolResult.Error(ex.Message.Replace("{path}", path, StringComparison.Ordinal));
         }
 
+        updated = context.PrepareWrite(path, updated);
         var output = file.Encode(updated);
         await File.WriteAllBytesAsync(path, output, ct);
         context.Files.Record(path, output);
@@ -139,6 +149,10 @@ public sealed class EditTool(ToolContext context) : IAgentTool
         var diff = LineDiff.Compute(file.Text, updated, path);
         var snapshot = bytes.Length <= FileRevert.MaxSnapshotBytes ? file.Text : null;
         var message = $"Replaced {edits.Count} block(s) in {path}.";
+        if (context.WriteReminder(path, updated) is { } reminder)
+        {
+            message += "\n" + reminder;
+        }
         if (context.NestedInstructionsFor(path) is { } nested)
         {
             message += "\n" + nested;

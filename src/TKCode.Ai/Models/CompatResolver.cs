@@ -16,7 +16,10 @@ public static class CompatResolver
         bool RequiresToolResultName,
         bool SendEmptyToolsWithHistory,
         bool SupportsPromptCacheKey,
-        bool SupportsMidConversationSystem);
+        bool SupportsMidConversationSystem,
+        bool SupportsCacheControl,
+        bool SupportsIncludeObfuscation,
+        string? SessionAffinityHeader);
 
     public sealed record ResolvedAnthropicCompat(
         AnthropicThinkingMode Thinking,
@@ -26,6 +29,7 @@ public static class CompatResolver
         bool SupportsMidConversationSystem,
         bool SupportsEagerToolInputStreaming,
         bool SupportsCacheControl,
+        bool TopLevelCacheControl,
         IReadOnlyList<string> Betas);
 
     public static ResolvedChatCompat ResolveChat(ModelInfo model)
@@ -39,6 +43,12 @@ public static class CompatResolver
         var isDashScope = host.Contains("dashscope", StringComparison.OrdinalIgnoreCase);
         var isOpenRouter = host.Contains("openrouter", StringComparison.OrdinalIgnoreCase);
         var isMistral = host.Contains("mistral", StringComparison.OrdinalIgnoreCase);
+        var isXai = host.Equals("x.ai", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".x.ai", StringComparison.OrdinalIgnoreCase);
+        // Gemini 的 OpenAI 兼容端点对未知字段直接 400（Unknown name ...: Cannot find field）
+        var isGemini = host.Contains("googleapis.com", StringComparison.OrdinalIgnoreCase);
+        var isAliyun = isDashScope || host.Contains("aliyuncs", StringComparison.OrdinalIgnoreCase);
+        var isClaude = model.Id.Contains("claude", StringComparison.OrdinalIgnoreCase);
+        var isQwen = model.Id.Contains("qwen", StringComparison.OrdinalIgnoreCase);
 
         // 默认值依据 docs/protocols/openai-chat-completions.md §10（截至 2026-10 的各厂商文档）。
         var defaultThinking = !model.Reasoning ? ChatThinkingFormat.None
@@ -65,17 +75,22 @@ public static class CompatResolver
             c?.RequiresReasoningContentOnAssistant ?? (model.Reasoning && (isDeepSeek || isKimi)),
             c?.RequiresToolResultName ?? isMistral,
             c?.SendEmptyToolsWithHistory ?? false,
-            c?.SupportsPromptCacheKey ?? isOpenAI,
-            c?.SupportsMidConversationSystem ?? !isDashScope);
+            // 缓存键默认对所有端点发送：中转 / 网关据此把同一会话路由到同一上游；不认识的厂商通常忽略未知字段
+            c?.SupportsPromptCacheKey ?? !isGemini,
+            c?.SupportsMidConversationSystem ?? !isDashScope,
+            // Claude（OpenRouter、中转）与百炼 Qwen 的显式缓存要在 content 上加 cache_control，否则不缓存
+            c?.SupportsCacheControl ?? (isClaude || (isQwen && isAliyun)),
+            isOpenAI,
+            // 只认请求头的会话亲和：xAI Chat 用 x-grok-conv-id，OpenRouter 用 x-session-id 做粘性路由
+            isXai ? "x-grok-conv-id" : isOpenRouter ? "x-session-id" : null);
     }
 
     public static ResolvedAnthropicCompat ResolveAnthropic(ModelInfo model)
     {
         var host = Host(model);
         var isAnthropic = host.Length == 0 || host.EndsWith("anthropic.com", StringComparison.OrdinalIgnoreCase);
-        var bearerHost = host.Contains("moonshot", StringComparison.OrdinalIgnoreCase) ||
-                         host.Contains("kimi", StringComparison.OrdinalIgnoreCase) ||
-                         host.Contains("minimax", StringComparison.OrdinalIgnoreCase);
+        var isKimi = host.Contains("moonshot", StringComparison.OrdinalIgnoreCase) || host.Contains("kimi", StringComparison.OrdinalIgnoreCase);
+        var bearerHost = isKimi || host.Contains("minimax", StringComparison.OrdinalIgnoreCase);
         var family = isAnthropic ? ClaudeFamily.Of(model.Id) : null;
         var c = model.Compat;
         return new ResolvedAnthropicCompat(
@@ -87,7 +102,10 @@ public static class CompatResolver
             c?.AuthHeader is { } auth ? auth.Equals("bearer", StringComparison.OrdinalIgnoreCase) : bearerHost,
             c?.SupportsMidConversationSystem ?? (family?.SupportsMidConversationSystem ?? false),
             c?.SupportsEagerToolInputStreaming ?? isAnthropic,
-            c?.SupportsCacheControl ?? isAnthropic,
+            // 所有 Messages 端点默认带断点：中转 / 网关后面多半就是 Anthropic，没有断点就完全不缓存；不支持的厂商会忽略
+            c?.SupportsCacheControl ?? true,
+            // Kimi 只认顶层 cache_control（messages 内的断点被忽略，规格 §12）
+            isKimi,
             c?.AnthropicBetas ?? []);
     }
 

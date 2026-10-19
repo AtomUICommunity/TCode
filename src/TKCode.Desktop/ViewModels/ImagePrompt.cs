@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using TKCode.Desktop.Controls.Composer;
 using TKCode.Desktop.Localization;
 
 namespace TKCode.Desktop.ViewModels;
@@ -54,11 +55,15 @@ public static partial class ImagePrompt
         return builder.ToString();
     }
 
-    /// <summary>显示用：带路径的引用折叠回占位符。</summary>
-    public static string Collapse(string text) =>
-        text.Contains("[Image #", StringComparison.Ordinal)
-            ? ExpandedPattern().Replace(text, m => Placeholder(int.Parse(m.Groups[1].ValueSpan)))
-            : text;
+    /// <summary>显示用：图片引用折叠回占位符，附件文件引用折叠成文件名。</summary>
+    public static string Collapse(string text)
+    {
+        if (text.Contains("[Image #", StringComparison.Ordinal))
+        {
+            text = ExpandedPattern().Replace(text, m => Placeholder(int.Parse(m.Groups[1].ValueSpan)));
+        }
+        return AttachedFiles.Collapse(text);
+    }
 
     /// <summary>会话标题：折叠图片引用后的首行，过长时截断（与 Agent Host 的 SessionIndex.TitleOf 一致）。</summary>
     public static string? Title(string? text)

@@ -14,6 +14,7 @@
     <ItemGroup>
         <ProjectReference Include="..\TKCode.Terminal.Pty\TKCode.Terminal.Pty.csproj" />
         <ProjectReference Include="..\TKCode.Terminal.Protocol\TKCode.Terminal.Protocol.csproj" />
+        <ProjectReference Include="..\TKCode.Shell\TKCode.Shell.csproj" />
     </ItemGroup>
     <!-- 随包 ConPTY：只能由可执行项目引用（库项目经 ProjectReference 构建时拿不到 RuntimeIdentifier） -->
     <Import Project="..\..\native\ConPty.targets" />

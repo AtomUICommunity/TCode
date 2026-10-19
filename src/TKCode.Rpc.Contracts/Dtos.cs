@@ -41,7 +41,8 @@ public enum KeySourceDto
 /// <param name="IsDiscovered">来自 GET /models 自动发现。</param>
 /// <param name="HasOverride">settings.json 中为该模型写了覆盖字段。</param>
 /// <param name="Api">生效的协议（chat / responses / messages）。</param>
-/// <param name="ApiOverridden">协议由模型单独指定（否则跟随厂商）。</param>
+/// <param name="ApiOverridden">协议与厂商默认值不同：由用户为该模型单独指定，或目录中的固定规则（如 NextCoWork 的 Claude 系列）。</param>
+/// <param name="DefaultApi">没有用户覆盖时该模型的协议（厂商默认值或目录规则）；设置页“跟随厂商”指的就是它。</param>
 /// <param name="InputPrice">美元 / 百万 tokens（目录提供时）。</param>
 public sealed record ProviderModelDto(
     string Id,
@@ -58,7 +59,8 @@ public sealed record ProviderModelDto(
     bool IsDiscovered = false,
     bool HasOverride = false,
     string? Api = null,
-    bool ApiOverridden = false);
+    bool ApiOverridden = false,
+    string? DefaultApi = null);
 
 /// <summary>测试连接：可以带上尚未保存的表单值（为 null 时使用已保存的配置）。</summary>
 public sealed record ProviderTestRequest(string ProviderId, string? Api = null, string? BaseUrl = null, string? ApiKey = null);
@@ -153,8 +155,8 @@ public sealed record ModelsChangedNotification(IReadOnlyList<ModelDto> Models, I
 
 /// <summary>会话参数；为 null 的字段保持不变（新建会话时取模型默认值）。</summary>
 /// <param name="PermissionMode">权限档位：ask（询问，默认）/ autoApprove（自动放行，保留沙箱）/ fullAccess（完全授权，无沙箱）。
-/// 所有会话都有；重新打开会话时 fullAccess 回到 ask。</param>
-/// <param name="Role">会话的 role（docs/design/composer.md §10.3）：agent / ask / plan / 自定义 role 名。</param>
+/// 所有会话都有；重新打开会话时沿用记录的档位，包括 fullAccess。</param>
+/// <param name="Role">会话的 role（docs/design/composer.md §10.3）：agent / plan / acp / 自定义 role 名。</param>
 public sealed record SessionOptionsDto(string? ThinkingLevel = null, bool? FastMode = null, int? ContextWindow = null,
     string? PermissionMode = null, string? Role = null);
 
@@ -303,6 +305,36 @@ public sealed record UserInputResponse(string Outcome, IReadOnlyList<UserAnswerD
 /// <param name="Text">“其他”里输入的文本；空表示没有。</param>
 public sealed record UserAnswerDto(string QuestionId, IReadOnlyList<string> Selected, string? Text = null);
 
+/// <summary>计划审批（plan/review，docs/design/plan-mode.md §13.1）。</summary>
+/// <param name="Source">builtin / claude-code：决定面板标题。</param>
+/// <param name="ToolCallId">对应的工具调用（转录里的计划卡片据此关联）。</param>
+/// <param name="PlanPath">计划文件的绝对路径（“在编辑器中打开”）。</param>
+/// <param name="Plan">计划全文（Markdown）。</param>
+/// <param name="Choices">可选的批准方式，按显示顺序：clear / auto / ask / acp 的子集。</param>
+/// <param name="PermissionMode">当前权限档位（ask / autoApprove / fullAccess）：决定选项上显示的档位。</param>
+public sealed record PlanReviewRequest(
+    string SessionId,
+    string RequestId,
+    string Source,
+    string? ToolCallId,
+    string PlanPath,
+    string Plan,
+    IReadOnlyList<string> Choices,
+    string PermissionMode);
+
+/// <param name="Outcome">approved / revise / dismissed。</param>
+/// <param name="Choice">批准时选中的方式（<see cref="PlanReviewRequest.Choices"/> 之一）。</param>
+/// <param name="Feedback">继续完善时的反馈；空表示没有。</param>
+/// <param name="EditedPlan">用户在面板里编辑过计划时的新版本；null 表示没改。</param>
+public sealed record PlanReviewResponse(string Outcome, string? Choice = null, string? Feedback = null, string? EditedPlan = null)
+{
+    public const string Approved = "approved";
+    public const string Revise = "revise";
+    public const string Dismissed = "dismissed";
+
+    public static PlanReviewResponse Dismiss { get; } = new(Dismissed);
+}
+
 public enum RuntimeStatusDto
 {
     Unknown,
@@ -329,3 +361,12 @@ public sealed record RuntimeDto(
     bool SupportsResume);
 
 public sealed record UsageDto(long Input, long Output, long CacheRead, long CacheWrite);
+
+/// <summary>上下文占用（输入框下方占用环的悬停卡片，docs/design/context-usage.md）。</summary>
+/// <param name="Tokens">当前上下文的 token 数（最近一次真实用量加之后新增内容的估算）。</param>
+/// <param name="Breakdown">按来源分类，各类之和等于 <paramref name="Tokens"/>；外部运行时为 null。</param>
+/// <param name="CacheHitRate">整个会话（含已压缩掉的消息）按 token 加权的提示缓存命中率（0–1）；没有任何缓存读写时为 null。</param>
+public sealed record ContextUsageDto(long Tokens, ContextBreakdownDto? Breakdown, double? CacheHitRate);
+
+/// <summary>上下文按来源分类的 token 数：估算后按真实用量归一，差额计入 <paramref name="Other"/>。</summary>
+public sealed record ContextBreakdownDto(long SystemPrompt, long SystemTools, long McpTools, long Skills, long Messages, long Other);

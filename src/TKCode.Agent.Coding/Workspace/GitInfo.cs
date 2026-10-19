@@ -27,7 +27,8 @@ public sealed record GitInfo(string Root, string? Branch)
         return null;
     }
 
-    private static string? ReadGitDirFile(string file, string baseDir)
+    /// <summary>worktree / submodule 的 ".git" 文件指向的 git 目录；读不出时为 null。</summary>
+    internal static string? ReadGitDirFile(string file, string baseDir)
     {
         try
         {

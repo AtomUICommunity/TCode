@@ -34,22 +34,29 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
             ["stream"] = true,
         };
 
+        // 缓存断点（规格 §8.3，参考 Claude Code）：系统提示一个、消息末尾一个，TTL 一致
+        PromptCacheTtl? cacheTtl = compat.SupportsCacheControl ? options.CacheTtl : null;
         if (!string.IsNullOrEmpty(context.SystemPrompt))
         {
             var block = new JsonObject { ["type"] = "text", ["text"] = context.SystemPrompt };
-            if (compat.SupportsCacheControl)
+            if (cacheTtl is { } ttl)
             {
-                block["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+                // 渲染顺序是 tools → system，这个断点同时缓存工具定义
+                block["cache_control"] = PromptCache.Control(ttl);
             }
             body["system"] = new JsonArray((JsonNode)block);
         }
-        if (compat.SupportsCacheControl && !options.SkipCacheWrite)
+        if (cacheTtl is { } topTtl && compat.TopLevelCacheControl && !options.SkipCacheWrite)
         {
-            // 顶层自动缓存：断点随对话尾部移动（规格 §8.3）。
-            body["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+            // 只认顶层自动缓存的端点（Kimi）：断点随对话尾部移动
+            body["cache_control"] = PromptCache.Control(topTtl);
         }
 
-        body["messages"] = BuildMessages(model, context.Messages, compat);
+        body["messages"] = BuildMessages(model, context.Messages, compat, cacheTtl, options.SkipCacheWrite);
+        if (!string.IsNullOrEmpty(options.SessionId))
+        {
+            body["metadata"] = new JsonObject { ["user_id"] = PromptCache.AnthropicUserId(options.SessionId) };
+        }
 
         if (context.Tools.Count > 0)
         {
@@ -170,10 +177,13 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
     /// <summary>
     /// 转换消息：第一条必须是 user；相邻同角色合并（tool_result 排在最前）；
     /// mid-conversation system 消息只在支持且位置合法时发送，否则降级为 &lt;system-reminder&gt; 文本。
+    /// <paramref name="cacheTtl"/> 不为 null 时在消息里放一个缓存断点（见方法末尾）。
     /// </summary>
-    private static JsonArray BuildMessages(ModelInfo model, IReadOnlyList<Message> messages, CompatResolver.ResolvedAnthropicCompat compat)
+    private static JsonArray BuildMessages(ModelInfo model, IReadOnlyList<Message> messages, CompatResolver.ResolvedAnthropicCompat compat,
+        PromptCacheTtl? cacheTtl, bool skipCacheWrite)
     {
         var turns = new List<(string Role, List<JsonNode> Blocks)>();
+        JsonObject? sharedPrefixEnd = null;
 
         void Add(string role, IEnumerable<JsonNode> blocks)
         {
@@ -194,6 +204,11 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
 
         for (var i = 0; i < messages.Count; i++)
         {
+            if (i == messages.Count - 1)
+            {
+                // 最后一条消息之前的末块（合并进同一 turn 之前取，按引用记录，不受后面排序影响）
+                sharedPrefixEnd = LastCacheable(turns);
+            }
             switch (messages[i])
             {
                 case UserMessage user:
@@ -220,7 +235,6 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
             }
         }
 
-        var array = new JsonArray();
         foreach (var (role, blocks) in turns)
         {
             if (role == "user")
@@ -228,6 +242,19 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
                 // tool_result 必须排在 content 最前面（规格 §4-4）。
                 blocks.Sort((a, b) => IsToolResult(b).CompareTo(IsToolResult(a)));
             }
+        }
+
+        // 同 Claude Code：消息里只放一个断点，在最后一条消息的末块。每次请求在新的末尾写入，
+        // 并从断点往前（最多 20 个位置）找到上一次请求写下的条目读取。分叉请求（压缩）放在倒数第二条消息上：
+        // 那里是与主循环共享前缀的末尾，只读不为自己独有的尾部写入新条目。
+        if (cacheTtl is { } ttl && (skipCacheWrite ? sharedPrefixEnd : LastCacheable(turns)) is { } marker)
+        {
+            marker["cache_control"] = PromptCache.Control(ttl);
+        }
+
+        var array = new JsonArray();
+        foreach (var (role, blocks) in turns)
+        {
             var content = new JsonArray();
             foreach (var block in blocks)
             {
@@ -239,6 +266,27 @@ public sealed class AnthropicMessagesApi(HttpClient http) : HttpWireApi(http)
     }
 
     private static bool IsToolResult(JsonNode node) => node["type"]?.GetValue<string>() == "tool_result";
+
+    /// <summary>可以放断点的最后一个块：跳过 system turn 与 thinking 块（放在它们上面会 400，规格 §8.1）。</summary>
+    private static JsonObject? LastCacheable(List<(string Role, List<JsonNode> Blocks)> turns)
+    {
+        for (var t = turns.Count - 1; t >= 0; t--)
+        {
+            if (turns[t].Role == "system")
+            {
+                continue;
+            }
+            var blocks = turns[t].Blocks;
+            for (var b = blocks.Count - 1; b >= 0; b--)
+            {
+                if (blocks[b] is JsonObject block && block["type"]?.GetValue<string>() is not ("thinking" or "redacted_thinking"))
+                {
+                    return block;
+                }
+            }
+        }
+        return null;
+    }
 
     private static JsonNode TextBlock(string text) => new JsonObject { ["type"] = "text", ["text"] = text };
 

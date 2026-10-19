@@ -130,4 +130,18 @@ public sealed class JsonRpcConnectionTests
         Assert.Equal(["compact", "init"], commands.Select(c => c.Name));
         Assert.Equal("<instructions>", commands[0].ArgumentHint);
     }
+
+    [Theory]
+    [InlineData(false, "textEnded")]
+    [InlineData(true, "thinkingEnded")]
+    public void BlockEndedEvent_RoundTripsThroughSourceGeneratedContext(bool thinking, string kind)
+    {
+        SessionEvent ended = thinking ? new ThinkingEnded("m1", 7) : new TextEnded("m1", 7);
+        var notification = new SessionEventNotification("s1", 3, ended);
+        var json = JsonSerializer.Serialize(notification, RpcJsonContext.Default.SessionEventNotification);
+
+        Assert.Contains($"\"kind\":\"{kind}\"", json);
+        var back = JsonSerializer.Deserialize(json, RpcJsonContext.Default.SessionEventNotification);
+        Assert.Equal(notification, back);
+    }
 }

@@ -15,7 +15,7 @@ namespace TKCode.Desktop.Tests;
 /// 只在设置 TKCODE_README_SCREENSHOTS=&lt;目录&gt; 时运行（tools/readme-screenshots.sh），不参与常规测试。
 /// 设备名用 TKCODE_DEVICE_NAME 固定，模型用 settings.json 里的占位 Key，不发出任何真实请求。
 /// </summary>
-public sealed class ReadmeScreenshotTests
+public sealed partial class ReadmeScreenshotTests
 {
     [Theory]
     [InlineData("en")]
@@ -31,7 +31,7 @@ public sealed class ReadmeScreenshotTests
         WriteProject(project);
         Environment.SetEnvironmentVariable("TKCODE_HOME", home);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "0");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         Environment.SetEnvironmentVariable("TKCODE_DEVICE_NAME", "MacBook Pro");
@@ -99,6 +99,10 @@ public sealed class ReadmeScreenshotTests
             Save("conversation-light");
             await themes.SetModeAsync(ThemeMode.Dark);
 
+            if (zh && Environment.GetEnvironmentVariable("TKCODE_ARTICLE_SCREENSHOTS") == "1")
+            {
+                await CaptureArticleAsync(vm, window, project, output!);
+            }
             window.Close();
             return true;
         }, TestContext.Current.CancellationToken);
@@ -244,7 +248,7 @@ public sealed class ReadmeScreenshotTests
             Result("c3", "edit", $"Replaced 1 block(s) in {path}.", Next(),
                 new JsonObject { ["kind"] = "diff", ["path"] = path, ["diff"] = diff, ["added"] = 9, ["removed"] = 2, ["firstChangedLine"] = 8 }),
             Assistant(Next(), Call("c4", "bash", new JsonObject { ["command"] = "dotnet test" })),
-            Result("c4", "bash", "  Determining projects to restore...\n  WeatherApi -> bin/Debug/net10.0/WeatherApi.dll\n  WeatherApi.Tests -> bin/Debug/net10.0/WeatherApi.Tests.dll\n\nPassed!  - Failed: 0, Passed: 24, Skipped: 0, Total: 24, Duration: 1.8 s",
+            Result("c4", "bash", "  Determining projects to restore...\n  WeatherApi -> bin/Debug/net11.0/WeatherApi.dll\n  WeatherApi.Tests -> bin/Debug/net11.0/WeatherApi.Tests.dll\n\nPassed!  - Failed: 0, Passed: 24, Skipped: 0, Total: 24, Duration: 1.8 s",
                 Next(), new JsonObject { ["kind"] = "command", ["command"] = "dotnet test", ["exitCode"] = 0 }),
             Assistant(Next(), Text(zh
                 ? """

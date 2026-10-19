@@ -194,7 +194,9 @@ public sealed class OpenAIChatCompletionsApiTests
 
         var last = handler.Bodies[0]["messages"]!.AsArray()[^1]!;
         Assert.Equal("user", last["role"]!.GetValue<string>());
-        Assert.Contains("<system-reminder>", last["content"]!.GetValue<string>());
+        // 百炼 Qwen 用显式缓存：字符串 content 改写成带 cache_control 的 text part
+        Assert.Contains("<system-reminder>", last["content"]![0]!["text"]!.GetValue<string>());
+        Assert.NotNull(last["content"]![0]!["cache_control"]);
         Assert.True(handler.Bodies[0]["enable_thinking"]!.GetValue<bool>());
     }
 

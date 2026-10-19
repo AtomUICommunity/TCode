@@ -66,6 +66,7 @@ internal static class SmokeMode
                 .UseSkia()
                 .UseHarfBuzz()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseTKCodeAtomUI()
                 .SetupWithoutStarting();
 
             var vm = provider.GetRequiredService<MainWindowViewModel>();
@@ -155,6 +156,29 @@ internal static class SmokeMode
                 && window.GetVisualDescendants().Any(v => v.DataContext is QuestionCardViewModel { Status: "answered" }));
             Check("question.card", answered, window.GetVisualDescendants().Select(v => v.DataContext).OfType<QuestionCardViewModel>().FirstOrDefault()?.Lines
                 .FirstOrDefault()?.Answer);
+            // 计划审批（docs/design/plan-mode.md）：Plan 模式下写计划文件 → exit_plan_mode → plan/review 审批面板 →
+            // 批准“自动执行”后 Host 推送 optionsChanged 切回 Agent，转录里留下计划卡片
+            var planPath = vm.Conversation.Active is { } planSession
+                ? Path.Combine(home, "plans", Path.GetFileNameWithoutExtension(planSession.FilePath) + ".md")
+                : "";
+            vm.Conversation.ComposerText = $$"""mcp:write {"path":"{{System.Text.Json.JsonEncodedText.Encode(planPath)}}","content":"## Plan\n\n- Step one\n- Step two\n"}""";
+            vm.Conversation.SendCommand.Execute(null);
+            var planWritten = WaitUntil(() => vm.Conversation.Active is { IsRunning: false } && File.Exists(planPath));
+            vm.Conversation.ComposerText = "mcp:exit_plan_mode {}";
+            vm.Conversation.SendCommand.Execute(null);
+            var reviewing = WaitUntil(() => vm.Conversation.IsReviewingPlan);
+            Pump(5);
+            var review = vm.Conversation.Active?.CurrentPlanReview;
+            Check("plan.panel", planWritten && reviewing && window.GetVisualDescendants().OfType<Views.PlanReviewPanelView>().Any(p => p.IsEffectivelyVisible),
+                review?.Title);
+            if (review?.Options.FirstOrDefault(o => o.Choice == "auto") is { } auto)
+            {
+                review.Select(auto);
+                review.Confirm();
+            }
+            var planApproved = WaitUntil(() => vm.Conversation.Active is { IsRunning: false, Options.Role: "agent" } && vm.Conversation.RolePicker.Role == "agent"
+                && window.GetVisualDescendants().Any(v => v.DataContext is PlanCardViewModel { Status: "approved" }));
+            Check("plan.approved", planApproved, $"{vm.Conversation.Active?.Options.Role} / {vm.Conversation.Active?.Options.PermissionMode}");
             Check("files.search", WaitUntil(() => search.IsCompleted) && search.Result.Items.FirstOrDefault()?.Path == "README.md",
                 search.IsCompletedSuccessfully ? string.Join(", ", search.Result.Items.Select(i => i.Path)) : search.Exception?.GetBaseException().Message);
             CheckTerminal(Check, vm, project);

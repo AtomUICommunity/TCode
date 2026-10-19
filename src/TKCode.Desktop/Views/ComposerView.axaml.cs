@@ -28,9 +28,9 @@ public partial class ComposerView : UserControl
         InitializeComponent();
         // 隧道阶段拦截：Enter 发送，Shift+Enter 交给输入框换行。
         Input.AddHandler(KeyDownEvent, OnInputKeyDown, RoutingStrategies.Tunnel);
-        // 粘贴：剪贴板里有图片（截图或图片文件）时作为附件，否则照常粘贴文本
+        // 粘贴：剪贴板里有图片时作为图片附件，其他文件插入为附件 tag（只带绝对路径），否则照常粘贴文本
         Input.Pasting += OnPasting;
-        // 拖入：图片成为附件，其他文件插入为文件 tag
+        // 拖入：图片成为图片附件；其他文件不读入会话，插入附件 tag，发送时把绝对路径包进提示词
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragEnterEvent, (_, e) => OnDragOver(e), RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
         AddHandler(DragDrop.DragOverEvent, (_, e) => OnDragOver(e), RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
@@ -140,14 +140,23 @@ public partial class ComposerView : UserControl
     {
         try
         {
-            // 复制的图片文件（Finder 等）优先；其次是位图（截图、浏览器复制的图片）
+            // 复制的文件（Finder 等）优先：图片导入为图片附件，其他文件只插入绝对路径；其次是位图（截图）
             var files = await clipboard.TryGetFilesAsync();
-            var imported = files?.Select(f => f.TryGetLocalPath()).OfType<string>().Where(p => AttachmentStore.MimeTypeOf(p) is not null).ToArray() ?? [];
-            if (imported.Length > 0)
+            var paths = files?.Select(f => f.TryGetLocalPath()).OfType<string>().ToArray() ?? [];
+            if (paths.Length > 0)
             {
-                foreach (var path in imported)
+                foreach (var path in paths)
                 {
-                    AddImage(await Task.Run(() => AttachmentStore.ImportFile(path)));
+                    if (AttachmentStore.MimeTypeOf(path) is not null)
+                    {
+                        var imported = await Task.Run(() => AttachmentStore.ImportFile(path));
+                        if (imported is not null)
+                        {
+                            AddImage(imported);
+                            continue;
+                        }
+                    }
+                    AddLocalPath(path);
                 }
                 return;
             }
@@ -163,9 +172,9 @@ public partial class ComposerView : UserControl
         }
         catch (Exception ex)
         {
-            App.Services?.GetService<ILogger<ComposerView>>()?.LogWarning(ex, "Paste image failed");
+            App.Services?.GetService<ILogger<ComposerView>>()?.LogWarning(ex, "Paste failed");
         }
-        // 没有图片：照常粘贴文本（不再触发本处理器）
+        // 没有文件：照常粘贴文本（不再触发本处理器）
         await Input.PasteAsync(raiseEvent: false);
     }
 
@@ -182,7 +191,7 @@ public partial class ComposerView : UserControl
     private static string[] ImageFiles(IDataTransfer data) =>
         data.TryGetFiles()?.Select(f => f.TryGetLocalPath()).OfType<string>().Where(p => AttachmentStore.MimeTypeOf(p) is not null).ToArray() ?? [];
 
-    /// <summary>拖动经过（输入框自身，或会话区域转发）：有图片时显示可放下的高亮。</summary>
+    /// <summary>拖动经过（输入框自身，或会话区域转发）：有图片或本地文件时显示可放下的高亮。</summary>
     public void OnDragOver(DragEventArgs e)
     {
         if (_vm is null || !CanDrop(e.DataTransfer))
@@ -196,24 +205,28 @@ public partial class ComposerView : UserControl
 
     public void SetDropTarget(bool active) => Classes.Set("drop-target", active);
 
-    /// <summary>放下：图片文件逐个导入，其次是位图，图片 tag 插入到光标处；其他文件插入为文件 tag。</summary>
+    /// <summary>放下：图片文件逐个导入，其次是位图；其他文件插入为附件 tag（绝对路径），目录仍是文件夹 tag。</summary>
     public void OnDrop(DragEventArgs e)
     {
         SetDropTarget(false);
-        if (_vm is null || !CanDrop(e.DataTransfer))
+        if (_vm is not { } vm || !CanDrop(e.DataTransfer))
         {
             return;
         }
         e.DragEffects = DragDropEffects.Copy;
         e.Handled = true;
-        var others = LocalPaths(e.DataTransfer).Where(p => AttachmentStore.MimeTypeOf(p) is null).ToArray();
+        var paths = LocalPaths(e.DataTransfer);
+        // 扩展名像图片、但是目录（例如 pics.png）时不当图片导入
+        var files = paths.Where(p => File.Exists(p) && AttachmentStore.MimeTypeOf(p) is not null).ToArray();
+        var images = new HashSet<string>(files, StringComparer.Ordinal);
+        var others = paths.Where(p => !images.Contains(p)).ToArray();
         if (others.Length > 0)
         {
-            InsertWithSpacing(others.SelectMany(p => new Segment[] { FileReference(p), new TextSegment(" ") }).SkipLast(1).ToList());
+            InsertWithSpacing(others.SelectMany(p => new Segment[] { AttachedFiles.SegmentForLocalPath(p, vm.CurrentCwd), new TextSegment(" ") }).SkipLast(1).ToList());
             Input.Focus();
         }
-        var files = ImageFiles(e.DataTransfer);
-        var bitmap = files.Length == 0 ? e.DataTransfer.TryGetBitmap() : null;
+        // 纯位图（截图拖入）才当图片；拖文件时数据里可能附带图标，不要再当成一张图片
+        var bitmap = files.Length == 0 && others.Length == 0 ? e.DataTransfer.TryGetBitmap() : null;
         _ = AddDroppedAsync(files, bitmap);
     }
 
@@ -249,22 +262,76 @@ public partial class ComposerView : UserControl
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = true,
-            FileTypeFilter =
-            [
-                new FilePickerFileType(Strings.Get(TKCodeLangResourceKind.ImageFileTypeName))
-                {
-                    Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"],
-                    AppleUniformTypeIdentifiers = ["public.image"],
-                    MimeTypes = ["image/*"],
-                },
-            ],
+            FileTypeFilter = [AllFilesType(), ImageFilesType(), DocumentFilesType()],
         });
         foreach (var path in files.Select(f => f.TryGetLocalPath()).OfType<string>())
         {
-            AddImage(await Task.Run(() => AttachmentStore.ImportFile(path)));
+            if (AttachmentStore.MimeTypeOf(path) is not null)
+            {
+                var imported = await Task.Run(() => AttachmentStore.ImportFile(path));
+                if (imported is not null)
+                {
+                    AddImage(imported);
+                    continue;
+                }
+            }
+            AddLocalPath(path);
         }
         Input.Focus();
     }
+
+    /// <summary>所有文件。macOS 用 public.item；其他平台用通配模式。</summary>
+    private static FilePickerFileType AllFilesType() => new(Strings.Get(TKCodeLangResourceKind.AllFilesTypeName))
+    {
+        Patterns = ["*.*", "*"],
+        AppleUniformTypeIdentifiers = ["public.item"],
+        MimeTypes = ["*/*"],
+    };
+
+    private static FilePickerFileType ImageFilesType() => new(Strings.Get(TKCodeLangResourceKind.ImageFileTypeName))
+    {
+        Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp"],
+        AppleUniformTypeIdentifiers = ["public.image"],
+        MimeTypes = ["image/*"],
+    };
+
+    /// <summary>日志、文本和常见办公文档。任意其他格式走 <see cref="AllFilesType"/>。</summary>
+    private static FilePickerFileType DocumentFilesType() => new(Strings.Get(TKCodeLangResourceKind.DocumentFileTypeName))
+    {
+        Patterns =
+        [
+            "*.txt", "*.log", "*.md", "*.csv", "*.json", "*.xml", "*.yaml", "*.yml", "*.pdf",
+            "*.xls", "*.xlsx", "*.doc", "*.docx", "*.ppt", "*.pptx",
+        ],
+        AppleUniformTypeIdentifiers =
+        [
+            "public.text",
+            "public.plain-text",
+            "public.comma-separated-values-text",
+            "public.json",
+            "public.xml",
+            "com.adobe.pdf",
+            "com.microsoft.excel.xls",
+            "org.openxmlformats.spreadsheetml.sheet",
+            "com.microsoft.word.doc",
+            "org.openxmlformats.wordprocessingml.document",
+            "com.microsoft.powerpoint.ppt",
+            "org.openxmlformats.presentationml.presentation",
+        ],
+        MimeTypes =
+        [
+            "text/*",
+            "application/pdf",
+            "application/json",
+            "application/xml",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ],
+    };
 
     /// <summary>加入附件，并在光标处插入图片 tag。</summary>
     private void AddImage((string Path, string MimeType)? file)
@@ -285,21 +352,14 @@ public partial class ComposerView : UserControl
         Input.InsertSegments([.. needsSpace ? [new TextSegment(" ")] : Array.Empty<Segment>(), .. segments, new TextSegment(" ")]);
     }
 
-    /// <summary>拖入的文件：工作区内的为文件 / 文件夹 tag（相对路径），工作区外的为绝对路径文字。</summary>
-    private Segment FileReference(string path)
+    /// <summary>非图片的本地路径：文件是附件 tag，目录是文件夹 tag。</summary>
+    private void AddLocalPath(string path)
     {
-        var folder = Directory.Exists(path);
-        var root = _vm?.CurrentCwd;
-        if (root is not null)
+        if (_vm is null)
         {
-            var relative = Path.GetRelativePath(root, path);
-            if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative))
-            {
-                relative = relative.Replace('\\', '/');
-                return new TagSegment(folder ? TagKind.Folder : TagKind.File, relative, folder ? relative : Path.GetFileName(path));
-            }
+            return;
         }
-        return new TextSegment(path.Any(char.IsWhiteSpace) ? $"\"{path}\"" : path);
+        InsertWithSpacing([AttachedFiles.SegmentForLocalPath(path, _vm.CurrentCwd)]);
     }
 
     private void OnCutClick(object? sender, RoutedEventArgs e) => _ = Input.CutAsync();

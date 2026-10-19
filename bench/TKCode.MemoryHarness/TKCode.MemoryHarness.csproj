@@ -3,6 +3,8 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <PublishAot>true</PublishAot>
+        <!-- 与 Desktop 一样保留 Avalonia 的完整资源构建流程。 -->
+        <UseOptimizedPublish>false</UseOptimizedPublish>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>

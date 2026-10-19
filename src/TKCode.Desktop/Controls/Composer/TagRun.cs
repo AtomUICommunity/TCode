@@ -109,6 +109,7 @@ internal sealed class TagRun : DrawableTextRun
             TagKind.Skill => LucideKind.Sparkles,
             TagKind.McpResource => LucideKind.Plug,
             TagKind.Image => LucideKind.Image,
+            TagKind.AttachedFile => LucideKind.Paperclip,
             _ => LucideKind.FileText,
         };
         lock (Icons)

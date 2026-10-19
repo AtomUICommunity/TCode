@@ -62,7 +62,7 @@ public sealed record ModelCompat
     public bool? RequiresToolResultName { get; init; }
     /// <summary>历史有工具调用而本次无工具时发送 tools: []（LiteLLM 等代理需要）。</summary>
     public bool? SendEmptyToolsWithHistory { get; init; }
-    /// <summary>发送 OpenAI 的 prompt_cache_key 与 stream_options.include_obfuscation:false。</summary>
+    /// <summary>发送 prompt_cache_key（按会话）。默认对所有端点发送，Gemini 的 OpenAI 兼容端点除外（未知字段会 400）。</summary>
     public bool? SupportsPromptCacheKey { get; init; }
 
     /// <summary>对话中途的 system 消息是否可用；不可用时改写为 &lt;system-reminder&gt; 用户文本。</summary>
@@ -80,6 +80,10 @@ public sealed record ModelCompat
     /// <summary>认证方式："x-api-key"（Anthropic、DeepSeek、智谱）或 "bearer"（Kimi、MiniMax）。</summary>
     public string? AuthHeader { get; init; }
     public bool? SupportsEagerToolInputStreaming { get; init; }
+    /// <summary>
+    /// 在内容块上放 cache_control 断点。Messages 协议默认开启（所有端点）；Chat 协议默认只对 Claude 模型
+    /// 与百炼的 Qwen 模型开启（它们的显式缓存需要断点）。设为 false 可关闭。
+    /// </summary>
     public bool? SupportsCacheControl { get; init; }
     /// <summary>附加的 anthropic-beta 头。</summary>
     public IReadOnlyList<string>? AnthropicBetas { get; init; }

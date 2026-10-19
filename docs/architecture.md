@@ -6,7 +6,8 @@ TKCode 是基于 Avalonia + AtomUI 的桌面 AI Agent 客户端。视觉最初�
 
 | 维度 | 决策 | 说明 |
 |---|---|---|
-| UI 组件库 | AtomUI.Desktop.Controls 6.2.5（NuGet） | 不引用 `../AtomUI` 源码；Avalonia 版本跟随 AtomUI（12.1.3），.NET 10 |
+| .NET SDK / 目标框架 | 11.0.100-rc.2.26504.105 / `net11.0` | `global.json` 允许预发布；`Directory.Build.props` 统一启用 Runtime Async（仍属预览特性），微软 Hosting 包跟随同一 RC2 版本 |
+| UI 组件库 | AtomUI.Desktop.Controls 6.2.6（NuGet） | 不引用 `../AtomUI` 源码；Avalonia 版本跟随 AtomUI（12.1.4），.NET 11 RC2 |
 | 协议层 | 自研统一协议层，适配器直接基于 `HttpClient` + `SseParser` | 每种线协议一个适配器：Chat Completions / Responses / Messages；厂商差异用兼容配置描述 |
 | Agent 运行时 | pi 式分层 + **独立 Agent Host 进程** | UI 与 Host 通过 stdio 上的 JSON-RPC 2.0 通信（自研 `JsonRpcConnection`，NativeAOT 安全） |
 | UI 定制 | 主题 Token + 定向覆盖 | 自定义主题 XML → 少量 ControlTheme → TKCode 复合控件 |
@@ -14,6 +15,8 @@ TKCode 是基于 Avalonia + AtomUI 的桌面 AI Agent 客户端。视觉最初�
 | 窗口 | Cursor 式融合标题栏 | macOS 红绿灯嵌入侧栏顶部；Windows/Linux 自绘窗口按钮 |
 | 主题 | 暗色 + 亮色，支持跟随系统 | `TKCodeDark` / `TKCodeLight` 两套主题定义 |
 | 会话存储 | append-only JSONL 树 | 与 pi 的会话格式思路一致 |
+
+AtomUI 6.2.6 的隔离构建工具仍运行在 .NET 10，构建机需同时安装 .NET 10 Runtime（或包含它的 SDK）。主解决方案统一使用 .NET 11 SDK 与 `net11.0`，发布的 NativeAOT 程序自带 .NET 11 运行时；Release CI 安装两个 SDK，并由 `global.json` 选择 .NET 11。
 
 ## 2. 工程结构与依赖方向
 
@@ -66,7 +69,7 @@ Start → (Text|Thinking|ToolCall)Start → *Delta → *End … → Done | Error
 ### 3.3 必须遵守的协议约束（来自调研）
 
 1. **历史只追加**：Anthropic 新模型的 preserved thinking 会校验历史前缀，修改历史会使后续思考块失效甚至返回 400。
-   - 系统提示和工具集在会话开始时冻结；
+   - 系统提示和工具集在会话开始时冻结（变化以追加 `SystemMessage` 补丁表达；模式切换类工具可以让新工具集在两次模型请求之间生效，见 [design/plan-mode.md](design/plan-mode.md) §9）；
    - 变化通过追加系统消息表达；
    - 压缩采用"摘要 + 新一轮"的简单形态（docs/design/compaction.md）：唯一允许替换历史的操作，只在两次模型请求之间发生；压缩前的消息留在会话文件中供界面回看。
 2. **思考 / 推理原样回放**：
@@ -126,7 +129,8 @@ PromptAsync → AgentStart
 - **工具并发**：预检（含审批）串行；执行时，批内有 `Exclusive` 工具就整批串行，否则并行。结果按源顺序追加。进度事件按报告顺序送达，并且先于结束事件。
 - **审批**：`BeforeToolCall` 钩子收到工具描述的 `ToolPermission`。Host 按 `PermissionPolicy` 判定：工作区内的只读操作和只读命令放行，其余按权限档位决定是否通过 `tool/approve` 询问 UI。详见 [builtin-agent-tools.md](design/builtin-agent-tools.md) §10。
 - **提问**：内置 `ask_user` 工具和外部运行时的提问（Claude `AskUserQuestion`、Codex `requestUserInput`）经 `input/request` 交给 UI 的问答面板，不受权限档位影响，从不自动回答。详见 [ask-user.md](design/ask-user.md)。
-- **系统提示**：按节构建，开头的版本冻结。每批用户输入之前，如果某节有变化，就追加一条 `SystemMessage` 补丁。快照记录在 JSONL 的 `systemPrompt` 条目里，恢复会话时以它为准。
+- **系统提示**：按节构建，开头的版本冻结。每批用户输入之前，如果某节有变化，就追加一条 `SystemMessage` 补丁；`exit_plan_mode` / `enter_plan_mode` 切换模式后，补丁紧跟在这批工具结果之后（[design/plan-mode.md](design/plan-mode.md) §9）。快照记录在 JSONL 的 `systemPrompt` 条目里，恢复会话时以它为准。
+- **项目记忆**：`~/.tkcode/projects/<项目键>/memory/` 的 MEMORY.md 索引作为会话开头（以及压缩后）的一条 `SystemMessage`（`Source = memory`）注入，模型用 read / write / edit 免审批读写记忆文件。详见 [design/memory.md](design/memory.md)。
 
 ## 5. 进程模型与 RPC
 
@@ -144,13 +148,15 @@ PromptAsync → AgentStart
 
   | 方向 | 方法 |
   |---|---|
-  | UI → Host | `host/initialize`、`models/list`、`session/create\|list\|open\|prompt\|abort\|setModel\|setOptions\|close` |
+  | UI → Host | `host/initialize`、`models/list`、`session/create\|list\|open\|prompt\|abort\|setModel\|setOptions\|close`、`session/contextUsage`（上下文容量卡片，见 [context-usage.md](design/context-usage.md)） |
   | Host ↔ Host | `peer/list`、`peer/send`（本机 Unix socket，用于跨窗口的 `send_message` / `list_agents`） |
   | Host → UI | `session/event`（notification）、`tool/approve`、`input/request`（Agent 提问，见 [ask-user.md](design/ask-user.md)） |
 
 - 事件只携带增量，并带单调递增的 `Seq`。
+- 内容块结束（协议版本 21）：`textEnded` / `thinkingEnded` 携带 `MessageId` 与 `ContentIndex`，UI 立即结束对应正文流或思考状态；不等待整条助手消息或工具执行结束。没有增量的空块不新增界面条目。
+- 会话标题（协议版本 22）：首条用户消息后在独立上下文中异步生成短标题，优先使用 `settings.fastModel`，未配置或不可用时跟随会话模型。保存为 `meta.title` 后推送 `sessionTitleChanged`（`Title`）；手动重命名优先，失败时保留首条消息标题。见 [settings.md](settings.md) §2.1。
 - 会话列表与恢复（协议版本 3）：
-  - `session/list(cwd?)` 读取会话文件，返回标题、项目、模型、最近修改时间和运行状态。标题取第一条用户消息的首行；`cwd` 为 null 时列出全部项目。
+  - `session/list(cwd?)` 读取会话文件，返回标题、项目、模型、最近修改时间和运行状态。标题优先取 `meta.title`（自动生成或手动命名），否则取第一条用户消息的首行；`cwd` 为 null 时列出全部项目。
   - `session/open(filePath)` 返回会话和当前分支的历史（`HistoryMessageDto`），UI 用它重建转录。同一文件已经打开时直接返回该会话，避免两个 Agent 同时写一个文件。
   - 恢复时，模型和参数取分支上最后一条 `modelChange` / `optionsChange`；记录的模型不在目录中时退回第一个可用模型。
 - 会话参数（协议版本 2 起）：
@@ -161,8 +167,11 @@ PromptAsync → AgentStart
 
 ## 5.1 NativeAOT 约束（整个客户端必须支持 AOT）
 
-- `TKCode.Desktop` 和 `TKCode.AgentHost` 都设置了 `PublishAot=true`，构建时 AOT 和裁剪分析器始终开启；库项目标记 `IsAotCompatible`。
-- 验证基线（2026-10-16，osx-arm64）：两个可执行项目 AOT 发布均为 **0 个 IL/AOT 警告**（桌面端约 33 MB，Host 约 11 MB）。AOT 编译的 Host 通过 stdio 端到端测试：设置 `TKCODE_TEST_HOST_EXE=<AOT Host 路径>` 后运行 `RpcEndToEndTests` 即可复验。
+- `TKCode.Desktop`、`TKCode.AgentHost` 和 `TKCode.Terminal.Host` 都设置了 `PublishAot=true`，构建时 AOT 和裁剪分析器始终开启；库项目标记 `IsAotCompatible`。Runtime Async 同样用于这三个可执行程序的 AOT 发布。
+- Desktop 与 MemoryHarness 设置 `UseOptimizedPublish=false`：.NET 11 的精简 AOT 发布会先处理资源、后解析引用，Avalonia 12.1.4 在解析引用时才加入资源，导致发布产物缺少预编译 XAML。保留完整 Build 流程后仍正常执行 NativeAOT 编译；发布后必须运行无头 `--smoke` 验证界面。
+- .NET 11 的 x64 最低指令集为 `x86-64-v2`；macOS Arm64 的硬件基线不变。支持范围见 [官方硬件要求](https://learn.microsoft.com/dotnet/core/compatibility/jit/11/minimum-hardware-requirements)。
+- `Microsoft.Extensions.Logging.Abstractions` 已由 .NET 11 共享框架提供，Config 中的文件日志使用框架引用，不再额外引用同名 NuGet 包。
+- 验证基线（2026-10-18，.NET 11 RC2 + Runtime Async，osx-arm64）：三个生产可执行项目 AOT 发布均为 **0 个 IL/AOT 警告**；发布后的 Desktop 无头 `--smoke`、Agent Host 自检（含 AOT MCP 服务器调用）、PTY Host 自检均通过。设置 `TKCODE_TEST_HOST_EXE=<AOT Host 路径>` 后运行 `RpcEndToEndTests`，以及设置 `TKCODE_PTYHOST_DIR=<AOT PTY Host 目录>` 后运行 `DiscoveryTests`，分别通过 1 项与 6 项端到端测试。主解决方案测试通过 969 项、跳过 31 项、失败 0 项。
 - 编码规则：
   - JSON 一律使用源生成的 `JsonSerializerContext`；构造请求体用 `JsonNode`，但不要调用泛型的 `JsonArray.Add<T>`。
   - 不使用反射、`Activator`、动态代理或运行时代码生成。
@@ -179,6 +188,7 @@ PromptAsync → AgentStart
 ### 7.0 布局
 
 - **侧栏**：项目筛选（全部项目 / 单个项目，弹层可搜索，并提供“新建项目…”）+ 会话列表。每行依次显示运行状态（点阵动画 / 灰点）、模型图标、项目首字母徽标、标题和相对时间。
+  - 会话列表分页：默认显示 20 条（向 Host 请求 21 条，多出的一条只用来判断是否还有下一页），列表底部显示“展开更多”，每次再多显示 20 条（20 → 40 → 60 …，同样多取一条判断），直到 Host 单次查询上限（2000 条）或没有更多为止；筛选项目、重新加载时回到 20 条。
 - **主区**：
   - 空状态是居中的 Composer：上方是设备和项目，下方是检出和分支。
   - 会话中，标题栏显示模型图标、会话标题和“项目 @ 设备”；Composer 收成单行胶囊停靠在底部，下方是检出、分支和上下文占用环。
@@ -192,7 +202,10 @@ PromptAsync → AgentStart
   - 根页列出命令（新对话、新建项目、切换主题 / 语言 / 侧栏 / 工作台）；输入搜索词时，还会列出匹配的会话。
   - 支持多级页面：“新建项目” → 设备页 → 文件夹选择框。面包屑可以返回上一页，搜索框为空时按 Backspace 也会返回。
   - 键盘：↑ ↓ 移动高亮，↵ 执行，Esc 返回或关闭。
-- **全局快捷键**（Windows / Linux 上 ⌘ 换成 Ctrl）：⌘K 命令面板、⌘N 新对话、⇧⌘N 新建项目、⌘B 切换侧栏。
+- **全局快捷键**（Windows / Linux 上 ⌘ 换成 Ctrl）：⌘K 命令面板、⌘N 新对话、⇧⌘N 新建项目、⌘B 切换侧栏、⌘+ ⌘- ⌘0 界面缩放。
+- **界面缩放**（`uiScale`，设置 › 通用、⌘+ ⌘- ⌘0、命令面板）：`Controls/ZoomHost` 先按缩放后的可用空间排版、再整体放大，所以文字保持矢量清晰、布局不会错位。
+  - 主窗口内容包一层 `ZoomHost`；弹层（`motion:Popover`）是独立窗口，每个弹层的内容各包一层，`UiZoomTests` 检查这一点。工具提示与确认对话框由 AtomUI 放在独立窗口里，目前不随缩放。
+  - 原生窗口外壳不随缩放，所以窗口最小尺寸、macOS 标题栏高度提示、红绿灯避让宽度要按 `UiZoom.Scale` 换算（`MainWindow.ApplyZoom`）。
 - **前进 / 后退**：在打开过的会话和新对话之间导航。
 - **数据目录**：`TKCODE_HOME` 覆盖 `~/.tkcode`，Host 子进程继承该变量；`TKCODE_AGENTHOST_DIR` 指定 Host 位置。两者都供测试使用。
 
@@ -202,8 +215,15 @@ PromptAsync → AgentStart
   - Seed：`ColorPrimary`、`FontSize=13` 等；
   - Map：`ColorBgContainer`、`ColorBgElevated`、`ColorBorder` 等；
   - 控件级 Token：`ToggleSwitch.SwitchColor`。
-- 通过 `AvaloniaAssetThemeDefinitionResolver` 注册，`WithInitialTheme` 选择初始主题，运行时用 `IThemeManager.ApplyThemeAsync` 切换。
-- **注意**：AtomUI README 中的 `WithDefaultTheme` 在 6.2.5 中不存在。
+- 主题定义通过 `AvaloniaAssetThemeDefinitionResolver` 注册（`avares://TKCode/Assets/Themes/...`），`WithInitialTheme` 选择初始主题，运行时用 `IThemeManager.ApplyThemeAsync` 切换。
+- 启动遵循 AtomUI 6.2.6（相对 6.2.5 的破坏性变更，见 [6.2.6 API 变更](https://gitee.com/atomui/atomui/blob/release/6.0/docs/releases/6.2.6-api-changes.md)）：
+  - 入口是 `AppBuilder.UseAtomUI`，集中在 `Program.UseTKCodeAtomUI()`。`Application.UseAtomUI` 已删除，不要在 `App.Initialize` 里配置。`WithDefaultTheme` 不存在。
+  - 配置回调在平台初始化之前、主线程上执行，只能声明包和设置（语言、主题解析器、初始主题、`UseDesktopControls`）。不能访问 `FontManager`、`Application.Current`、`TopLevel`，也不能创建位图或控件。需要已提交内核的工作放进 `AddInitializer`。语言和初始主题读的是 `Main` 里提前建好的 `App.Services`；XAML 预览器只调用 `BuildAvaloniaApp`，此时 `App.Services` 为 null，回退到中文和暗色。
+  - 桌面、无头测试（`HeadlessApp`）、冒烟（`SmokeMode`）和首帧基准（`StartupBenchmark`）各自创建 `AppBuilder`，都必须调用 `UseTKCodeAtomUI`。无头路径不调用 `WithAtomUIDefaultOptions`，以便截图字体保持稳定。
+  - `App` 是 `partial`。手写的 `RegisterServices` 必须在 `base.RegisterServices()` 之后调用 `ApplicationStartup.Attach(this)`；漏掉会报 `ATOMUIGEN039`。既不 `partial` 也不挂钩时，`Initialize` 抛 `InvalidOperationException`。不要在应用构造函数里创建控件或访问主题。
+  - macOS 上 `WithAtomUIDefaultOptions` 的渲染顺序是 Metal → OpenGL → Software（Avalonia 12.1.0 已修好实时缩放时的 Metal 抖动）。要改回 OpenGL 优先，须在其后覆盖 `AvaloniaNativePlatformOptions`。
+  - 内置主题的诊断标识从 `AtomUI.Core.BuiltInThemes` / `avares://AtomUI.Core/...` 改为 `AtomUI.Core` 与逻辑路径。不要按生成的 `ControlPackageGroup_*` 类型名引用注册组。`AtomUI.Desktop.Controls.Extras` 的 Splash 已删除；TKCode 自己的启动页 `Views/SplashView` 也已删除，启动时不显示加载页。
+  - `{loc:TKCodeLangResource}` 走 `Application.Resources` 里的 `LanguageResourceProvider`，而 `Strings.Get` 走 Localizer。6.2.6 在 `AvaloniaXamlLoader.Load` 之前就把这个 provider 放进应用资源。`App.axaml` 的 `<Application.Resources>` 会整表替换，替换后界面文案为空、代码取词仍正常。`App.Initialize` 把 XAML 里已编译的合并字典（调色板）挪回原字典。调色板不要改成运行时 `new ResourceInclude`：那条路径不经过 XAML 编译，AOT 会告警。`Application.Resources` 里只放 `MergedDictionaries`，不要直接加键。
 
 ### 7.2 应用专属颜色
 
@@ -218,9 +238,10 @@ PromptAsync → AgentStart
 
 ### 7.3 控件
 
-- `Styling/Controls.axaml` 为 TKCode 复合控件提供 ControlTheme：行按钮、磁贴、标签页、胶囊、分割条。
+- `Styling/Controls.axaml` 为 TKCode 复合控件提供 ControlTheme：行按钮、磁贴、标签页、胶囊、分割条、发送按钮、悬停卡片。
 - 通用按钮、输入框、开关、弹层使用 AtomUI 控件：`atom:Button`、`atom:TextArea`、`atom:LineEdit`、`atom:ToggleSwitch`、`atom:FlyoutHost`、`atom:Avatar`。
-- 白色发送按钮直接用 `atom:Button Color="Default" Variant="Solid"`：暗色主题下它天然是白底深色字。
+- 发送 / 停止按钮用 `TKCode.SendButton`：强调色实心圆（暗色白底、亮色黑底），不可用时整体变淡。AtomUI 的 Solid 圆形按钮在不可用时换成描边圆加投影，不适合这里。
+- 悬停卡片：`HoverCard`（悬停延迟打开、可移进卡片、按下立即打开）+ `InfoCard`（标题 · 摘要 · 正文 · 底栏的卡片外壳）+ `CardStatRow`（色点 · 标签 · 数值）+ `SegmentedBar`（分段占用条）。用法见 [context-usage.md](design/context-usage.md) §3。
 - 图标用 `Icons/LucideIcon`：Lucide 风格线性图标，基于 AtomUI `Icon`，可以直接作为 `atom:Button.Icon` 使用。
 
 ### 7.4 品牌图标

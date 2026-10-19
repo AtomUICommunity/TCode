@@ -126,7 +126,7 @@
 
 O1 的快照影响：快照把三套模式按 `ModePacked` 的位序写入 8 字节槽，当前占 43 位、43–63 位保留且"解码器忽略保留位"[S:snapshot/terminal.zig:164-215,474-476]。9001 追加在末尾占第 43 位：同一构建的两个进程之间往返正确；被未打补丁的解码器读取时只是丢掉该位。上游注释说"新增模式需要提升快照版本"，我们不改版本号，因为快照只在同一构建之间使用（[04 §8.5] 的跨构建 attach 走 VT 格式）**[待 spike：确认没有 comptime 断言限定 43 位]**。
 
-dirty 漏标（§15.5 的 1、2、6、7）若上游 30 天内未修，再按同样格式加 O5–O8。
+dirty 漏标（§15.5 的 1、2、6、7）若上游 30 天内未修，再按同样格式加 O5–O8。已加入的：O5（行元数据变化漏标：OSC 133、wrap / wrap_continuation、残留 spacer_head）；O6（mode 2027 关闭时，零宽码点追加到前一个 cell 没有标脏，增量帧沿用旧行；每晚长跑 fuzz 发现，补丁 `0004-mark-row-dirty-on-zero-width-grapheme-append.patch`，一行 `cursorMarkDirty()`）。后续同类问题从 O7 起编号。
 
 ### 2.5 Ghostty 迁出 GitHub 的应对
 

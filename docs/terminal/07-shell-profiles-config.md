@@ -6,6 +6,8 @@
 >
 > 源码前缀沿用 research/05 §0：VSC = microsoft/vscode `4765bd3`，GH = ghostty `b3dc3d7`，WT = microsoft/terminal `44b440b`，IT = iTerm2 `5794785`，WZ = wezterm `e2a98e1`，OSSH = openssh-portable `6545e6a`。路径相对各仓库根目录。
 
+> **已落地的子集（2026-10-19）**：`TKCode.Shell`（只依赖 BCL）探测 pwsh（最新稳定版 / 预览版）、Windows PowerShell、cmd、Git Bash 和 Unix 的 `/etc/shells`，规则同 §2.3 的 1–4 项（pwsh 另外只保留每类排名第一的安装，不产出 `pwsh@<变体>`）。`terminal.defaultProfile` 与 `agent.shell.profile` 只接受 `auto`、探测到的 id、程序名或绝对路径，经 `host/configure` 的 `DefaultShell` 下发给 pty host；`terminal.profiles`、WSL / MSYS2 / VS 开发者命令行、shell 集成注入仍属 M4。Windows 的 `system` 现在是 PowerShell 7 → Windows PowerShell → cmd。
+
 ## 0. 结论摘要
 
 1. **所有探测与启动构造都在 pty host 里完成**（01 §6.3）。Desktop 只负责把 `settings.json` 的 `terminal` 节解析成一个与 TKCode.Config 无关的 DTO（放在 `TKCode.Terminal.Protocol`），通过 `host/configure` 推给 host；host 里的 `ProfileResolver` 把"探测结果 + 设置覆盖 + 自定义 profile"合并，`LaunchBuilder` 产出 `PtyLaunch`。

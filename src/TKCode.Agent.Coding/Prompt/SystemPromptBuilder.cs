@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
+using TKCode.Agent.Coding.Tools.Shell;
 using TKCode.Agent.Coding.Workspace;
 using TKCode.Ai.Models;
 
@@ -12,7 +14,7 @@ public sealed record PromptSection(string Name, string Text);
 /// 按节构建内置 Agent 的系统提示（docs/design/builtin-agent-tools.md §3）：
 /// identity → tools → rules → environment → project_context → cwd。
 /// </summary>
-public static class SystemPromptBuilder
+public static partial class SystemPromptBuilder
 {
     /// <summary>每个目录只取第一个命中的上下文文件。</summary>
     public static readonly string[] ContextFileNames = ["AGENTS.override.md", "AGENTS.md"];
@@ -33,8 +35,9 @@ public static class SystemPromptBuilder
         "In user messages, @path refers to a file or directory in the workspace, relative to the working directory. Read it with your tools when you need its contents; the message only carries the path.",
     ];
 
+    /// <param name="shell">environment 节里的 Shell 一行（bash 工具实际使用的 shell 名）；为 null 时按默认选择。</param>
     public static IReadOnlyList<PromptSection> Build(WorkspaceRoots workspace, IReadOnlyList<IAgentTool> tools, ModelInfo model,
-        DateOnly? today = null, IReadOnlyList<PromptSection>? extra = null)
+        DateOnly? today = null, IReadOnlyList<PromptSection>? extra = null, string? shell = null)
     {
         var sections = new List<PromptSection> { new("identity", Identity) };
 
@@ -47,7 +50,7 @@ public static class SystemPromptBuilder
         var rules = GeneralRules.Concat(tools.SelectMany(t => t.PromptGuidelines)).Distinct(StringComparer.Ordinal).Select(r => "- " + r);
         sections.Add(new("rules", string.Join('\n', rules)));
 
-        sections.Add(new("environment", BuildEnvironment(workspace.Cwd, model, today ?? DateOnly.FromDateTime(DateTime.Now))));
+        sections.Add(new("environment", BuildEnvironment(workspace.Cwd, model, today ?? DateOnly.FromDateTime(DateTime.Now), shell ?? ShellResolver.Current.Name)));
 
         var context = LoadContextFiles(workspace.Cwd);
         if (context.Count > 0)
@@ -106,12 +109,39 @@ public static class SystemPromptBuilder
         return parts.Count == 0 ? null : string.Join("\n\n", parts);
     }
 
-    private static string BuildEnvironment(string cwd, ModelInfo model, DateOnly today)
+    /// <summary>
+    /// 把 <see cref="Diff"/> 生成的补丁拆回各节：(节名, 该节在补丁中的文字)。
+    /// 补丁开头不属于任何节的文字节名为 null；不是补丁的文本整体返回一段 null。
+    /// </summary>
+    public static IEnumerable<(string? Name, string Text)> PatchParts(string patch)
+    {
+        var matches = PatchHeader().Matches(patch);
+        var start = 0;
+        string? name = null;
+        foreach (Match match in matches)
+        {
+            if (match.Index > start)
+            {
+                yield return (name, patch[start..match.Index]);
+            }
+            name = match.Groups[1].Value;
+            start = match.Index;
+        }
+        if (start < patch.Length)
+        {
+            yield return (name, patch[start..]);
+        }
+    }
+
+    [GeneratedRegex("^(?:Updated|Removed) system prompt section \"([^\"]+)\"", RegexOptions.Multiline)]
+    private static partial Regex PatchHeader();
+
+    private static string BuildEnvironment(string cwd, ModelInfo model, DateOnly today, string shell)
     {
         var sb = new StringBuilder();
         sb.Append("Platform: ").Append(PlatformName()).Append('\n');
         sb.Append("OS version: ").Append(RuntimeInformation.OSDescription).Append('\n');
-        sb.Append("Shell: ").Append(ShellName()).Append('\n');
+        sb.Append("Shell: ").Append(shell).Append('\n');
         if (GitInfo.Find(cwd) is { } git)
         {
             sb.Append("Git repository: yes").Append(git.Branch is { } branch ? $" (branch {branch})" : "").Append('\n');
@@ -128,18 +158,9 @@ public static class SystemPromptBuilder
     private static string PlatformName() =>
         OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "unknown";
 
-    private static string ShellName()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return "powershell";
-        }
-        return Environment.GetEnvironmentVariable("SHELL") is { Length: > 0 } shell ? Path.GetFileName(shell) : "sh";
-    }
-
     /// <summary>
-    /// 全局 ~/.tkcode/AGENTS.md，加上从项目根（含 .git 的目录，找不到时为 cwd）到 cwd 每一级的上下文文件。
-    /// 按真实路径去重；总量超出预算时截断后续内容。
+    /// 全局 ~/.tkcode/AGENTS.md，加上从项目根（含 .git 的目录，找不到时为 cwd）到 cwd 每一级的上下文文件；
+    /// 每个文件之后紧跟它 @import 的文件（docs/design/memory.md §7）。按真实路径去重；总量超出预算时截断后续内容。
     /// </summary>
     public static IReadOnlyList<(string Path, string Content)> LoadContextFiles(string cwd)
     {
@@ -150,7 +171,7 @@ public static class SystemPromptBuilder
             candidates.Add(global);
         }
 
-        var root = GitInfo.Find(cwd)?.Root ?? cwd;
+        var root = ProjectRoot(cwd);
         var dirs = new List<string>();
         for (var dir = new DirectoryInfo(cwd); dir is not null; dir = dir.Parent)
         {
@@ -172,6 +193,7 @@ public static class SystemPromptBuilder
         var result = new List<(string, string)>();
         var seen = new HashSet<string>(PathUtil.Comparer);
         var remaining = ContextBudgetBytes;
+        var realRoot = PathUtil.RealPath(root);
         foreach (var file in candidates)
         {
             if (!seen.Add(PathUtil.RealPath(file)) || remaining <= 0)
@@ -191,6 +213,22 @@ public static class SystemPromptBuilder
             {
                 continue;
             }
+            Add(file, content);
+            // 全局文件由用户自己维护，可以导入任意位置；项目内的文件只能导入项目根之内的文件
+            var scope = PathUtil.SamePath(file, global) ? null : realRoot;
+            foreach (var (path, text) in InstructionImports.Expand(file, content, scope, seen.Add))
+            {
+                if (remaining <= 0)
+                {
+                    break;
+                }
+                Add(path, text);
+            }
+        }
+        return result;
+
+        void Add(string file, string content)
+        {
             var bytes = Encoding.UTF8.GetByteCount(content);
             if (bytes > remaining)
             {
@@ -200,8 +238,10 @@ public static class SystemPromptBuilder
             remaining -= bytes;
             result.Add((file, content));
         }
-        return result;
     }
+
+    /// <summary>上下文文件的项目根：含 .git 的目录，找不到时为 cwd。</summary>
+    public static string ProjectRoot(string cwd) => GitInfo.Find(cwd)?.Root ?? cwd;
 
     private static string TruncateUtf8(string text, int maxBytes)
     {

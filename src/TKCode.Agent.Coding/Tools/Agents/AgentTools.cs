@@ -26,7 +26,7 @@ public sealed class AgentTool(ToolContext context) : IAgentTool
           "description":{"type":"string","description":"A short (3-5 word) description of the task, shown to the user."},
           "prompt":{"type":"string","description":"The complete task for the subagent."},
           "subagent_type":{"type":"string","enum":["general-purpose","explore","plan"],"description":"Agent type (default general-purpose)."},
-          "model":{"type":"string","description":"Optional model reference (provider/model); defaults to the current model."},
+          "model":{"type":"string","description":"Optional model reference (provider/model); defaults to the configured fast model, or the current session model when no fast model is available."},
           "name":{"type":"string","description":"Optional name to address the subagent with send_message."},
           "run_in_background":{"type":"boolean","description":"Return immediately and notify when finished."}},
          "required":["description","prompt"],"additionalProperties":false}
@@ -42,15 +42,23 @@ public sealed class AgentTool(ToolContext context) : IAgentTool
 
     public ToolPermission DescribePermission(JsonElement arguments) => ToolPermission.NoAccess;
 
+    public const string ReadOnlySubagentMessage =
+        "In Plan mode only read-only subagents are available: use subagent_type \"explore\" or \"plan\".";
+
     public async Task<AgentToolResult> ExecuteAsync(ToolInvocation invocation, CancellationToken cancellationToken)
     {
         var coordinator = context.Services.Agents ?? throw new InvalidOperationException("Subagents are not available.");
         var args = invocation.Arguments;
         var description = args.Required("description");
-        var type = args.String("subagent_type") ?? SubagentTypes.GeneralPurpose;
+        // 只读模式（Plan）下只能派只读子 Agent，缺省为 explore（docs/design/plan-mode.md §7.3）
+        var type = args.String("subagent_type") ?? (context.IsReadOnly ? SubagentTypes.Explore : SubagentTypes.GeneralPurpose);
         if (!SubagentTypes.All.Contains(type))
         {
             return AgentToolResult.Error($"Unknown subagent_type '{type}'. Use one of: {string.Join(", ", SubagentTypes.All)}.");
+        }
+        if (context.IsReadOnly && type == SubagentTypes.GeneralPurpose)
+        {
+            return AgentToolResult.Error(ReadOnlySubagentMessage);
         }
         var background = args.Bool("run_in_background") ?? false;
         var request = new SubagentRequest(context.SessionId, description, args.Required("prompt"), type, args.String("model"), args.String("name"));
@@ -137,6 +145,9 @@ public sealed class SendMessageTool(ToolContext context) : IAgentTool
 
     public ToolPermission DescribePermission(JsonElement arguments) => ToolPermission.NoAccess;
 
+    public const string ReadOnlySubagentMessage =
+        "In Plan mode only read-only subagents are available: use subagent_type \"explore\" or \"plan\".";
+
     public async Task<AgentToolResult> ExecuteAsync(ToolInvocation invocation, CancellationToken cancellationToken)
     {
         var coordinator = context.Services.Agents ?? throw new InvalidOperationException("Messaging is not available.");
@@ -170,6 +181,9 @@ public sealed class ListAgentsTool(ToolContext context) : IAgentTool
     public string ParametersSchemaJson => """{"type":"object","properties":{},"additionalProperties":false}""";
 
     public ToolPermission DescribePermission(JsonElement arguments) => ToolPermission.NoAccess;
+
+    public const string ReadOnlySubagentMessage =
+        "In Plan mode only read-only subagents are available: use subagent_type \"explore\" or \"plan\".";
 
     public async Task<AgentToolResult> ExecuteAsync(ToolInvocation invocation, CancellationToken cancellationToken)
     {

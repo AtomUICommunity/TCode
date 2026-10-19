@@ -12,6 +12,7 @@ out="$root/packages/streammark"
 [[ -f "$src/native/ratex/Cargo.toml" ]] || git -C "$src" submodule update --init --depth 1 native/ratex
 "$src/native/build.sh"
 for project in Core Avalonia RaTeX Highlighting.TextMate Mermaid Theme.AtomUI; do
-  dotnet pack "$src/src/StreamMark.$project" -c Release -o "$out" -p:Version="$version" --nologo -v quiet
+  # 本地源的包 ID 是 StreamMark.*；不传这个属性时 nuget.org 发布用的是 TKCode.StreamMark.*
+  dotnet pack "$src/src/StreamMark.$project" -c Release -o "$out" -p:Version="$version" -p:StreamMarkPackageIdPrefix=none --nologo -v quiet
 done
 ls "$out" | grep -F "$version"

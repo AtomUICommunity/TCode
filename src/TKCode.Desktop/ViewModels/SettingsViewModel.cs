@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -10,6 +11,7 @@ using TKCode.Desktop.Icons;
 using TKCode.Desktop.Localization;
 using TKCode.Desktop.Services;
 using TKCode.Rpc;
+using TKCode.Shell;
 
 namespace TKCode.Desktop.ViewModels;
 
@@ -150,6 +152,11 @@ public sealed partial class ProviderDetailViewModel : ObservableObject
     /// <summary>只有 settings.json 中已有的厂商显示启用开关（未配置、缺 Key 的厂商开关没有意义）。</summary>
     public bool ShowEnableSwitch => Dto.IsConfigured;
 
+    /// <summary>既不在 settings.json 里也没有环境变量 Key：只是“添加厂商”选出来的草稿，移除按钮的作用是放弃。</summary>
+    public bool IsPureDraft => !Dto.IsConfigured && Dto.KeySource != KeySourceDto.Environment;
+
+    public string RemoveTooltip => Strings.Get(IsPureDraft ? TKCodeLangResourceKind.DiscardDraft : TKCodeLangResourceKind.Remove);
+
     public string KeyHint => Dto.KeySource switch
     {
         KeySourceDto.Environment => Strings.Format(TKCodeLangResourceKind.KeyFromEnvFormat, Dto.KeyVariable ?? ""),
@@ -272,6 +279,8 @@ public sealed partial class ProviderDetailViewModel : ObservableObject
         _owner.Write(root =>
         {
             var provider = SettingsFile.Provider(root, Id);
+            // 之前被移除（hidden）的内置厂商重新添加
+            provider.Remove("hidden");
             if (key.Length > 0)
             {
                 provider["apiKey"] = key;
@@ -314,7 +323,7 @@ public sealed partial class ProviderDetailViewModel : ObservableObject
         _owner.Write(root => SettingsFile.Set(SettingsFile.Provider(root, Id), "enabled", Dto.Enabled ? JsonValue.Create(false) : null));
 
     [RelayCommand]
-    private void Remove() => _owner.RemoveProvider(Id);
+    private Task RemoveAsync() => _owner.RemoveProviderAsync(this);
 
     [RelayCommand]
     private async Task RefreshModelsAsync()
@@ -462,10 +471,12 @@ public sealed partial class ModelOverrideEditorViewModel : ObservableObject
         MaxTokensInput = model.Model.MaxTokens > 0 ? model.Model.MaxTokens.ToString() : "";
         Reasoning = model.Reasoning;
         Images = model.Images;
-        ApiInput = model.ApiOverridden ? model.Model.Api ?? "" : "";
+        // 与默认值相同就视为“跟随”，避免把目录的固定规则（NextCoWork 的 Claude → Messages）当成用户覆盖
+        var defaultApi = model.Model.DefaultApi ?? provider.Dto.Api;
+        ApiInput = model.Model.Api is { Length: > 0 } effective && effective != defaultApi ? effective : "";
         _original = (NameInput, ContextInput, MaxTokensInput, Reasoning, Images);
         _originalApi = ApiInput;
-        ProviderApiText = SettingsTexts.ProviderDefault(provider.Dto.Api);
+        ProviderApiText = SettingsTexts.ProviderDefault(defaultApi);
     }
 
     private readonly string _originalApi;
@@ -663,7 +674,8 @@ public sealed record CatalogProviderItemViewModel(CatalogProviderDto Dto)
     public string Id => Dto.Id;
     public string Name => Dto.Name;
     public string? LogoKey => ModelIcons.ForProvider(Dto.Id);
-    public string Meta => Strings.Format(TKCodeLangResourceKind.ModelCountFormat, Dto.ModelCount);
+    /// <summary>目录里没有模型的厂商（模型靠 /models 发现，如 NextCoWork）显示地址，而不是“0 个模型”。</summary>
+    public string Meta => Dto.ModelCount > 0 ? Strings.Format(TKCodeLangResourceKind.ModelCountFormat, Dto.ModelCount) : Dto.BaseUrl;
 }
 
 /// <summary>
@@ -705,6 +717,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             RefreshGeneral();
             _ = RefreshProvidersAsync();
         };
+        AgentShell = new ShellPickerViewModel(ShellUse.Agent, TKCodeLangResourceKind.AgentShellLabel, TKCodeLangResourceKind.AgentShellHint,
+            () => settings.Current.Agent?.Shell?.Profile, settings.SetAgentShell);
+        TerminalShell = new ShellPickerViewModel(ShellUse.Terminal, TKCodeLangResourceKind.TerminalShellLabel, TKCodeLangResourceKind.TerminalShellHint,
+            () => settings.Current.Terminal?.DefaultProfile, settings.SetTerminalShell);
         Mcp = new McpSettingsViewModel(settings, host, () => conversation.Active?.Cwd ?? conversation.Workspace?.Path, logger);
         Assets = new AssetsSettingsViewModel(host, settings, () => conversation.CurrentCwd, logger);
         conversation.ModelsChanged += OnModelsChanged;
@@ -714,6 +730,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void OnModelsChanged(ModelsChangedNotification notification)
     {
+        RefreshDefaultModels();
         _ = RefreshProvidersAsync();
         _ = RefreshCatalogStatusAsync();
         // 运行时检测完成后 Host 会推送 models/changed
@@ -729,7 +746,17 @@ public sealed partial class SettingsViewModel : ObservableObject
     public AssetsSettingsViewModel Assets { get; }
     public ObservableCollection<SettingsChoiceViewModel> Languages { get; } = [];
     public ObservableCollection<SettingsChoiceViewModel> Themes { get; } = [];
+    public ObservableCollection<SettingsChoiceViewModel> CacheTtls { get; } = [];
+    /// <summary>界面缩放的分段档位（<see cref="UiScaleLevels.Stops"/>）；当前值不在档位上（手改 settings.json）时没有选中项。</summary>
+    public ObservableCollection<SettingsChoiceViewModel> UiScales { get; } = [];
     public ObservableCollection<SettingsChoiceViewModel> DefaultModels { get; } = [];
+    public ObservableCollection<SettingsChoiceViewModel> FastModels { get; } = [];
+
+    /// <summary>Agent 的 bash 工具使用的 shell（settings.json 的 agent.shell.profile）。</summary>
+    public ShellPickerViewModel AgentShell { get; }
+
+    /// <summary>新建终端默认使用的 shell（settings.json 的 terminal.defaultProfile）。</summary>
+    public ShellPickerViewModel TerminalShell { get; }
     /// <summary>左栏“已启用”：settings.json 中已有，或检测到环境变量 Key 的厂商。</summary>
     public ObservableCollection<ProviderListItemViewModel> ConfiguredList { get; } = [];
     /// <summary>“添加厂商”选择框的分组（常用 / 本地 / 自定义 / 全部内置厂商）。</summary>
@@ -1068,8 +1095,22 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private Task ChooseThemeAsync(SettingsChoiceViewModel choice) => _themes.SetModeAsync(Enum.Parse<ThemeMode>(choice.Value));
 
+    /// <summary>提示缓存有效期（settings.json 的 promptCacheTtl）；Host 每次请求读取，进行中的会话也立即生效。</summary>
+    [RelayCommand]
+    private void ChooseCacheTtl(SettingsChoiceViewModel choice) => _settings.SetPromptCacheTtl(choice.Value);
+
+    /// <summary>界面缩放（settings.json 的 uiScale）：写回后由 App 同步到窗口，立即生效。</summary>
+    [RelayCommand]
+    private void ChooseUiScale(SettingsChoiceViewModel choice) => _settings.SetUiScale(double.Parse(choice.Value, CultureInfo.InvariantCulture));
+
+    /// <summary>界面缩放行的说明，含当前平台的快捷键修饰键。</summary>
+    public string UiScaleHint => Strings.Format(TKCodeLangResourceKind.UiScaleHint, OperatingSystem.IsMacOS() ? "⌘" : "Ctrl");
+
     [RelayCommand]
     private void ChooseDefaultModel(SettingsChoiceViewModel choice) => _settings.SetDefaultModel(choice.Value.Length == 0 ? null : choice.Value);
+
+    [RelayCommand]
+    private void ChooseFastModel(SettingsChoiceViewModel choice) => _settings.SetFastModel(choice.Value.Length == 0 ? null : choice.Value);
 
     [RelayCommand]
     private void OpenSettingsFile()
@@ -1190,12 +1231,61 @@ public sealed partial class SettingsViewModel : ObservableObject
         CustomId = CustomName = CustomBaseUrl = CustomApiKey = "";
     }
 
-    internal void RemoveProvider(string id)
+    /// <summary>确认框（由主窗口提供）：标题、正文、确定按钮文字。</summary>
+    public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
+
+    /// <summary>
+    /// 移除厂商。草稿只是放弃（不写文件）；其余先确认。
+    /// 靠环境变量被检测出来的内置厂商删掉条目后仍会被检测到，所以改写成 { "hidden": true }，重新添加时清除。
+    /// </summary>
+    internal async Task RemoveProviderAsync(ProviderDetailViewModel provider)
     {
+        var id = provider.Id;
+        if (provider.IsPureDraft)
+        {
+            DiscardDraft(id);
+            return;
+        }
+        var variable = provider.IsBuiltIn ? DetectedEnvironmentVariable(id) : null;
+        var text = variable is null
+            ? Strings.Get(TKCodeLangResourceKind.ProviderRemoveConfirmText)
+            : Strings.Format(TKCodeLangResourceKind.ProviderHideConfirmText, variable);
+        if (ConfirmAsync is not { } confirm
+            || !await confirm(Strings.Format(TKCodeLangResourceKind.ProviderRemoveConfirmTitle, provider.Name), text, Strings.Get(TKCodeLangResourceKind.Remove)))
+        {
+            return;
+        }
         Selected = null;
         _details.Remove(id);
-        Write(root => SettingsFile.RemoveProvider(root, id));
+        Write(root =>
+        {
+            SettingsFile.RemoveProvider(root, id);
+            if (variable is not null)
+            {
+                SettingsFile.Provider(root, id)["hidden"] = true;
+            }
+        });
     }
+
+    private void DiscardDraft(string id)
+    {
+        if (_draftId == id)
+        {
+            _draftId = null;
+        }
+        _details.Remove(id);
+        Selected = null;
+        RebuildLists();
+        if (ConfiguredList.FirstOrDefault() is { } first)
+        {
+            Select(first.Id);
+        }
+    }
+
+    /// <summary>内置厂商登记的环境变量中已设置的那个；没有则为 null。</summary>
+    private string? DetectedEnvironmentVariable(string id) =>
+        _catalog.FirstOrDefault(c => c.Id == id)?.Dto.EnvVariables
+            .FirstOrDefault(v => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(v)));
 
     internal string? CatalogBaseUrl(string id) => _catalog.FirstOrDefault(c => c.Id == id)?.Dto.BaseUrl;
 
@@ -1355,7 +1445,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasNoProviders));
     }
 
-    private static readonly string[] PopularProviders = ["anthropic", "openai", "deepseek", "moonshotai-cn", "zhipuai", "alibaba-cn", "openrouter", "volcengine", "siliconflow-cn", "minimax-cn"];
+    private static readonly string[] PopularProviders = ["nextcowork", "anthropic", "openai", "deepseek", "moonshotai-cn", "zhipuai", "alibaba-cn", "openrouter", "volcengine", "siliconflow-cn", "minimax-cn"];
     private static readonly string[] LocalProviders = ["ollama", "lmstudio"];
 
     private void RebuildTemplates()
@@ -1416,6 +1506,15 @@ public sealed partial class SettingsViewModel : ObservableObject
             (nameof(ThemeMode.Dark), Strings.Get(TKCodeLangResourceKind.ThemeDark)),
             (nameof(ThemeMode.Light), Strings.Get(TKCodeLangResourceKind.ThemeLight)),
         ], _settings.Theme.ToString());
+        Fill(CacheTtls,
+        [
+            ("5m", Strings.Get(TKCodeLangResourceKind.CacheTtl5m)),
+            ("1h", Strings.Get(TKCodeLangResourceKind.CacheTtl1h)),
+        ], _settings.Current.PromptCacheTtl == "1h" ? "1h" : "5m");
+        OnPropertyChanged(nameof(UiScaleHint));
+        var scale = _settings.UiScale;
+        var currentStop = UiScaleLevels.Stops.Where(s => UiScaleLevels.Same(s, scale)).Select(ScaleKey).FirstOrDefault() ?? "";
+        Fill(UiScales, UiScaleLevels.Stops.Select(s => (ScaleKey(s), $"{s * 100:0}%")), currentStop);
         var protocol = Protocols.FirstOrDefault(p => p.IsSelected)?.Value ?? "chat";
         Fill(Protocols,
         [
@@ -1424,6 +1523,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             ("messages", Strings.Get(TKCodeLangResourceKind.ProtocolMessages)),
         ], protocol);
         RefreshDefaultModels();
+        AgentShell.Refresh();
+        TerminalShell.Refresh();
         Errors.Clear();
         foreach (var error in _settings.Errors)
         {
@@ -1439,10 +1540,18 @@ public sealed partial class SettingsViewModel : ObservableObject
         choices.AddRange(models.Select(m => (m.Ref, $"{m.ProviderName} · {m.Name}")));
         Fill(DefaultModels, choices, _settings.Current.Model ?? "");
         DefaultModelLabel = DefaultModels.FirstOrDefault(c => c.IsSelected)?.Label ?? _settings.Current.Model ?? "";
+
+        var fastChoices = new List<(string, string)> { ("", Strings.Get(TKCodeLangResourceKind.FollowSessionModel)) };
+        fastChoices.AddRange(models.Where(m => m.Runtime is null).Select(m => (m.Ref, $"{m.ProviderName} · {m.Name}")));
+        Fill(FastModels, fastChoices, _settings.Current.FastModel ?? "");
+        FastModelLabel = FastModels.FirstOrDefault(c => c.IsSelected)?.Label ?? _settings.Current.FastModel ?? "";
     }
 
     [ObservableProperty]
     public partial string DefaultModelLabel { get; private set; } = "";
+
+    [ObservableProperty]
+    public partial string FastModelLabel { get; private set; } = "";
 
     private void RefreshLanguage()
     {
@@ -1458,6 +1567,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(VersionText));
         _ = RefreshProvidersAsync();
     }
+
+    private static string ScaleKey(double scale) => scale.ToString("0.##", CultureInfo.InvariantCulture);
 
     private static void Fill(ObservableCollection<SettingsChoiceViewModel> target, IEnumerable<(string Value, string Label)> items, string selected)
     {

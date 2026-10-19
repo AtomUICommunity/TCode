@@ -28,7 +28,7 @@ internal static class TestSupport
             var configuration = baseDir.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}") ? "Release" : "Debug";
             for (var dir = new DirectoryInfo(baseDir); dir is not null; dir = dir.Parent)
             {
-                var candidate = Path.Combine(dir.FullName, "tests", "TKCode.Mcp.TestServer", "bin", configuration, "net10.0", "TKCode.Mcp.TestServer.dll");
+                var candidate = Path.Combine(dir.FullName, "tests", "TKCode.Mcp.TestServer", "bin", configuration, "net11.0", "TKCode.Mcp.TestServer.dll");
                 if (File.Exists(candidate))
                 {
                     return candidate;

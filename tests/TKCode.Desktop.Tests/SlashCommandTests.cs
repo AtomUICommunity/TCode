@@ -28,7 +28,7 @@ public sealed class SlashCommandTests
         Write(project, "src/App.cs", "");
         Environment.SetEnvironmentVariable("TKCODE_HOME", home);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         var settings = new StateService(Path.Combine(home, "state.json"));
@@ -139,7 +139,7 @@ public sealed class SlashCommandTests
         Write(home, "skills/pdf/SKILL.md", "---\nname: pdf\ndescription: Read PDF files\n---\nUse scripts/extract.py to read PDFs.\n");
         Environment.SetEnvironmentVariable("TKCODE_HOME", home);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         var settings = new StateService(Path.Combine(home, "state.json"));

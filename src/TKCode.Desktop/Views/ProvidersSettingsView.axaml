@@ -165,8 +165,7 @@
                                     <atom:ToggleSwitch Grid.Column="4" SizeType="Small" VerticalAlignment="Center" IsVisible="{Binding ShowEnableSwitch}"
                                                        IsChecked="{Binding Dto.Enabled, Mode=OneWay}" Command="{Binding ToggleEnabledCommand}"
                                                        ToolTip.Tip="{loc:TKCodeLangResource EnableProvider}" />
-                                    <atom:Button Grid.Column="5" Margin="8,0,0,0" Color="Default" Variant="Text" SizeType="Small" IsVisible="{Binding IsConfigured}"
-                                                 Command="{Binding RemoveCommand}" ToolTip.Tip="{loc:TKCodeLangResource Remove}">
+                                    <atom:Button Grid.Column="5" Margin="8,0,0,0" Color="Default" Variant="Text" SizeType="Small" Command="{Binding RemoveCommand}" ToolTip.Tip="{Binding RemoveTooltip}">
                                         <atom:Button.Icon><icons:LucideIcon Kind="Trash" /></atom:Button.Icon>
                                     </atom:Button>
                                 </Grid>

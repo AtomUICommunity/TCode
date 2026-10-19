@@ -34,6 +34,7 @@ public sealed partial class ClaudeRuntime(ExecutableLocator? locator = null) : I
         SupportsModelSwitch = true,
         StreamsToolArguments = true,
         SupportsSubagents = true,
+        NativePlanMode = true,
     };
 
     /// <summary>所有会话都带的参数（§2.2）。</summary>

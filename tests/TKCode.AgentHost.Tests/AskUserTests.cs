@@ -124,6 +124,9 @@ public sealed class AskUserTests
     {
         public List<UserInputRequest> Requests { get; } = [];
 
+        public Task<PlanReviewResponse> ReviewPlanAsync(PlanReviewRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(PlanReviewResponse.Dismiss);
+
         public Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default)
         {
             lock (Requests)

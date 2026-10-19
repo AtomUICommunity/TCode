@@ -1,4 +1,5 @@
-<!-- 一轮结束后的改动卡片：“N 个文件已更改 +X −Y”，整轮撤销；每个文件可审查（进入变更面板）或打开。 -->
+<!-- 一轮结束后的改动卡片：“N 个文件已更改 +X −Y”，整轮撤销；每个文件可审查（进入变更面板）或打开。
+     文件超过预览数量时默认只列前几个，底部“还有 N 个文件”展开其余。 -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
@@ -27,7 +28,7 @@
                 </Button>
             </Grid>
             <StackPanel IsVisible="{Binding IsExpanded}" Margin="0,0,0,6">
-                <ItemsControl ItemsSource="{Binding Files}">
+                <ItemsControl ItemsSource="{Binding VisibleFiles}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:FileChangeViewModel">
                             <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="10,3,10,3">
@@ -54,6 +55,14 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <Button Theme="{StaticResource TKCode.TextButton}" Margin="4,1,10,2" Padding="6,1"
+                        IsVisible="{Binding HasOverflow}" Command="{Binding ToggleRestCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <icons:LucideIcon Kind="ChevronRight" Width="12" Height="12" VerticalAlignment="Center"
+                                          motion:Turn.IsOn="{Binding ShowAll}" />
+                        <TextBlock Text="{Binding RestLabel}" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </StackPanel>
     </Border>

@@ -20,6 +20,10 @@ public enum ToolCategory
     Skill,
     /// <summary>向用户提问（ask_user、Claude AskUserQuestion、Codex request_user_input）：转录里显示为独立的问答卡片。</summary>
     Question,
+    /// <summary>请求批准计划（内置 exit_plan_mode、Claude ExitPlanMode）：转录里显示为独立的计划卡片（docs/design/plan-mode.md §14.2）。</summary>
+    PlanReview,
+    /// <summary>申请进入 Plan 模式（内置 enter_plan_mode、Claude EnterPlanMode）：沿用问答卡片的样子单独显示。</summary>
+    EnterPlan,
     Other,
 }
 
@@ -42,6 +46,8 @@ public static class ToolPresentation
         "task" or "agent" => ToolCategory.Task,
         "skill" => ToolCategory.Skill,
         "ask_user" or "askuserquestion" or "request_user_input" => ToolCategory.Question,
+        "exit_plan_mode" or "exitplanmode" => ToolCategory.PlanReview,
+        "enter_plan_mode" or "enterplanmode" => ToolCategory.EnterPlan,
         "task_create" or "task_update" or "task_get" or "task_list" or "todowrite" or "update_plan" or "taskcreate" or "taskupdate"
             => ToolCategory.Plan,
         _ => ToolCategory.Other,
@@ -59,6 +65,8 @@ public static class ToolPresentation
         ToolCategory.Mcp => LucideKind.Plug,
         ToolCategory.Skill => LucideKind.Sparkles,
         ToolCategory.Question => LucideKind.MessageCircleQuestion,
+        ToolCategory.PlanReview => LucideKind.ClipboardCheck,
+        ToolCategory.EnterPlan => LucideKind.ClipboardList,
         _ => LucideKind.Wrench,
     };
 
@@ -75,6 +83,8 @@ public static class ToolPresentation
         ToolCategory.Mcp => McpLabel(toolName),
         ToolCategory.Skill => Strings.Get(TKCodeLangResourceKind.StepSkill),
         ToolCategory.Question => Strings.Get(TKCodeLangResourceKind.StepQuestion),
+        ToolCategory.PlanReview => Strings.Get(TKCodeLangResourceKind.ToolExitPlanMode),
+        ToolCategory.EnterPlan => Strings.Get(TKCodeLangResourceKind.ToolEnterPlanMode),
         _ => toolName,
     };
 
@@ -229,7 +239,7 @@ public static class ToolPresentation
             return null;
         }
         var paths = changes.EnumerateArray()
-            .Select(c => c.ValueKind == JsonValueKind.Object && c.TryGetProperty("path", out var p) ? p.GetString() : null)
+            .Select(c => c.ValueKind == JsonValueKind.Object && c.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null)
             .OfType<string>().ToArray();
         return paths.Length == 0 ? null : string.Join(", ", paths);
     }

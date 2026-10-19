@@ -1,5 +1,6 @@
 <!--
   转录里的问答卡片（docs/design/ask-user.md §7.4）：Agent 的提问与用户的回答，独立显示，不收进活动组。
+  申请进入 Plan 模式（docs/design/plan-mode.md §14.2）也用这张卡片：标题“进入 Plan 模式？”，正文是理由。
 -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -11,7 +12,7 @@
     <Border Classes="card" Padding="14,10" Margin="0,4">
         <StackPanel Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <icons:LucideIcon Kind="MessageCircleQuestion" Width="14" Height="14" VerticalAlignment="Center"
+                <icons:LucideIcon Kind="{Binding Icon}" Width="14" Height="14" VerticalAlignment="Center"
                                   StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
                 <TextBlock Classes="strong" Text="{Binding Title}" FontSize="13" VerticalAlignment="Center" />
                 <controls:DotSpinner Width="10" Height="10" VerticalAlignment="Center" IsVisible="{Binding IsPending}" />
@@ -24,7 +25,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:QuestionCardLine">
                         <Grid ColumnDefinitions="Auto,*" Margin="22,0,0,0">
-                            <Border Classes="kbd" VerticalAlignment="Top" Margin="0,1,10,0">
+                            <Border Classes="kbd" VerticalAlignment="Top" Margin="0,1,10,0" IsVisible="{Binding HasHeader}">
                                 <TextBlock Text="{Binding Header}" />
                             </Border>
                             <StackPanel Grid.Column="1" Spacing="2">

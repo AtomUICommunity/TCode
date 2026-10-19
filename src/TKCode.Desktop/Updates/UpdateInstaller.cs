@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
+using TKCode.Desktop.Services;
 
 namespace TKCode.Desktop.Updates;
 
@@ -280,15 +281,26 @@ public static class UpdateInstaller
                 Process.Start(WindowsStartInfo(installerPath))?.Dispose();
                 break;
             case InstallTarget.MacApp mac:
-                Swap(mac.BundlePath, start: bundle => Process.Start(MacStartInfo(bundle))?.Dispose());
+                Swap(mac.BundlePath, start: bundle =>
+                {
+                    ReleaseSingleInstance();
+                    Process.Start(MacStartInfo(bundle))?.Dispose();
+                });
                 break;
             case InstallTarget.LinuxDirectory linux:
-                Swap(linux.InstallDirectory, start: dir => Process.Start(new ProcessStartInfo(Path.Combine(dir, "TKCode")) { UseShellExecute = false })?.Dispose());
+                Swap(linux.InstallDirectory, start: dir =>
+                {
+                    ReleaseSingleInstance();
+                    Process.Start(new ProcessStartInfo(Path.Combine(dir, "TKCode")) { UseShellExecute = false })?.Dispose();
+                });
                 break;
             default:
                 throw new InvalidOperationException("This installation cannot be updated in place.");
         }
     }
+
+    /// <summary>新版本在本进程退出前启动：先放弃单实例，否则它会把命令转发给正在退出的本进程然后自己退出，TKCode 就没有了。</summary>
+    private static void ReleaseSingleInstance() => SingleInstance.Release();
 
     /// <summary>Inno Setup 静默安装；/UPDATE=1 让脚本在安装完成后重新启动 TKCode（Packaging/windows/TKCode.iss）。</summary>
     internal static ProcessStartInfo WindowsStartInfo(string setup)

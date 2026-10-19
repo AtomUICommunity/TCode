@@ -41,6 +41,10 @@ public sealed class Agent : IAgentLoop
     private int _rapidRefills;
     private int _turnsSinceCompact = int.MaxValue;
 
+    // 工具触发的模式切换（docs/design/plan-mode.md §9、§11）
+    private bool _contextRefreshRequested;
+    private string? _handoff;
+
     public Agent(WireApiRegistry apis, ModelInfo model, string systemPrompt, IReadOnlyList<IAgentTool> tools)
     {
         _apis = apis;
@@ -51,10 +55,10 @@ public sealed class Agent : IAgentLoop
 
     public ModelInfo Model { get; set; }
 
-    /// <summary>开头的系统提示。只应在 <see cref="ContextUpdates"/> 中替换（新会话首轮前按当时的动态节重建），同一轮内不变。</summary>
+    /// <summary>开头的系统提示。只应在 <see cref="ContextUpdates"/> 中替换（新会话首轮前按当时的动态节重建），只在两次模型请求之间变化。</summary>
     public string SystemPrompt { get; set; }
 
-    /// <summary>工具集。只应在 <see cref="ContextUpdates"/> 中替换（例如 MCP 工具变化），同一轮内不变。</summary>
+    /// <summary>工具集。只应在 <see cref="ContextUpdates"/> 中替换（例如 MCP 工具变化、模式切换），只在两次模型请求之间变化。</summary>
     public IReadOnlyList<IAgentTool> Tools { get; set; }
     public ThinkingLevel ThinkingLevel { get; set; } = ThinkingLevel.Medium;
     /// <summary>请求 fast mode（模型不支持时由适配器忽略）。</summary>
@@ -67,14 +71,42 @@ public sealed class Agent : IAgentLoop
     public string? SessionId { get; init; }
     public Func<string, string?>? GetApiKey { get; init; }
 
+    /// <summary>缓存断点的有效期（全局设置，每次请求读取，修改后立即生效）；为 null 时用 5 分钟。</summary>
+    public Func<PromptCacheTtl>? GetCacheTtl { get; init; }
+
     /// <summary>执行前钩子：审批、拦截危险操作等。</summary>
     public Func<BeforeToolCallContext, CancellationToken, ValueTask<ToolCallDecision>>? BeforeToolCall { get; set; }
 
     /// <summary>
     /// 每批用户输入（新一次运行、followUp）追加之前调用：返回需要先追加的上下文消息
     /// （例如系统提示某节变化后的 <see cref="SystemMessage"/> 补丁）。历史只追加，不改写开头的系统提示。
+    /// 工具调用 <see cref="RequestContextRefresh"/> 后，也会在这批工具结果之后调用一次。
     /// </summary>
     public Func<CancellationToken, ValueTask<IReadOnlyList<Message>>>? ContextUpdates { get; set; }
+
+    /// <summary>
+    /// 请求在本批工具结果之后、下一次模型请求之前重新计算上下文（<see cref="ContextUpdates"/>）：模式切换类工具
+    /// （exit_plan_mode / enter_plan_mode）用它让新的工具集与模式节在同一轮内生效（docs/design/plan-mode.md §9）。
+    /// </summary>
+    public void RequestContextRefresh()
+    {
+        lock (_gate)
+        {
+            _contextRefreshRequested = true;
+        }
+    }
+
+    /// <summary>
+    /// 下一次模型请求之前把历史换成交接消息（批准计划并清空上下文，docs/design/plan-mode.md §11）。
+    /// 走压缩的替换路径（<see cref="CompactionTrigger.PlanHandoff"/>），不请求模型；没有压缩器时忽略。
+    /// </summary>
+    public void RequestHandoff(string message)
+    {
+        lock (_gate)
+        {
+            _handoff = message;
+        }
+    }
 
     /// <summary>
     /// 消息进入历史之前调用：把图片数据转存到文件，历史里只留路径（<see cref="ImageContent.Path"/>），
@@ -291,6 +323,15 @@ public sealed class Agent : IAgentLoop
                     await EmitAsync(new TurnEndEvent(assistant, results), ct);
 
                     pending = Dequeue(_steering, SteeringMode);
+                    // 工具切换了模式：新的工具集与模式节补丁在下一次请求前生效，补丁紧跟在工具结果之后
+                    if (TakeContextRefresh() && ContextUpdates is { } refresh)
+                    {
+                        var patch = await refresh(ct);
+                        if (patch.Count > 0)
+                        {
+                            pending = [.. patch, .. pending];
+                        }
+                    }
                     if (pending.Count > 0 || toolCalls.Count > 0)
                     {
                         continue;
@@ -331,6 +372,9 @@ public sealed class Agent : IAgentLoop
         {
             _runCts?.Dispose();
             _runCts = null;
+            // 本轮没用上的模式切换请求作废：下一批输入前会照常重新计算上下文
+            _contextRefreshRequested = false;
+            _handoff = null;
             if (ct.IsCancellationRequested)
             {
                 _manualCompactPending = false;
@@ -389,12 +433,19 @@ public sealed class Agent : IAgentLoop
         var resumesWork = pending.Count == 0;
         string? manual;
         bool hasManual;
+        string? handoff;
         lock (_gate)
         {
             hasManual = _manualCompactPending;
             manual = _manualCompactInstructions;
             _manualCompactPending = false;
             _manualCompactInstructions = null;
+            handoff = _handoff;
+            _handoff = null;
+        }
+        if (handoff is not null)
+        {
+            return await TryCompactAsync(CompactionTrigger.PlanHandoff, null, resumesWork: false, newMessages, ct, handoff);
         }
         if (hasManual)
         {
@@ -462,8 +513,9 @@ public sealed class Agent : IAgentLoop
 
     /// <summary>压缩并替换历史；失败时历史不变。用户中止时抛出取消异常。</summary>
     /// <param name="resumesWork">压缩后没有新的用户输入、模型应直接接着干活（摘要消息里加上“不要询问，直接继续”）。</param>
+    /// <param name="handoff">交接消息（<see cref="CompactionTrigger.PlanHandoff"/>）：不生成摘要。</param>
     private async Task<bool> TryCompactAsync(CompactionTrigger trigger, string? instructions, bool resumesWork, List<Message> newMessages,
-        CancellationToken ct)
+        CancellationToken ct, string? handoff = null)
     {
         var compactor = Compactor ?? throw new InvalidOperationException("No compactor.");
         var messages = Messages;
@@ -476,6 +528,7 @@ public sealed class Agent : IAgentLoop
                 ForModel(messages), preTokens, CompleteAsync)
             {
                 ResumesWork = resumesWork,
+                Handoff = handoff,
             };
             result = await compactor.CompactAsync(request, ct);
         }
@@ -513,6 +566,7 @@ public sealed class Agent : IAgentLoop
             ThinkingLevel = ThinkingLevel,
             FastMode = FastMode,
             SessionId = SessionId,
+            CacheTtl = CacheTtl,
             MaxTokens = maxTokens,
             SkipCacheWrite = true,
         };
@@ -523,6 +577,8 @@ public sealed class Agent : IAgentLoop
         return await stream.Result;
     }
 
+    private PromptCacheTtl CacheTtl => GetCacheTtl?.Invoke() ?? PromptCacheTtl.FiveMinutes;
+
     /// <summary>发给模型的消息：图片数据在这里才从文件读回，请求结束后即可回收。</summary>
     private Message[] ForModel(IEnumerable<Message> messages) => messages.Select(m => m switch
     {
@@ -530,6 +586,16 @@ public sealed class Agent : IAgentLoop
         ToolResultMessage result => result.ForModel(),
         _ => m,
     }).ToArray();
+
+    private bool TakeContextRefresh()
+    {
+        lock (_gate)
+        {
+            var requested = _contextRefreshRequested;
+            _contextRefreshRequested = false;
+            return requested;
+        }
+    }
 
     private async Task<IReadOnlyList<Message>> WithContextUpdatesAsync(IReadOnlyList<UserMessage> prompts, CancellationToken ct)
     {
@@ -551,6 +617,7 @@ public sealed class Agent : IAgentLoop
             ThinkingLevel = ThinkingLevel,
             FastMode = FastMode,
             SessionId = SessionId,
+            CacheTtl = CacheTtl,
         };
 
         await EmitAsync(new MessageStartEvent(messageId, null), ct);

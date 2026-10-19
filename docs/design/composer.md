@@ -159,7 +159,7 @@ public sealed record TagSegment(TagKind Kind, string Value, string Label) : Segm
   - 复制时写纯文本投影，另外写一份内部格式（片段的 JSON）。在 TKCode 内部复制粘贴时保留 tag。
   - 粘贴外部纯文本时一律当作文本，不自动转换 `@path`。
   - 图片粘贴沿用 `PasteAsync`。
-- **拖放**：图片沿用现有逻辑；从系统拖入工作区内的文件时插入文件 tag，工作区外的文件插入绝对路径文本。
+- **拖放**：图片沿用现有逻辑。其他文件插入附件 tag（显示文件名，值为绝对路径），发送时把绝对路径包进提示词，不把文件内容放进会话；目录仍是文件夹 tag（工作区内为相对路径）。
 - **无障碍**：提供一个 `AutomationPeer`，对外暴露纯文本投影，tag 用它的 `Label` 表示。
 
 ### 6.4 与 ViewModel 的绑定
@@ -290,7 +290,7 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
   | Role | 工具 | 指令 |
   |---|---|---|
   | Agent | 全部 | 无（默认）；从其他模式切回时见 §18.4 |
-  | Plan | 只读（去掉 write / edit / agent 和 MCP 工具） | 调查、澄清后给出计划，见 §18.2 |
+  | Plan | 只读；write / edit 只放行计划文件，agent 只能派只读子 Agent，去掉 MCP 工具；另有 `exit_plan_mode`（[plan-mode.md](plan-mode.md) §8） | 调查、澄清后写计划文件并请求批准，见 [plan-mode.md](plan-mode.md) §12.1 |
   | ACP | 只有阅读、搜索、skill、任务清单与子 Agent 相关工具 | 主 Agent 设计方案、拆分任务，交给子 Agent 执行并整合结果，见 §18.3 |
 
 - **自定义 role**：见 §4.3。`tools` 为工具名列表时，在 `BuiltinTools.Create` 之后按名字过滤（新增 `ToolSet.Custom` 加 `AllowedTools`）。
@@ -298,14 +298,14 @@ record CompletionItem(string Id, string Title, string? Subtitle, string Icon, st
   - 用 `SetOptionsAsync` 通知 Host；
   - 在下一轮之前替换系统提示的 `role` 节和工具定义，与 MCP 补丁节使用同一套机制；
   - role 指定了 `model` 时，同时切换模型（`SetModelAsync`）。
-- **UI**：在权限选择器旁边放一个模式下拉框，显示图标加名称。在输入框里按 Shift+Tab 依次切换 Agent → Ask → Plan → 自定义 role。在 `/` 列表里选中某个 role 等同于切换，不生成 tag。
+- **UI**：在权限选择器旁边放一个模式下拉框，显示图标加名称。在输入框里按 Shift+Tab 依次切换 Agent → Plan → ACP → 自定义 role。在 `/` 列表里选中某个 role 等同于切换，不生成 tag。
 - **子 Agent**：首版不变，`explore` / `plan` / `general-purpose` 仍是写死的。之后可以让自定义 role 也能作为 `agent` 工具的 `agentType`。
 
 ## 11. 外部运行时
 
 | 运行时 | 自带命令来源 | 模式映射 |
 |---|---|---|
-| Claude Agent | `initialize` 应答的 `commands`（含描述与参数提示），比 `system/init` 的 `slash_commands` 信息更全 | Plan → 原生 `plan` 权限模式（启动参数 `--permission-mode` 或在线 `set_permission_mode`），优先于权限档位；ACP 与自定义模式只发说明。支持子 Agent，可以用 ACP |
+| Claude Agent | `initialize` 应答的 `commands`（含描述与参数提示），比 `system/init` 的 `slash_commands` 信息更全 | Plan → 原生 `plan` 权限模式（启动参数 `--permission-mode` 或在线 `set_permission_mode`），优先于权限档位；ACP 与自定义模式只发说明；Plan 不发说明，由 CLI 原生的 plan 提示词负责，`ExitPlanMode` 进入 TKCode 的计划审批面板（[plan-mode.md](plan-mode.md) §12.8、§15）。支持子 Agent，可以用 ACP |
 | Codex | 规格中没有列出命令或 skills 的方法，不提供 | Plan → 只读沙箱（线程级 `sandbox: "read-only"`，轮次级 `sandboxPolicy: {type: "readOnly"}`，sticky）；自定义模式只发说明。不支持子 Agent，不提供 ACP |
 | ACP Agent | `available_commands_update`（整体替换；可能在 `session/new` 响应之前到达，走现有的暂存回放） | 只发说明；不提供 ACP。用 Agent 自己的模式列表（`modes` / `category:"mode"`）替换 TKCode 模式列表，留到后续版本 |
 
@@ -387,7 +387,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
 - **排版**：没有用 `TextLayout`，而是自己逐行调用 `TextFormatter.FormatLine`（`ComposerLayout`）。原因是 `TextLayout` 拿到 `ITextSource` 时不知道文本长度，文档以换行结尾时不会补出光标所在的空行。空行的高度按排一个空格得出，因为空文本源排出的行只有字号那么高。
 - **字号与行高**：输入框固定为 14 / 20，与原来 AtomUI `TextArea` 的高度一致；紧凑形态展开成多行时仍用 22。
 - **右键菜单**：新增剪切、复制、粘贴、全选。
-- **拖入文件**：工作区内的文件和文件夹插入为 tag（相对路径），工作区外的插入绝对路径文字。
+- **拖入文件**：非图片文件插入为附件 tag。文件内容不进会话，发给 Agent 的是「[Attached file: 绝对路径]」再加一句读取说明。目录在工作区内仍是文件夹 tag，工作区外是绝对路径文字。
 - **图片占位符**：`[图片 #N]` 改为 `Image` tag，删除附件时一并删除对应的 tag；`ImagePrompt.RemovePlaceholder` 已删除。
 - **`ComposerText` 仍保留**：它是文档的纯文本投影，供 `CanSend` 和图片展开使用，到 C7 时再替换掉。
 - **C4 补全**：
@@ -464,24 +464,7 @@ C1–C11 已完成，`ComposerView` 已改用 `ComposerEditor`，`@` 和 `/` 走
 
 ### 18.2 Plan
 
-```
-You are in Plan mode. Turn the user's request into one implementation plan that can be reviewed and then carried out. Do not implement it.
-
-Work in this order:
-1. Investigate the workspace with the read-only tools available to you. Keep facts you verified in the code separate from assumptions, and say which is which.
-2. If a choice would materially change scope, behavior, compatibility, data or user experience, and the code does not settle it, ask the user with ask_user. Ask only what you cannot find out yourself, and do not write the plan until the answers are in.
-3. When the requirements are clear, reply with the plan in Markdown:
-   - Goal: what will be true when the work is done.
-   - Approach: the design and why, including alternatives you rejected.
-   - Changes: every file to create or modify, and what changes in it.
-   - Edge cases and risks.
-   - Verification: the tests and checks that will prove it works.
-   - Open questions, if any remain.
-   Do not use ask_user to ask whether the plan is acceptable; end your turn with the plan.
-4. If the user asks for revisions, reply with the complete updated plan, not only the changed parts.
-
-Constraints: you cannot write or edit files, launch subagents or use MCP tools in this mode, and any command you run must not modify the workspace. Never claim that something was changed. When the user approves the plan, they will switch to Agent or ACP mode to carry it out.
-```
+已由 [plan-mode.md](plan-mode.md) §12.1 取代（2026-10-19）：Plan 把计划写进计划文件，用 `exit_plan_mode` 请求批准，批准后同一轮继续执行。没有宿主（没有计划审批服务）的会话仍使用原来的版本（`SessionRole.PlanWithoutApproval`）：以一段 Markdown 回复给出计划，由用户手动切换模式。
 
 ### 18.3 ACP（协调模式）
 
@@ -510,11 +493,7 @@ Constraints: you cannot write or edit files, run commands or use MCP tools in th
 
 ### 18.4 切回 Agent
 
-只在从其他模式切回 Agent 时出现：
-
-```
-You are in Agent mode again: you can read, edit and write files and run commands to carry out the user's task. If a plan was agreed earlier in this conversation, follow it unless the user says otherwise, and say where you deviate from it.
-```
+已由 [plan-mode.md](plan-mode.md) §12.5 取代（2026-10-19）：计划文件存在时，说明里带上它的路径。
 
 ### 18.5 自定义 role
 

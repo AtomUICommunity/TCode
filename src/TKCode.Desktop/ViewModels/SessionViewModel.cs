@@ -132,8 +132,39 @@ public sealed partial class SessionViewModel : ObservableObject
         OnPropertyChanged(nameof(IsWaitingForUser));
     }
 
-    /// <summary>有等待用户处理的审批、表单或提问（侧边栏橙点）。</summary>
-    public bool IsWaitingForUser => HasPendingApproval || HasPendingElicitation || HasPendingQuestion;
+    /// <summary>
+    /// 计划审批（plan/review，按到达顺序，一次处理一个）。待审批时审批面板替换输入框（docs/design/plan-mode.md §14.1）。
+    /// 与审批、提问分开存放：切换权限档位从不替用户批准计划。
+    /// </summary>
+    public ObservableCollection<PlanReviewViewModel> PendingPlanReviews { get; } = [];
+
+    public PlanReviewViewModel? CurrentPlanReview => PendingPlanReviews.FirstOrDefault();
+    public bool HasPendingPlanReview => PendingPlanReviews.Count > 0;
+
+    public void AddPlanReview(PlanReviewViewModel review)
+    {
+        review.Decided += r =>
+        {
+            PendingPlanReviews.Remove(r);
+            SyncPlanReviews();
+        };
+        PendingPlanReviews.Add(review);
+        SyncPlanReviews();
+    }
+
+    private void SyncPlanReviews()
+    {
+        if (CurrentPlanReview is { } current)
+        {
+            current.MoreCount = PendingPlanReviews.Count - 1;
+        }
+        OnPropertyChanged(nameof(CurrentPlanReview));
+        OnPropertyChanged(nameof(HasPendingPlanReview));
+        OnPropertyChanged(nameof(IsWaitingForUser));
+    }
+
+    /// <summary>有等待用户处理的审批、表单、提问或计划审批（侧边栏橙点）。</summary>
+    public bool IsWaitingForUser => HasPendingApproval || HasPendingElicitation || HasPendingQuestion || HasPendingPlanReview;
 
     /// <summary>会话被删除或关闭：撤回所有待处理的请求，Host 不会一直等待。</summary>
     public void CancelPendingRequests()
@@ -150,7 +181,17 @@ public sealed partial class SessionViewModel : ObservableObject
         {
             question.Cancel();
         }
+        foreach (var review in PendingPlanReviews.ToList())
+        {
+            review.Cancel();
+        }
     }
+
+    /// <summary>
+    /// Host 主动改变了模式或权限（optionsChanged，docs/design/plan-mode.md §13.2）：选择器随 <see cref="Options"/> 更新，不回调 Host。
+    /// 参数是变化前与变化后的参数。
+    /// </summary>
+    public event Action<SessionOptionsDto, SessionOptionsDto>? HostOptionsChanged;
     public bool IsEmpty => Items.Count == 0;
 
     /// <summary>任务清单（task_* 工具的最新快照）。</summary>
@@ -279,6 +320,10 @@ public sealed partial class SessionViewModel : ObservableObject
     [ObservableProperty]
     public partial long LastUsageTokens { get; private set; }
 
+    /// <summary>最近一次助手回复的用量明细（上下文占用提示里显示缓存读写）；压缩后清空。</summary>
+    [ObservableProperty]
+    public partial UsageDto? LastUsage { get; private set; }
+
     public string? ModelIconKey => ModelIcons.ForModel(ModelId);
 
     partial void OnModelIdChanged(string value) => OnPropertyChanged(nameof(ModelIconKey));
@@ -395,12 +440,13 @@ public sealed partial class SessionViewModel : ObservableObject
                 case "user":
                     current = null;
                     var text = string.Concat(message.Blocks.OfType<HistoryText>().Select(t => t.Text));
-                    if (message.Source is CompactSummarySource)
+                    if (message.Source is CompactSummarySource or HandoffSource)
                     {
-                        items.Add(CompactionItemViewModel.FromSummary(text));
+                        items.Add(message.Source is HandoffSource ? CompactionItemViewModel.FromHandoff(text) : CompactionItemViewModel.FromSummary(text));
                         if (latest)
                         {
                             // 压缩前的用量已不代表当前上下文；等压缩后的第一次回复再显示
+                            LastUsage = null;
                             LastUsageTokens = 0;
                         }
                         break;
@@ -454,8 +500,9 @@ public sealed partial class SessionViewModel : ObservableObject
                     {
                         current.ErrorMessage = ErrorText(message.StopReason, message.ErrorMessage);
                     }
-                    if (latest && message.Usage is { } usage)
+                    if (latest && message.Usage is { } usage && HasTokens(usage))
                     {
+                        LastUsage = usage;
                         LastUsageTokens = usage.Input + usage.CacheRead + usage.CacheWrite + usage.Output;
                     }
                     current.Complete(message.Timestamp);
@@ -538,8 +585,16 @@ public sealed partial class SessionViewModel : ObservableObject
         LastActivity = DateTimeOffset.Now;
         switch (e)
         {
+            case SessionTitleChanged title:
+                Title = title.Title;
+                break;
             case CommandsChanged c:
                 RuntimeCommands = c.Commands;
+                break;
+            case SessionOptionsChanged c:
+                var previous = Options;
+                Options = c.Options;
+                HostOptionsChanged?.Invoke(previous, c.Options);
                 break;
             case AgentStarted:
                 SetRunning(true);
@@ -556,7 +611,7 @@ public sealed partial class SessionViewModel : ObservableObject
                 RunEnded?.Invoke(completed);
                 break;
             case CompactionStarted c:
-                Items.Add(CompactionItemViewModel.Running(c.PreTokens));
+                Items.Add(CompactionItemViewModel.Running(c.PreTokens, handoff: c.Trigger == PlanHandoffTrigger));
                 break;
             case CompactionEnded c:
                 if (Items.LastOrDefault(i => i is CompactionItemViewModel { IsRunning: true }) is CompactionItemViewModel running)
@@ -565,6 +620,7 @@ public sealed partial class SessionViewModel : ObservableObject
                 }
                 if (c.Error is null && c.PostTokens is { } post)
                 {
+                    LastUsage = null;
                     LastUsageTokens = post;
                 }
                 break;
@@ -574,10 +630,14 @@ public sealed partial class SessionViewModel : ObservableObject
             case CompactionSuspended c:
                 Items.Add(CompactionItemViewModel.SuspendedNotice(c.Reason));
                 break;
-            case MessageStarted { Role: "user", Source: CompactSummarySource } m:
+            case MessageStarted { Role: "user", Source: CompactSummarySource or HandoffSource } m:
                 if (Items.LastOrDefault(i => i is CompactionItemViewModel) is CompactionItemViewModel compacted)
                 {
                     compacted.SetSummary(m.Text ?? "");
+                }
+                else if (m.Source is HandoffSource)
+                {
+                    Items.Add(CompactionItemViewModel.FromHandoff(m.Text ?? ""));
                 }
                 break;
             case MessageStarted { Role: "user", Source: CompactContextSource }:
@@ -606,9 +666,15 @@ public sealed partial class SessionViewModel : ObservableObject
                 SetPondering(false);
                 msg.GetOrAdd(_blockOffset + d.ContentIndex, () => new TextBlockViewModel(live: true)).Append(d.Delta);
                 break;
+            case TextEnded end when end.MessageId == _currentMessageId && Current is { } msg:
+                msg.CompleteBlock(_blockOffset + end.ContentIndex);
+                break;
             case ThinkingDelta d when Current is { } msg:
                 SetPondering(false);
                 msg.GetOrAdd(_blockOffset + d.ContentIndex, () => new ThinkingBlockViewModel()).Append(d.Delta);
+                break;
+            case ThinkingEnded end when end.MessageId == _currentMessageId && Current is { } msg:
+                msg.CompleteBlock(_blockOffset + end.ContentIndex);
                 break;
             case ToolCallStarted s when Current is { } msg:
                 SetPondering(false);
@@ -628,8 +694,9 @@ public sealed partial class SessionViewModel : ObservableObject
                 {
                     msg.ErrorMessage = ErrorText(end.StopReason, end.ErrorMessage);
                 }
-                if (end.Usage is { } usage)
+                if (end.Usage is { } usage && HasTokens(usage))
                 {
+                    LastUsage = usage;
                     LastUsageTokens = usage.Input + usage.CacheRead + usage.CacheWrite + usage.Output;
                 }
                 break;
@@ -664,6 +731,10 @@ public sealed partial class SessionViewModel : ObservableObject
         {
             item.RefreshLanguage();
         }
+        foreach (var item in Items.OfType<UserMessageItemViewModel>())
+        {
+            item.RefreshLanguage();
+        }
         foreach (var item in Items.OfType<NotificationItemViewModel>())
         {
             item.RefreshLanguage();
@@ -671,6 +742,18 @@ public sealed partial class SessionViewModel : ObservableObject
         foreach (var item in Items.OfType<CompactionItemViewModel>())
         {
             item.RefreshLanguage();
+        }
+        foreach (var item in Items.OfType<TurnChangesItemViewModel>())
+        {
+            item.RefreshLanguage();
+        }
+        foreach (var question in PendingQuestions)
+        {
+            question.RefreshLanguage();
+        }
+        foreach (var review in PendingPlanReviews)
+        {
+            review.RefreshLanguage();
         }
         TaskList.RefreshLanguage();
     }
@@ -681,6 +764,13 @@ public sealed partial class SessionViewModel : ObservableObject
     /// <summary>压缩后的摘要消息与重新附加的上下文（Host 的 CompactionPrompts.SummarySource / ContextSource）。</summary>
     private const string CompactSummarySource = "compact-summary";
     private const string CompactContextSource = "compact-context";
+
+    /// <summary>
+    /// 批准计划并清空上下文后的交接消息（CompactionPrompts.HandoffSource）与对应的压缩触发类型（docs/design/plan-mode.md §11）：
+    /// 显示为“已清空上下文，按计划执行”的分隔线。
+    /// </summary>
+    private const string HandoffSource = "plan-handoff";
+    private const string PlanHandoffTrigger = "planHandoff";
 
     private AssistantMessageItemViewModel? Current =>
         _currentMessageId is null ? null : Items.LastOrDefault() as AssistantMessageItemViewModel;
@@ -723,4 +813,10 @@ public sealed partial class SessionViewModel : ObservableObject
 
     private static string ErrorText(string stopReason, string? message) =>
         stopReason == "Aborted" ? Strings.Get(TKCodeLangResourceKind.Aborted) : message ?? Strings.Get(TKCodeLangResourceKind.RequestFailed);
+
+    /// <summary>
+    /// 消息带了用量。外部运行时只在一轮的最后一条助手消息上给整轮用量，中间的消息是全 0：
+    /// 不能拿它覆盖上一次的用量，否则一轮里占用环（和它的悬停卡片）会反复消失又出现。
+    /// </summary>
+    private static bool HasTokens(UsageDto usage) => usage.Input + usage.CacheRead + usage.CacheWrite + usage.Output > 0;
 }

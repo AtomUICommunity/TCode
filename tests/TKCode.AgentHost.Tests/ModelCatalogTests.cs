@@ -14,7 +14,7 @@ public sealed class ModelCatalogTests : IDisposable
 {
     private static readonly BuiltInCatalog Catalog = new();
     private static readonly string[] KeyVariables =
-        ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "ZHIPU_API_KEY", "DASHSCOPE_API_KEY", "TKCODE_FAKE_PROVIDER", "TKCODE_TEST_KEY"];
+        ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "ZHIPU_API_KEY", "DASHSCOPE_API_KEY", "COWORK_API_KEY", "TKCODE_FAKE_PROVIDER", "TKCODE_TEST_KEY"];
 
     private readonly Dictionary<string, string?> _saved = [];
     private readonly string _home = Directory.CreateTempSubdirectory("tkcode-catalog-").FullName;
@@ -62,6 +62,25 @@ public sealed class ModelCatalogTests : IDisposable
     }
 
     [Fact]
+    public void PrimaryAndFastModels_AreIndependent_AndKeepLastValidConfiguration()
+    {
+        var catalog = Load("""{ "model": "fake/fake-sonnet", "fastModel": "fake/fake-mini" }""");
+        Assert.Equal("fake/fake-sonnet", catalog.DefaultModelRef);
+        Assert.Equal("fake/fake-mini", catalog.FastModelRef);
+        Assert.Empty(catalog.Warnings);
+
+        File.WriteAllText(Path.Combine(_home, "settings.json"), """{ "fastModel": false }""");
+        Assert.False(catalog.Reload());
+        Assert.Equal("fake/fake-sonnet", catalog.DefaultModelRef);
+        Assert.Equal("fake/fake-mini", catalog.FastModelRef);
+
+        File.WriteAllText(Path.Combine(_home, "settings.json"), "{}");
+        Assert.True(catalog.Reload());
+        Assert.Null(catalog.DefaultModelRef);
+        Assert.Null(catalog.FastModelRef);
+    }
+
+    [Fact]
     public void NoSettings_OnlyFakeModels_AndSchemaWritten()
     {
         var catalog = new ModelCatalog(NullLogger<ModelCatalog>.Instance, Catalog, Discovery());
@@ -98,6 +117,20 @@ public sealed class ModelCatalogTests : IDisposable
     [InlineData("gpt-6.1-sol@eu", "gpt-6.1-sol")]
     [InlineData("auto/openai/gpt-6.1-sol:free", "gpt-6.1-sol")]
     public void BaseModelId_StripsRoutingPrefixAndSuffix(string id, string expected) => Assert.Equal(expected, BuiltInCatalog.BaseModelId(id));
+
+    [Fact]
+    public void PromptCacheTtl_GlobalSetting_DefaultsToFiveMinutes_AndWarnsOnUnknownValues()
+    {
+        Assert.Equal(PromptCacheTtl.FiveMinutes, Load("{}").CacheTtl);
+        var catalog = Load("""{ "promptCacheTtl": "1h", "originalImages": true, "defaultRole": "plan", "skills": {} }""");
+        Assert.Equal(PromptCacheTtl.OneHour, catalog.CacheTtl);
+        // 这几个是合法的顶层字段，不应报“未知字段”
+        Assert.Empty(catalog.Warnings);
+
+        catalog = Load("""{ "promptCacheTtl": "30m" }""");
+        Assert.Equal(PromptCacheTtl.FiveMinutes, catalog.CacheTtl);
+        Assert.Contains(catalog.Warnings, w => w.StartsWith("promptCacheTtl:", StringComparison.Ordinal));
+    }
 
     [Fact]
     public void SettingsWithoutProviders_Loads()
@@ -233,6 +266,106 @@ public sealed class ModelCatalogTests : IDisposable
         Assert.True(known.Compat!.RequiresReasoningContentOnAssistant);
         Assert.Equal(128_000, catalog.Find("gw/my-private-model")!.ContextWindow);
         Assert.Equal("Bearer", _http.Requests[^1].Headers.Authorization?.Scheme);
+    }
+
+    private const string NextCoWorkModels = "https://nextco.work/v1/models";
+
+    [Fact]
+    public async Task NextCoWork_IsBuiltIn_DefaultsToResponses_AndNeedsAKeyBeforeAnyModelAppears()
+    {
+        var catalog = Load("{}");
+        var provider = catalog.Providers.Single(p => p.Id == "nextcowork");
+        Assert.True(provider.IsBuiltIn);
+        Assert.False(provider.IsConfigured);
+        Assert.Equal("NextCoWork", provider.Name);
+        Assert.Equal("responses", provider.Api);
+        Assert.Equal("https://nextco.work/v1", provider.BaseUrl);
+        Assert.True(provider.SupportsDiscovery);
+        Assert.False(provider.IsActive);
+        Assert.Equal("COWORK_API_KEY", provider.Key.Variable);
+        // 没有 Key 就不请求 /v1/models（未授权只会得到 401）
+        await Task.Delay(50);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task NextCoWork_Claude_IsPinnedToMessages_OthersFollowResponses_ImagesAreSkipped()
+    {
+        _http.Responses[NextCoWorkModels] = (System.Net.HttpStatusCode.OK, """
+            { "object": "list", "data": [
+                { "id": "claude-opus-5-5" }, { "id": "gpt-6-sol" }, { "id": "deepseek-v4-pro" },
+                { "id": "gpt-image-2" }, { "id": "grok-imagine-image" } ] }
+            """);
+        var catalog = Load("""{ "providers": { "nextcowork": { "apiKey": "sk-cowork" } } }""");
+        await catalog.RefreshModelsAsync("nextcowork");
+
+        var provider = catalog.Providers.Single(p => p.Id == "nextcowork");
+        Assert.Empty(provider.Errors);
+        Assert.True(provider.IsActive);
+        Assert.Equal("Bearer", _http.Requests[^1].Headers.Authorization?.Scheme);
+        Assert.Equal(["claude-opus-5-5", "gpt-6-sol", "deepseek-v4-pro"], catalog.Models.Where(m => m.Provider == "nextcowork").Select(m => m.Id));
+
+        var claude = catalog.Find("nextcowork/claude-opus-5-5")!;
+        Assert.Equal(KnownApis.AnthropicMessages, claude.Api);
+        // Messages 适配器自己拼 /v1/messages，所以 Base URL 不带 /v1
+        Assert.Equal("https://nextco.work", claude.BaseUrl);
+        var gpt = catalog.Find("nextcowork/gpt-6-sol")!;
+        Assert.Equal(KnownApis.OpenAIResponses, gpt.Api);
+        Assert.Equal("https://nextco.work/v1", gpt.BaseUrl);
+        Assert.Equal(KnownApis.OpenAIResponses, catalog.Find("nextcowork/deepseek-v4-pro")!.Api);
+
+        var states = provider.Models.ToDictionary(m => m.Model.Id);
+        Assert.True(states["claude-opus-5-5"].ApiOverridden);
+        Assert.Equal("messages", states["claude-opus-5-5"].Api);
+        Assert.Equal("messages", states["claude-opus-5-5"].DefaultApi);
+        Assert.False(states["gpt-6-sol"].ApiOverridden);
+        Assert.Equal("responses", states["gpt-6-sol"].DefaultApi);
+    }
+
+    [Fact]
+    public void NextCoWork_UserCanStillOverrideAClaudeModelsProtocol()
+    {
+        _http.Responses[NextCoWorkModels] = (System.Net.HttpStatusCode.OK, """{ "data": [ { "id": "claude-sonnet-5-5" }, { "id": "claude-haiku-5-5" } ] }""");
+        var catalog = Load("""
+            { "providers": { "nextcowork": { "apiKey": "sk-cowork", "models": {
+                "claude-sonnet-5-5": { "api": "chat" }, "claude-haiku-5-5": {} } } } }
+            """);
+
+        var chat = catalog.Find("nextcowork/claude-sonnet-5-5")!;
+        Assert.Equal(KnownApis.OpenAIChatCompletions, chat.Api);
+        Assert.Equal("https://nextco.work/v1", chat.BaseUrl);
+        var provider = catalog.Providers.Single(p => p.Id == "nextcowork");
+        var sonnet = provider.Models.Single(m => m.Model.Id == "claude-sonnet-5-5");
+        Assert.Equal("chat", sonnet.Api);
+        Assert.Equal("messages", sonnet.DefaultApi);
+        Assert.Equal(KnownApis.AnthropicMessages, catalog.Find("nextcowork/claude-haiku-5-5")!.Api);
+    }
+
+    [Fact]
+    public async Task NextCoWork_DiscoveryFails_ReportsProviderError()
+    {
+        _http.Responses[NextCoWorkModels] = (System.Net.HttpStatusCode.Unauthorized, """{ "error": { "message": "invalid key" } }""");
+        var catalog = Load("""{ "providers": { "nextcowork": { "apiKey": "bad" } } }""");
+        await catalog.RefreshModelsAsync("nextcowork");
+        var provider = catalog.Providers.Single(p => p.Id == "nextcowork");
+        Assert.Contains(provider.Errors, e => e.Contains("invalid key"));
+        Assert.False(provider.IsActive);
+    }
+
+    [Fact]
+    public void HiddenProvider_DisappearsEvenWhenAnEnvironmentKeyIsSet()
+    {
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "sk-env");
+        var visible = Load("{}");
+        Assert.True(visible.Providers.Single(p => p.Id == "openai").IsActive);
+
+        var catalog = Load("""{ "providers": { "openai": { "hidden": true } } }""");
+        Assert.DoesNotContain(catalog.Providers, p => p.Id == "openai");
+        Assert.DoesNotContain(catalog.Models, m => m.Provider == "openai");
+        Assert.Empty(catalog.Warnings);
+        Assert.Empty(catalog.Errors);
+        // 其它推荐厂商不受影响
+        Assert.Contains(catalog.Providers, p => p.Id == "anthropic");
     }
 
     [Fact]

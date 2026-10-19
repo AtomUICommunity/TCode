@@ -18,7 +18,7 @@ public sealed class TranscriptAdapter
     private readonly Dictionary<object, TranscriptEntry> _cache = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<AssistantMessageItemViewModel> _watched = [];
     private readonly Dictionary<AssistantBlockViewModel, ActivityGroupViewModel> _groups = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<ToolCallBlockViewModel, QuestionCardViewModel> _questions = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<ToolCallBlockViewModel, TranscriptItemViewModel> _cards = new(ReferenceEqualityComparer.Instance);
     private SessionViewModel? _session;
     private bool _attaching;
 
@@ -31,9 +31,17 @@ public sealed class TranscriptAdapter
             {
                 group.RefreshSummary();
             }
-            foreach (var card in _questions.Values)
+            foreach (var card in _cards.Values)
             {
-                card.RefreshLanguage();
+                switch (card)
+                {
+                    case QuestionCardViewModel question:
+                        question.RefreshLanguage();
+                        break;
+                    case PlanCardViewModel plan:
+                        plan.RefreshLanguage();
+                        break;
+                }
             }
         };
     }
@@ -60,7 +68,7 @@ public sealed class TranscriptAdapter
         _watched.Clear();
         _cache.Clear();
         _groups.Clear();
-        _questions.Clear();
+        _cards.Clear();
         _session = session;
         if (session is not null)
         {
@@ -118,15 +126,19 @@ public sealed class TranscriptAdapter
                 _ => new ContentEntry(item),
             };
 
-    /// <summary>提问工具：显示为独立的问答卡片，不并入活动组（docs/design/ask-user.md §7.4）。</summary>
-    private static bool IsQuestion(AssistantBlockViewModel block) => block is ToolCallBlockViewModel { Category: ToolCategory.Question };
+    /// <summary>
+    /// 提问、进入 Plan 模式的确认与计划审批：显示为独立的卡片，不并入活动组
+    /// （docs/design/ask-user.md §7.4、docs/design/plan-mode.md §14.2）。
+    /// </summary>
+    private static bool IsCard(AssistantBlockViewModel block) =>
+        block is ToolCallBlockViewModel { Category: ToolCategory.Question or ToolCategory.EnterPlan or ToolCategory.PlanReview };
 
-    private QuestionCardViewModel CardFor(AssistantBlockViewModel block)
+    private TranscriptItemViewModel CardFor(AssistantBlockViewModel block)
     {
         var call = (ToolCallBlockViewModel)block;
-        if (!_questions.TryGetValue(call, out var card))
+        if (!_cards.TryGetValue(call, out var card))
         {
-            card = _questions[call] = new QuestionCardViewModel(call);
+            card = _cards[call] = call.Category == ToolCategory.PlanReview ? new PlanCardViewModel(call) : new QuestionCardViewModel(call);
         }
         return card;
     }
@@ -210,7 +222,7 @@ public sealed class TranscriptAdapter
                         Flush(trailing: false);
                         desired.Add(EntryFor(block));
                     }
-                    else if (IsQuestion(block))
+                    else if (IsCard(block))
                     {
                         Flush(trailing: false);
                         desired.Add(EntryFor(CardFor(block)));
@@ -237,8 +249,26 @@ public sealed class TranscriptAdapter
         Flush(trailing: true);
     }
 
-    /// <summary>已结束的一轮：除最后一段正文外的思考、工具、中间正文收进“已工作 N 分 N 秒”的工作空间组，默认收起。</summary>
+    /// <summary>
+    /// 已结束的一轮。轮次中途有压缩分隔线（例如批准计划后清空上下文、按计划执行，docs/design/plan-mode.md §11）时，
+    /// 分隔线前后各自成段，分隔线留在两段之间。
+    /// </summary>
     private void EmitFinishedTurn(IList<TranscriptItemViewModel> items, int start, int end, List<TranscriptEntry> desired)
+    {
+        for (var i = start; i < end; i++)
+        {
+            if (items[i] is CompactionItemViewModel divider)
+            {
+                EmitFinishedSegment(items, start, i, desired);
+                desired.Add(EntryFor(divider));
+                start = i + 1;
+            }
+        }
+        EmitFinishedSegment(items, start, end, desired);
+    }
+
+    /// <summary>已结束的一段：除最后一段正文外的思考、工具、中间正文收进“已工作 N 分 N 秒”的工作空间组，默认收起。</summary>
+    private void EmitFinishedSegment(IList<TranscriptItemViewModel> items, int start, int end, List<TranscriptEntry> desired)
     {
         var blocks = new List<AssistantBlockViewModel>();
         var messages = new List<AssistantMessageItemViewModel>();
@@ -261,9 +291,9 @@ public sealed class TranscriptAdapter
             }
         }
 
-        // 问答卡片不收进工作空间：放在工作空间之后、最后一段正文之前
-        var questions = blocks.Where(IsQuestion).ToList();
-        blocks.RemoveAll(IsQuestion);
+        // 问答 / 计划卡片不收进工作空间：放在工作空间之后、最后一段正文之前
+        var cards = blocks.Where(IsCard).ToList();
+        blocks.RemoveAll(IsCard);
 
         // 最后一段正文留在外面，其余全部收进工作空间
         var last = blocks.FindLastIndex(b => b is TextBlockViewModel);
@@ -278,9 +308,9 @@ public sealed class TranscriptAdapter
             group.SetWorked(Elapsed(messages));
             desired.Add(EntryFor(group));
         }
-        foreach (var question in questions)
+        foreach (var card in cards)
         {
-            desired.Add(EntryFor(CardFor(question)));
+            desired.Add(EntryFor(CardFor(card)));
         }
         if (last >= 0)
         {

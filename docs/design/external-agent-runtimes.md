@@ -177,11 +177,11 @@ public interface IRuntimeHost   // 会话 → TKCode
 规则：
 - 提问类请求（AskUserQuestion、requestUserInput、非规范形状的 ACP 权限请求）在任何档位下都不会被自动回答。
 - **契约**：`SessionOptionsDto.PermissionMode` 取 `ask`、`autoApprove`、`fullAccess`（协议 v9；旧的 `AutoApprove` 字段已删除）。
-- **持久化**：档位写入会话文件的 `optionsChange` 记录。重新打开会话时，`fullAccess` 会降回 `ask`。
+- **持久化**：档位写入会话文件的 `optionsChange` 记录。重新打开会话、以及在新会话中继续时，沿用记录的档位，包括 `fullAccess`。
 - **界面**：
   - 选择器放在输入框底栏。
   - 每次切换到“完全授权”都要二次确认。
-  - 按项目记住上次的档位（“完全授权”不沿用，新会话回到“询问”），由桌面端保存。
+  - 按项目记住上次的档位（包括“完全授权”，本项目的新会话沿用），由桌面端保存。
 - **Codex**：以 `thread/start` 响应中实际生效的 `approvalPolicy`、`sandbox`、`serviceTier` 为基线，每轮只在档位不同时显式覆盖。这样可以避免用户 `config.toml` 里的设置（例如 `service_tier = "priority"`）在 TKCode 关闭对应选项时仍然生效。
 
 ## 7. 会话、恢复与持久化

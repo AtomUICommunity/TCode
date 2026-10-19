@@ -1,3 +1,4 @@
+using TKCode.Shell;
 using TKCode.Terminal.Core;
 using TKCode.Terminal.Protocol;
 using TKCode.Terminal.Pty;
@@ -38,15 +39,13 @@ internal static class SessionLauncher
         {
             throw new PtyHostException(PtyErrors.ProfileNotFound, $"profile not found: {profile}");
         }
-        else if (OperatingSystem.IsWindows())
-        {
-            file = env.GetValueOrDefault("ComSpec") ?? Path.Combine(Environment.SystemDirectory, "cmd.exe");
-            args = [];
-        }
         else
         {
-            file = env.GetValueOrDefault("SHELL") is { Length: > 0 } shell && File.Exists(shell) ? shell : "/bin/sh";
-            args = [];
+            // 默认 shell：settings 的 terminal.defaultProfile，auto 时 Windows 为 PowerShell 7 → Windows PowerShell → cmd，Unix 为登录 shell。
+            // 按 Desktop 传来的基础环境（而不是 host 自己的）解析 PATH 与 $SHELL，指定的 shell 不可用时退回 auto。
+            var shell = new ShellCatalog(new RealShellSystem(name => env.GetValueOrDefault(name))).Resolve(settings.DefaultShell, ShellUse.Terminal).Shell;
+            file = shell.Executable;
+            args = InteractiveArguments(shell);
             // macOS：不经 login 包装，argv0 写成 "-zsh" 形式作为登录 shell（03 §8.3，2026-10-17 决定）
             if (OperatingSystem.IsMacOS())
             {
@@ -57,6 +56,15 @@ internal static class SessionLauncher
         actual = new ActualLaunchDto(file, args, argv0, login);
         return new PtyLaunch(file, args, argv0, cwd, env.Select(kv => kv).ToList(), size, width);
     }
+
+    /// <summary>交互式启动参数：PowerShell 去掉启动横幅，Windows 上的 bash 作为登录交互 shell；其余不带参数。</summary>
+    internal static string[] InteractiveArguments(DetectedShell shell) => shell.Kind switch
+    {
+        ShellKind.Pwsh or ShellKind.WindowsPowerShell => ["-NoLogo"],
+        ShellKind.GitBash => ["--login", "-i"],
+        ShellKind.Bash when OperatingSystem.IsWindows() => ["--login", "-i"],
+        _ => [],
+    };
 
     private static Dictionary<string, string> BuildEnvironment(SessionCreateParams p, HostSettingsDto settings)
     {

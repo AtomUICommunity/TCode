@@ -48,7 +48,7 @@
         <StackPanel Spacing="10">
             <!-- 标题：来源 + 排队数；标签页；停止 -->
             <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
-                <icons:LucideIcon Kind="MessageCircleQuestion" Width="15" Height="15" VerticalAlignment="Center"
+                <icons:LucideIcon Kind="{Binding Icon}" Width="15" Height="15" VerticalAlignment="Center"
                                   StrokeBrush="{DynamicResource TKCode.Accent}" />
                 <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Title}" Margin="8,0,0,0" VerticalAlignment="Center" />
                 <Border Grid.Column="2" Classes="kbd" Margin="8,0,0,0" IsVisible="{Binding HasMore}" VerticalAlignment="Center">

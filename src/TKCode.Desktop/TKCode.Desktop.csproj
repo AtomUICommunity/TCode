@@ -4,12 +4,16 @@
         <RootNamespace>TKCode.Desktop</RootNamespace>
         <AssemblyName>TKCode</AssemblyName>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+        <!-- LibraryImport / GeneratedComInterface（Services/WindowsJumpList.cs）的源生成代码需要 -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <!-- Windows 可执行文件图标（资源管理器、任务栏）；macOS/Linux 使用 Packaging 下的 icns / hicolor PNG -->
         <ApplicationIcon>Packaging\app.ico</ApplicationIcon>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <!-- 整个客户端必须支持 NativeAOT：发布默认 AOT，构建期启用 AOT / 裁剪分析器 -->
         <PublishAot>true</PublishAot>
+        <!-- .NET 11 的精简 AOT 发布会在 ResolveReferences 前处理资源；Avalonia 需要完整 Build 收集并预编译 XAML。 -->
+        <UseOptimizedPublish>false</UseOptimizedPublish>
     </PropertyGroup>
     <ItemGroup>
         <AvaloniaResource Include="Assets\**" />
@@ -29,6 +33,7 @@
     <ItemGroup>
         <ProjectReference Include="..\TKCode.Rpc.Contracts\TKCode.Rpc.Contracts.csproj" />
         <ProjectReference Include="..\TKCode.Config\TKCode.Config.csproj" />
+        <ProjectReference Include="..\TKCode.Shell\TKCode.Shell.csproj" />
         <!-- Agent Host 作为独立进程运行；引用它只为保证先构建并把产物复制到 agenthost/ 目录 -->
         <ProjectReference Include="..\TKCode.AgentHost\TKCode.AgentHost.csproj" ReferenceOutputAssembly="false" />
         <!-- 终端：视图与协议库；pty host 作为独立进程（04 §1.1），同样只为先构建并复制产物到 ptyhost/ 目录 -->

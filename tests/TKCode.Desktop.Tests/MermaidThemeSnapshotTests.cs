@@ -142,10 +142,10 @@ public sealed class MermaidThemeSnapshotTests
                 Assert.Equal(byte.MaxValue, context.Accent.A);
                 // 丢掉透明度时前景和背景是同一个颜色
                 Assert.NotEqual(context.Foreground, context.Background);
-                var contrast = Contrast(context.Foreground, context.Background);
+                var contrast = ColorContrast.Ratio(context.Foreground, context.Background);
                 Assert.True(contrast > 7, $"dark={dark}: foreground {context.Foreground} on {context.Background} has contrast {contrast:F2}");
                 // 底色保持明暗方向
-                Assert.Equal(dark, Luminance(context.Background) < 0.2);
+                Assert.Equal(dark, ColorContrast.Luminance(context.Background) < 0.2);
                 window.Close();
             }
             finally
@@ -182,27 +182,5 @@ public sealed class MermaidThemeSnapshotTests
                 return true;
             }, TestContext.Current.CancellationToken);
         }
-    }
-
-    private static double Luminance(Color color)
-    {
-        static double Linear(byte channel)
-        {
-            var c = channel / 255.0;
-            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
-        }
-
-        return 0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
-    }
-
-    private static double Contrast(Color a, Color b)
-    {
-        var (hi, lo) = (Luminance(a), Luminance(b));
-        if (hi < lo)
-        {
-            (hi, lo) = (lo, hi);
-        }
-
-        return (hi + 0.05) / (lo + 0.05);
     }
 }

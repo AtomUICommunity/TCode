@@ -36,14 +36,20 @@ public sealed class OpenAIChatCompletionsApi(HttpClient http) : HttpWireApi(http
             ["messages"] = BuildMessages(model, context, compat),
             ["stream"] = true,
         };
-        if (compat.SupportsUsageInStreaming || compat.SupportsPromptCacheKey)
+        if (compat.SupportsCacheControl)
+        {
+            // 1 小时 TTL 只对 Claude 后端有意义；百炼显式缓存只有 5 分钟
+            var ttl = model.Id.Contains("claude", StringComparison.OrdinalIgnoreCase) ? options.CacheTtl : PromptCacheTtl.FiveMinutes;
+            ApplyCacheControl(body["messages"]!.AsArray(), ttl, options.SkipCacheWrite);
+        }
+        if (compat.SupportsUsageInStreaming || compat.SupportsIncludeObfuscation)
         {
             var streamOptions = new JsonObject();
             if (compat.SupportsUsageInStreaming)
             {
                 streamOptions["include_usage"] = true;
             }
-            if (compat.SupportsPromptCacheKey)
+            if (compat.SupportsIncludeObfuscation)
             {
                 streamOptions["include_obfuscation"] = false;
             }
@@ -51,7 +57,7 @@ public sealed class OpenAIChatCompletionsApi(HttpClient http) : HttpWireApi(http
         }
         if (compat.SupportsPromptCacheKey && !string.IsNullOrEmpty(options.SessionId))
         {
-            body["prompt_cache_key"] = "tkcode:" + options.SessionId;
+            body["prompt_cache_key"] = PromptCache.Key(options.SessionId);
         }
         if (compat.SupportsStore)
         {
@@ -96,8 +102,48 @@ public sealed class OpenAIChatCompletionsApi(HttpClient http) : HttpWireApi(http
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
         }
+        if (compat.SessionAffinityHeader is { } affinity && !string.IsNullOrEmpty(options.SessionId))
+        {
+            request.Headers.TryAddWithoutValidation(affinity, PromptCache.Key(options.SessionId));
+        }
         ApplyHeaders(request, model);
         return request;
+    }
+
+    /// <summary>
+    /// Claude / 百炼 Qwen 的显式缓存断点，布局同 Messages 协议（参考 Claude Code）：系统提示一个，
+    /// 最后一条 user / tool 消息一个（分叉请求取最后一条消息之前的那条，只读不写）。
+    /// 字符串 content 改写成单个 text part 才能挂 cache_control；助手消息保持字符串，不放断点。
+    /// </summary>
+    private static void ApplyCacheControl(JsonArray messages, PromptCacheTtl ttl, bool skipCacheWrite)
+    {
+        if (messages.Count > 0 && messages[0] is JsonObject first && first["role"]?.GetValue<string>() is "system" or "developer")
+        {
+            MarkCacheable(first, ttl);
+        }
+        var end = skipCacheWrite ? messages.Count - 1 : messages.Count;
+        for (var i = end - 1; i >= 0; i--)
+        {
+            if (messages[i] is JsonObject message && message["role"]?.GetValue<string>() is "user" or "tool" && MarkCacheable(message, ttl))
+            {
+                return;
+            }
+        }
+    }
+
+    private static bool MarkCacheable(JsonObject message, PromptCacheTtl ttl)
+    {
+        switch (message["content"])
+        {
+            case JsonValue value when value.TryGetValue<string>(out var text) && text.Length > 0:
+                message["content"] = new JsonArray((JsonNode)new JsonObject { ["type"] = "text", ["text"] = text, ["cache_control"] = PromptCache.Control(ttl) });
+                return true;
+            case JsonArray { Count: > 0 } parts when parts[^1] is JsonObject last:
+                last["cache_control"] = PromptCache.Control(ttl);
+                return true;
+            default:
+                return false;
+        }
     }
 
     /// <summary>按厂商的推理参数格式写入思考配置（规格 §8、§10）。省略字段不等于关闭思考。</summary>

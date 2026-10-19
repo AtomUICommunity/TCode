@@ -25,7 +25,6 @@ ThinkingMax	Max	最高
 AddFavorite	Add to favorites	收藏
 RemoveFavorite	Remove from favorites	取消收藏
 NotSupported	Not supported by this model	当前模型不支持
-ContextUsageFormat	{0} / {1} tokens used	已使用 {0} / {1} tokens
 StatusSendFailedFormat	Failed to send: {0}	发送失败：{0}
 StatusHostDisconnectedFormat	Agent process disconnected: {0}	Agent 进程已断开：{0}
 StatusHostStartFailedFormat	Could not start the agent process: {0}	无法启动 Agent 进程：{0}
@@ -38,6 +37,7 @@ NewProject	New project…	新建项目…
 NoProject	Don't work in a project	不使用项目
 NoProjectName	No project	无项目
 Sessions	Sessions	会话
+SessionsLoadMore	Show more	展开更多
 NoSessions	No sessions yet	还没有会话
 NewSession	New session	新会话
 ToggleSidebar	Toggle sidebar	切换侧栏
@@ -113,8 +113,12 @@ ThemeLabel	Theme	主题
 ThemeSystem	System	跟随系统
 ThemeDark	Dark	暗色
 ThemeLight	Light	亮色
-DefaultModelLabel	Default model	默认模型
-DefaultModelHint	Used for new sessions when you haven't picked a model yet.	新会话在你还没选择模型时使用。
+ModelConfiguration	Model configuration	模型配置
+DefaultModelLabel	Primary model	主模型
+DefaultModelHint	The default model for new sessions. You can choose another model in each session.	新会话默认使用的模型，可在会话中单独切换。
+FastModelLabel	Fast model	快速模型
+FastModelHint	Used for subagents and conversation titles. Choose an API model, or follow the session model.	子代理和会话标题默认使用，可选择 API 模型；未配置时跟随会话模型。
+FollowSessionModel	Follow session	跟随会话
 FirstAvailableModel	First available model	第一个可用模型
 SettingsFileLabel	Settings file	配置文件
 SettingsFileHint	Edits here are written to settings.json; changes made in an editor apply automatically. Comments in the file are not preserved when saving from here.	这里的修改会写入 settings.json；在编辑器里修改也会自动生效。从这里保存时，文件中的注释不会保留。
@@ -135,6 +139,10 @@ KeyMissingFormat	Set {0} or paste a key below	设置环境变量 {0}，或在下
 KeyNotRequired	No key required	无需 Key
 Save	Save	保存
 Remove	Remove	移除
+DiscardDraft	Discard	放弃
+ProviderRemoveConfirmTitle	Remove “{0}”?	移除“{0}”？
+ProviderRemoveConfirmText	This provider's configuration, including its API key, will be deleted from settings.json. This can't be undone.	该厂商在 settings.json 中的配置（包括 API Key）将被删除，无法恢复。
+ProviderHideConfirmText	This provider is detected from the environment variable {0}. It will be hidden from TKCode; the variable itself is not changed. You can add it again later.	该厂商由环境变量 {0} 检测得到。移除后将在 TKCode 中隐藏，环境变量本身不会被修改，之后可以重新添加。
 ClearKey	Clear key	清除 Key
 BaseUrlLabel	Base URL	Base URL
 ProtocolLabel	Protocol	协议
@@ -278,7 +286,7 @@ PermissionAutoDesc	Approve automatically, stay in the workspace sandbox	自动�
 PermissionFull	Full access	完全授权
 PermissionFullDesc	No approvals and no sandbox	不询问、不限沙箱
 PermissionFullConfirmTitle	Enable full access?	确定开启完全授权？
-PermissionFullConfirmText	The agent can run any command and change any file on this computer without asking. Use it only in trusted projects. New sessions don't keep this setting.	Agent 将不经询问执行任意命令、修改本机任意文件。仅在可信的项目中使用。新会话不会沿用此设置。
+PermissionFullConfirmText	The agent can run any command and change any file on this computer without asking. Use it only in trusted projects. This project keeps the setting for new and reopened sessions.	Agent 将不经询问执行任意命令、修改本机任意文件。仅在可信的项目中使用。本项目会记住此设置，新建和重新打开的会话都会沿用。
 PermissionFullConfirm	Enable full access	开启完全授权
 SettingsAgents	Agents	智能体
 AgentsHint	External agents are detected automatically from their CLIs. No configuration is needed — install and sign in with the vendor's CLI.	外部智能体会通过其命令行工具自动检测，无需配置：用厂商的 CLI 安装并登录即可。
@@ -347,6 +355,8 @@ ImageMissing	Image file was deleted	图片文件已删除
 ImageFileTypeName	Images	图片
 CodeExpandFormat	Show all {0} lines	展开全部 {0} 行
 CodeCollapse	Show less	收起
+UserMessageExpand	Show more	展开
+UserMessageCollapse	Show less	收起
 LinkConfirmTitle	Open this link?	打开这个链接？
 LinkConfirmMessageFormat	The link text points somewhere else. It will actually open {0}	链接文字和实际地址不一致，实际将打开 {0}
 LinkOpen	Open	打开
@@ -366,17 +376,16 @@ ReduceMotionLabel	Reduce motion	减少动态效果
 ReduceMotionHint	Turn off interface animations. The system Reduce Motion setting is honored too.	关闭界面动画；系统的“减少动态效果”同样生效。
 OriginalImagesLabel	Full-resolution images	图片原始清晰度
 OriginalImagesHint	Show Markdown images at full resolution. Off by default: images are decoded at their display size to save memory, and clicking one still opens the original.	Markdown 中的图片按原始清晰度显示。默认关闭：按显示尺寸压缩解码以节省内存，点击图片查看的仍是原图。
-SplashLoading	Warming up the agent…	正在唤醒智能体…
-SplashQuip1	Fixing one bug — three more come to say hi	程序员修 bug——越修越多
-SplashQuip2	A programmer counting sheep — 0, 1, 10, 11, 100…	程序员数羊——0、1、10、11、100……
-SplashQuip3	Sesame in bloom — every commit a notch higher	芝麻开花——节节高
-SplashQuip4	Ask until you hit the bottom of the pot — the agent never gets tired	打破砂锅——问到底
-SplashQuip5	Eight immortals crossing the sea — pick your model, show your magic	八仙过海——各显神通
-SplashQuip6	Code without comments — a mystery even to its author	写代码不写注释——自己都看不懂
-SplashQuip7	Shipping on a Friday evening — brave, very brave	周五晚上上线——胆子不小
-SplashQuip8	Dumplings in a teapot — the ideas are in there, let the agent pour them out	茶壶里煮饺子——有货倒不出
-SplashQuip9	Scallions with tofu — clean and clear, like a good diff	小葱拌豆腐——一清二白
-SplashQuip10	A rubber duck on the desk — listens to everything, judges nothing	桌上的小黄鸭——光听不说
+WelcomeQuip1	Fixing one bug — three more come to say hi	程序员修 bug——越修越多
+WelcomeQuip2	A programmer counting sheep — 0, 1, 10, 11, 100…	程序员数羊——0、1、10、11、100……
+WelcomeQuip3	Sesame in bloom — every commit a notch higher	芝麻开花——节节高
+WelcomeQuip4	Ask until you hit the bottom of the pot — the agent never gets tired	打破砂锅——问到底
+WelcomeQuip5	Eight immortals crossing the sea — pick your model, show your magic	八仙过海——各显神通
+WelcomeQuip6	Code without comments — a mystery even to its author	写代码不写注释——自己都看不懂
+WelcomeQuip7	Shipping on a Friday evening — brave, very brave	周五晚上上线——胆子不小
+WelcomeQuip8	Dumplings in a teapot — the ideas are in there, let the agent pour them out	茶壶里煮饺子——有货倒不出
+WelcomeQuip9	Scallions with tofu — clean and clear, like a good diff	小葱拌豆腐——一清二白
+WelcomeQuip10	A rubber duck on the desk — listens to everything, judges nothing	桌上的小黄鸭——光听不说
 MarkdownMenuCopy	Copy	复制
 MarkdownMenuCopyAsMarkdown	Copy as Markdown	复制为 Markdown
 MarkdownMenuSelectAll	Select All	全选
@@ -548,6 +557,7 @@ TerminalExited	Process exited	进程已退出
 TerminalPressEnterToRestart	Press Enter to start a new shell.	按 Enter 启动新的 shell。
 TerminalLost	The terminal service stopped. Press Enter to reopen the terminal in the same folder.	终端服务已停止。按 Enter 在相同目录重新打开终端。
 TerminalStartFailedFormat	Could not start the terminal: {0}	无法启动终端：{0}
+TerminalNativeMissing	This build is missing the terminal library (libghostty-vt). Run tools/terminal/build-ghostty.sh, then rebuild.	此构建缺少终端库（libghostty-vt）。请运行 tools/terminal/build-ghostty.sh 后重新构建。
 TerminalRunningProgram	A program is running in this terminal.	此终端中有程序在运行。
 TerminalPasteNeedsConfirm	The paste contains line breaks, so it was not sent.	粘贴内容包含换行，已取消发送。
 TerminalResyncing	Resynchronizing the terminal…	正在重新同步终端…
@@ -607,12 +617,16 @@ TrayShow	Show TKCode	显示 TKCode
 TrayQuit	Quit TKCode	退出 TKCode
 TrayDownloadUpdateFormat	Download TKCode {0}	下载 TKCode {0}
 TrayInstallUpdateFormat	Install TKCode {0} and restart	安装 TKCode {0} 并重启
+TrayProjects	Projects	项目
+TrayNoProjects	No projects yet	暂无项目
 CloseToTrayLabel	Keep running in the tray	关闭窗口时保留在托盘
 CloseToTrayHint	Closing the window hides TKCode to the system tray and keeps sessions running. Quit from the tray menu.	关闭窗口后 TKCode 隐藏到系统托盘，会话继续运行；从托盘菜单退出。
 UpdateCheckFailedFormat	Check failed: {0}	检查失败：{0}
 UpdatePrereleaseLabel	Receive pre-release updates	接收预发布版本更新
 UpdatePrereleaseHint	Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.	也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。
 ChangesFilesChanged	{0} files changed	{0} 个文件已更改
+ChangesShowMore	Show {0} more	还有 {0} 个文件
+ChangesShowLess	Show less	收起
 ChangesRevert	Revert	撤销
 ChangesReview	Review	审查
 ChangesOpen	Open	打开
@@ -629,7 +643,31 @@ CompactionDone	Context compacted	上下文已压缩
 CompactionFailedFormat	Compaction failed: {0}	压缩失败：{0}
 CompactionSuspendedFormat	Auto-compact disabled: {0}	已停用自动压缩：{0}
 CompactionUnavailable	Compaction is only available for the built-in agent.	只有内置 Agent 支持压缩上下文。
-ContextUsageWarnFormat	{0} · Context nearly full, auto-compact soon · /compact to compact now	{0} · 上下文即将用满，稍后自动压缩 · 可用 /compact 立即压缩
+ContextCardTitle	Context window	上下文容量
+ContextCardSummaryFormat	{0} / {1} ({2})	{0}/{1} ({2})
+ContextCategorySystemPrompt	System prompt	系统提示词
+ContextCategorySystemTools	System tools	系统工具
+ContextCategoryMcpTools	MCP tools	MCP 工具
+ContextCategorySkills	Skills	技能
+ContextCategoryMessages	Messages	消息
+ContextCategoryOther	Other	其他
+ContextCacheAverage	Average cache hit rate	平均缓存命中率
+ContextNearlyFull	Nearly full: auto-compacts soon, or run /compact now	即将用满：稍后自动压缩，也可用 /compact 立即压缩
+ContextBreakdownUnavailable	This agent doesn't report what fills its context	外部 Agent 不提供上下文的分类明细
+CacheTtlLabel	Prompt cache lifetime	提示缓存有效期
+CacheTtlHint	For Claude (Anthropic protocol, and Claude models over Chat Completions). 5 minutes is renewed by every request; 1 hour suits long pauses between turns, but cache writes cost 2×.	作用于 Claude（Anthropic 协议，以及经 Chat 协议调用的 Claude 模型）。5 分钟每次请求自动续期；1 小时适合两次提问间隔较长，但缓存写入按 2 倍计费。
+CacheTtl5m	5 min	5 分钟
+CacheTtl1h	1 hour	1 小时
+ShellAuto	Auto	自动
+AgentShellLabel	Agent shell	Agent 使用的 shell
+AgentShellHint	Runs the agent's commands. Auto picks the best shell on this machine; on Windows that is PowerShell 7, then Git Bash, then Windows PowerShell. Applies to the next command.	Agent 执行命令使用的 shell。自动会选本机最合适的：Windows 上依次为 PowerShell 7、Git Bash、Windows PowerShell。对之后执行的命令生效。
+TerminalShellLabel	Terminal shell	终端默认 shell
+TerminalShellHint	The shell for new terminals. Auto picks PowerShell 7 on Windows (then Windows PowerShell, then cmd); on macOS and Linux it is your login shell. Open terminals are not affected.	新建终端使用的 shell。自动在 Windows 上优先 PowerShell 7（其次 Windows PowerShell、cmd），macOS 和 Linux 上是登录 shell。已打开的终端不受影响。
+ShellCustomPlaceholder	Custom path or program name…	自定义路径或程序名…
+ShellApply	Use	使用
+ShellUnavailable	{0} (unavailable)	{0}（不可用）
+ShellCurrent	In use: {0}	当前使用：{0}
+ShellFallback	"{0}" is unavailable; using {1}.	“{0}”不可用，改用 {1}。
 WorkedFor	Worked for {0}	已工作 {0}
 DurationHM	{0}h {1}m	{0} 小时 {1} 分
 DurationMS	{0}m {1}s	{0} 分 {1} 秒
@@ -663,3 +701,55 @@ QuestionDeclined	Declined	已拒绝回答
 QuestionAborted	Stopped	已中止
 StepQuestion	Question	提问
 SessionWaitingForYou	Waiting for you	等待你的操作
+UiScaleLabel	Interface zoom	界面缩放
+UiScaleHint	Scales text, icons and spacing together. Shortcuts: {0} + / − / 0.	文字、图标与间距一起缩放。快捷键：{0} + / − / 0。
+ZoomIn	Zoom in	放大界面
+ZoomOut	Zoom out	缩小界面
+ZoomReset	Reset zoom	重置界面缩放
+AllFilesTypeName	All files	所有文件
+DocumentFileTypeName	Documents and logs	文档和日志
+OpenFilePreview	Open preview	打开预览
+PlanReviewTitle	Plan awaiting approval	计划待批准
+PlanReviewTitleFormat	{0} plan awaiting approval	{0} 计划待批准
+PlanReviewEdit	Edit	编辑
+PlanReviewEditDone	Done	完成
+PlanReviewEditTip	Edit the plan's Markdown (E)	编辑计划的 Markdown（E）
+PlanReviewOpenInEditor	Open in editor	在编辑器中打开
+PlanReviewEdited	Edited	已编辑
+PlanReviewChoiceClear	Clear context, approve and run automatically	清空上下文，批准并自动执行
+PlanReviewChoiceClearFull	Clear context, approve and run with full access	清空上下文，批准并完全授权执行
+PlanReviewContextUsedFormat	planning used {0}% of context	规划用掉 {0}% 上下文
+PlanReviewChoiceAuto	Approve and run automatically	批准，自动执行
+PlanReviewChoiceFull	Approve and run with full access	批准，完全授权执行
+PlanReviewChoiceAsk	Approve and review each step	批准，逐项审批
+PlanReviewChoiceAcpFormat	Approve and hand off to ACP ({0})	批准，交给 ACP 执行（{0}）
+PlanReviewRevise	Keep planning	继续完善
+PlanReviewFeedbackPlaceholder	Tell the agent what to change…	告诉 Agent 要改什么…
+PlanReviewDiscardWarning	Keeping planning discards your edits to the plan. Confirm again to continue.	继续完善会丢弃你对计划的修改，再次确认以继续。
+PlanReviewHintsFormat	↑↓ choose · 1-{0} pick · E edit	↑↓ 选择 · 1-{0} 直接选 · E 编辑
+PlanReviewDismiss	Not now	暂不批准
+PlanReviewConfirm	Confirm	确认
+PlanCardTitle	Plan	计划
+PlanCardApproved	Approved	已批准
+PlanCardApprovedFormat	Approved · {0}	已批准 · {0}
+PlanCardChoiceAuto	running automatically	自动执行
+PlanCardChoiceAsk	reviewing each step	逐项审批
+PlanCardChoiceAcp	handed off to ACP	交给 ACP
+PlanCardChoiceClear	running after clearing context	清空上下文后执行
+PlanCardRevised	Sent back	已退回
+PlanCardDismissed	Not approved	未批准
+PlanCardAborted	Stopped	已中止
+PlanCardWaiting	Waiting for approval…	等待批准…
+PlanCardExpandFormat	Show all {0} lines	展开全部 {0} 行
+PlanCardCollapse	Collapse	收起
+EnterPlanTitle	Switch to Plan mode?	进入 Plan 模式？
+EnterPlanDefaultQuestion	Plan before making changes?	先做计划再动手吗？
+EnterPlanOptionPlan	Plan first (recommended)	先做计划（推荐）
+EnterPlanOptionPlanDesc	Research and write a plan; nothing changes until you approve it	调研后写计划，你批准后再动手
+EnterPlanOptionProceed	Proceed	直接执行
+EnterPlanAccepted	Switched to Plan mode	已进入 Plan 模式
+EnterPlanDeclined	Continuing without a plan	继续直接执行
+ToolExitPlanMode	Request plan approval	请求批准计划
+ToolEnterPlanMode	Ask to enter Plan mode	申请进入 Plan 模式
+ApprovalReadOnlyCommand	Plan mode: this command may change the workspace	Plan 模式：此命令可能修改工作区
+CompactionPlanHandoff	Context cleared — continuing from the plan	已清空上下文，按计划执行

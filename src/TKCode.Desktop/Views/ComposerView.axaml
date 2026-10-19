@@ -193,6 +193,7 @@
             <motion:Popover x:Name="CompletionPopup" PlacementTarget="{Binding #Input}" Placement="TopEdgeAlignedLeft"
                             VerticalOffset="-4" IsLightDismissEnabled="True" OverlayDismissEventPassThrough="True"
                             Closed="OnCompletionPopupClosed">
+                <controls:ZoomHost>
                 <Border Classes="menu" Width="440" Margin="0,24,24,0" Padding="4">
                     <StackPanel>
                         <TextBlock Classes="tertiary" Text="{Binding Completion.EmptyText}" Margin="8,6" IsVisible="{Binding Completion.HasEmptyText}" />
@@ -220,6 +221,7 @@
                         </ScrollViewer>
                     </StackPanel>
                 </Border>
+                </controls:ZoomHost>
             </motion:Popover>
 
             <composer:ComposerEditor x:Name="Input"
@@ -252,20 +254,16 @@
             </StackPanel>
 
             <Panel x:Name="SendArea" VerticalAlignment="Center">
-                <atom:Button Color="Default" Variant="Solid" Shape="Circle" SizeType="Small"
-                             Command="{Binding SendCommand}" motion:Presence.IsPresent="{Binding !IsRunning}" motion:Presence.Effect="Pop"
-                             ToolTip.Tip="{loc:TKCodeLangResource Send}">
-                    <atom:Button.Icon>
-                        <icons:LucideIcon Kind="ArrowUp" />
-                    </atom:Button.Icon>
-                </atom:Button>
-                <atom:Button Color="Default" Variant="Solid" Shape="Circle" SizeType="Small"
-                             Command="{Binding StopCommand}" motion:Presence.IsPresent="{Binding IsRunning}" motion:Presence.Effect="Pop"
-                             ToolTip.Tip="{loc:TKCodeLangResource Stop}">
-                    <atom:Button.Icon>
-                        <icons:LucideIcon Kind="StopFilled" />
-                    </atom:Button.Icon>
-                </atom:Button>
+                <Button Theme="{StaticResource TKCode.SendButton}"
+                        Command="{Binding SendCommand}" motion:Presence.IsPresent="{Binding !IsRunning}" motion:Presence.Effect="Pop"
+                        ToolTip.Tip="{loc:TKCodeLangResource Send}">
+                    <icons:LucideIcon Kind="ArrowUp" Width="15" Height="15" StrokeWidth="2.25" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                </Button>
+                <Button Theme="{StaticResource TKCode.SendButton}"
+                        Command="{Binding StopCommand}" motion:Presence.IsPresent="{Binding IsRunning}" motion:Presence.Effect="Pop"
+                        ToolTip.Tip="{loc:TKCodeLangResource Stop}">
+                    <icons:LucideIcon Kind="StopFilled" Width="12" Height="12" StrokeBrush="{Binding $parent[Button].Foreground}" />
+                </Button>
             </Panel>
         </Grid>
         </DockPanel>

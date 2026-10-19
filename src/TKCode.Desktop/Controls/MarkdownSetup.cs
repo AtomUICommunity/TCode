@@ -23,6 +23,14 @@ public static class MarkdownSetup
         var highlighter = new TextMateSyntaxHighlighter();
         return new MarkdownServices
         {
+            Plugins = [new OpenCodeFilePlugin()],
+            // 本地文件由主窗口在编辑区预览，不交给系统启动；Windows 盘符路径也应可点击。
+            Links = LinkPolicy.Default with
+            {
+                AllowedSchemes = [.. LinkPolicy.Default.AllowedSchemes, "file"],
+                Override = (url, decision) => OperatingSystem.IsWindows() && Path.IsPathFullyQualified(url.Trim())
+                    ? LinkDecision.Allow : decision,
+            },
             Math = RaTeXMathRenderer.Shared,
             Highlighter = highlighter,
             // Mermaid 配色复刻 mermaid.js 官方主题（暗色 dark / 亮色 default），和浏览器里的效果一致；

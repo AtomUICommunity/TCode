@@ -8,14 +8,21 @@
     "$schema": { "type": "string" },
     "model": {
       "type": "string",
-      "description": "Default model for new sessions: <provider>/<model>, e.g. anthropic/claude-opus-5-5."
+      "description": "Primary model for new sessions: <provider>/<model>, e.g. anthropic/claude-opus-5-5."
+    },
+    "fastModel": {
+      "type": "string",
+      "description": "Fast model for subagents and conversation titles: <provider>/<model>. Must be a built-in API model. When omitted or unavailable, follows the current session's model. An explicit model on the agent tool takes precedence."
     },
     "language": { "enum": ["zh-CN", "en-US"], "description": "UI language." },
     "theme": { "enum": ["system", "dark", "light"], "description": "Color theme." },
     "reduceMotion": { "type": "boolean", "description": "Turn off UI animations (the macOS Reduce Motion setting is honored as well)." },
     "autoCompact": { "type": "boolean", "description": "Automatically compact the built-in agent's context when it nears the context budget (default true). /compact still works when disabled." },
+    "autoMemory": { "type": "boolean", "description": "Project memory for the built-in agent (default true): the index of ~/.tkcode/projects/<project>/memory/ is loaded at the start of each session, and the agent can read and write memory files there without approval. Applies to sessions created or opened afterwards." },
     "closeToTray": { "type": "boolean", "description": "Closing the window hides TKCode to the system tray and keeps sessions running (default true). When false, closing the window quits TKCode." },
+    "uiScale": { "type": "number", "minimum": 0.75, "maximum": 2, "default": 1, "description": "Interface zoom: text, icons and spacing scale together (1 = 100%). Settings > General offers 0.8, 0.9, 1, 1.15, 1.3 and 1.5; Cmd/Ctrl + and - step through the same levels, Cmd/Ctrl 0 resets." },
     "originalImages": { "type": "boolean", "description": "Show Markdown images at full resolution. By default they are decoded at their display size to save memory; clicking an image always opens the original." },
+    "promptCacheTtl": { "enum": ["5m", "1h"], "default": "5m", "description": "Lifetime of prompt cache breakpoints (Anthropic cache_control) on every Messages endpoint and for Claude models called over Chat Completions. 5m (default) is refreshed by every read; 1h costs 2x on cache writes and pays off when you often pause more than 5 minutes between turns." },
     "providers": {
       "type": "object",
       "description": "Keyed by provider id. A built-in id (anthropic, openai, deepseek, openrouter, …) overrides the catalog; any other id defines a custom provider.",
@@ -39,6 +46,34 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Extra directories treated as part of the workspace: read-only tools need no approval inside them."
+        }
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "shell": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "default": "auto",
+              "description": "Shell that runs the built-in agent's bash tool: auto (default), a detected id (pwsh, pwsh-preview, powershell, git-bash, bash, zsh, ...), a program name on PATH, or the absolute path of an executable. On Windows auto is the newest stable PowerShell 7, then Git Bash, then Windows PowerShell. Applies to commands run after the change; the agent is told about the new shell on its next turn."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "defaultProfile": {
+          "type": "string",
+          "default": "auto",
+          "description": "Shell for new terminal tabs: auto (default), a detected id (pwsh, pwsh-preview, powershell, git-bash, cmd, bash, zsh, ...), a program name on PATH, or the absolute path of an executable. On Windows auto is the newest stable PowerShell 7, then Windows PowerShell, then cmd; on macOS and Linux it is the login shell. Open tabs are not affected."
         }
       },
       "additionalProperties": false
@@ -159,6 +194,7 @@
         "baseUrl": { "type": "string", "description": "Required for custom providers." },
         "apiKey": { "$ref": "#/definitions/secret" },
         "enabled": { "type": "boolean", "default": true },
+        "hidden": { "type": "boolean", "default": false, "description": "Remove a built-in provider from Settings and the model picker (e.g. one detected from an environment variable). Adding it again clears this." },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } },
         "models": {
           "type": "object",

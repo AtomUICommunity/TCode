@@ -5,9 +5,9 @@ name: terminal
 on:
   push:
     branches: [main]
-    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "src/TKCode.Shell/**", "tests/TKCode.Shell.Tests/**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props", "global.json" ]
   pull_request:
-    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props" ]
+    paths: [ "src/TKCode.Terminal.**", "tests/TKCode.Terminal.**", "src/TKCode.Shell/**", "tests/TKCode.Shell.Tests/**", "native/**", "tools/terminal/**", ".github/workflows/terminal.yml", "Directory.*.props", "global.json" ]
   workflow_dispatch:
   # 每晚：PTY 压力测试按文档规模（03 §14 T10–T14），差分测试扫 200 个种子，结构化 fuzz 跑 20 分钟
   schedule:
@@ -113,6 +113,8 @@ jobs:
           TKCODE_PTY_STRESS: ${{ github.event_name == 'schedule' && '1' || '' }}
       - name: Test protocol
         run: dotnet test tests/TKCode.Terminal.Protocol.Tests
+      - name: Test shell detection (Windows rules run on every OS; the real file system only here)
+        run: dotnet test tests/TKCode.Shell.Tests
       - name: Test pty host (end to end)
         run: dotnet test tests/TKCode.Terminal.Host.Tests
       - name: Test view (headless snapshots)
@@ -127,7 +129,7 @@ jobs:
         if: always()
         with:
           name: snapshots-${{ matrix.rid }}
-          path: tests/TKCode.Terminal.Avalonia.Tests/bin/Debug/net10.0/snapshots/
+          path: tests/TKCode.Terminal.Avalonia.Tests/bin/Debug/net11.0/snapshots/
           if-no-files-found: ignore
       - name: AOT publish tkcode-ptyhost (0 IL warnings)
         shell: bash

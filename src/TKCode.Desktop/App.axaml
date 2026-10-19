@@ -4,6 +4,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TKCode.Desktop.App"
              Name="TKCode">
+    <!-- 只放合并字典。Application.Resources 会替换 6.2.6 已提交的语言字典，
+         App.Initialize 再把这些合并项挪回去。不要在这里直接加键。 -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

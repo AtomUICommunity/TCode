@@ -6,6 +6,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
              xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:controls="using:TKCode.Desktop.Controls"
              xmlns:vm="using:TKCode.Desktop.ViewModels"
              xmlns:views="using:TKCode.Desktop.Views"
              xmlns:icons="using:TKCode.Desktop.Icons"
@@ -37,6 +38,7 @@
 
         <motion:Popover x:Name="Popup" PlacementTarget="{Binding #Trigger}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6" MinWidth="240"
                IsLightDismissEnabled="True" Opened="OnPopupOpened" Closed="OnPopupClosed">
+            <controls:ZoomHost>
             <Border Classes="menu" Margin="0,0,16,16">
                 <StackPanel Margin="4">
                     <Border Background="{DynamicResource TKCode.MenuInputBg}" CornerRadius="6" Margin="0,0,0,4">
@@ -76,6 +78,7 @@
                     </Button>
                 </StackPanel>
             </Border>
+            </controls:ZoomHost>
         </motion:Popover>
     </Panel>
 </UserControl>

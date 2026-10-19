@@ -55,7 +55,14 @@
         "O5"
       ],
       "reason": "Rows changed without being marked dirty: OSC 133 semantic_prompt, wrap / wrap_continuation in cursorResetWrap, and the previous row's stale spacer_head cleared when a wrapped wide char is overwritten. Found by the differential test (02 §15)."
+    },
+    {
+      "file": "overlays/0004-mark-row-dirty-on-zero-width-grapheme-append.patch",
+      "ids": [
+        "O6"
+      ],
+      "reason": "With mode 2027 off, a zero-width codepoint (e.g. U+200B) appended to the previous cell never marked the row dirty, so incremental frames kept the stale cell. Found by the nightly long fuzz (seeds 1475158593, 930644994)."
     }
   ],
-  "updatedAt": "2026-10-17"
+  "updatedAt": "2026-10-19"
 }

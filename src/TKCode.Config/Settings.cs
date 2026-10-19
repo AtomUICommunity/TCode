@@ -6,13 +6,19 @@ namespace TKCode.Config;
 /// <summary>~/.tkcode/settings.json 的内容。格式见 docs/settings.md。所有字段可空：null 表示使用默认值。</summary>
 public sealed record TKCodeSettings
 {
-    /// <summary>新会话的默认模型：&lt;厂商 id&gt;/&lt;模型 id&gt;。</summary>
+    /// <summary>主模型（新会话的默认模型）：&lt;厂商 id&gt;/&lt;模型 id&gt;。</summary>
     public string? Model { get; init; }
+
+    /// <summary>子 Agent 与会话标题使用的快速模型：&lt;厂商 id&gt;/&lt;模型 id&gt;。未配置或不可用时跟随会话。</summary>
+    public string? FastModel { get; init; }
     public string? Language { get; init; }
     public string? Theme { get; init; }
 
     /// <summary>减少动态效果：true 时界面动效直接跳到终态（macOS 系统的“减少动态效果”同样生效）。</summary>
     public bool? ReduceMotion { get; init; }
+
+    /// <summary>界面缩放比例（文字、图标与间距一起缩放）：默认 1；取值范围见 <see cref="UiScaleLevels"/>，超出时按边界处理。</summary>
+    public double? UiScale { get; init; }
 
     /// <summary>Markdown 中的图片按原始清晰度显示：默认（false）按显示尺寸压缩解码以节省内存，点击图片查看时仍是原图。</summary>
     public bool? OriginalImages { get; init; }
@@ -39,8 +45,49 @@ public sealed record TKCodeSettings
     /// <summary>内置 Agent 自动压缩上下文（默认 true，docs/design/compaction.md §4）；关闭后仍可用 /compact 手动压缩。</summary>
     public bool? AutoCompact { get; init; }
 
+    /// <summary>
+    /// 内置 Agent 的项目记忆（默认 true，docs/design/memory.md）：~/.tkcode/projects/&lt;项目&gt;/memory/ 的索引在会话开头注入，
+    /// 模型可以免审批读写其中的记忆文件。对之后新建或打开的会话生效。
+    /// </summary>
+    public bool? AutoMemory { get; init; }
+
+    /// <summary>
+    /// 提示缓存断点（Anthropic cache_control）的有效期："5m"（默认）或 "1h"。作用于所有 Messages 端点，
+    /// 以及经 Chat 协议调用的 Claude 模型；1 小时的写入按 2 倍计价，适合两次提问常隔 5 分钟以上的用法。
+    /// </summary>
+    public string? PromptCacheTtl { get; init; }
+
     /// <summary>MCP 服务器（原样保留，按项单独解析，一项出错不影响其他项；见 <see cref="McpServerConfig.ParseServers"/>）。</summary>
     public JsonObject? McpServers { get; init; }
+
+    /// <summary>内置 Agent 的设置（目前只有 bash 工具使用的 shell）。</summary>
+    public AgentSettings? Agent { get; init; }
+
+    /// <summary>交互终端的设置（目前只有默认 shell）。</summary>
+    public TerminalSettings? Terminal { get; init; }
+}
+
+public sealed record AgentSettings
+{
+    public AgentShellSettings? Shell { get; init; }
+}
+
+public sealed record AgentShellSettings
+{
+    /// <summary>
+    /// bash 工具使用的 shell：auto（默认）、探测到的 id（pwsh、powershell、git-bash、bash、zsh……）、PATH 里的程序名，
+    /// 或可执行文件的绝对路径。Windows 的 auto：PowerShell 7 最新稳定版 → Git Bash → Windows PowerShell。
+    /// </summary>
+    public string? Profile { get; init; }
+}
+
+public sealed record TerminalSettings
+{
+    /// <summary>
+    /// 新建终端默认使用的 shell，取值同 <see cref="AgentShellSettings.Profile"/>。
+    /// Windows 的 auto：PowerShell 7 最新稳定版 → Windows PowerShell → cmd；macOS / Linux 的 auto 是登录 shell。
+    /// </summary>
+    public string? DefaultProfile { get; init; }
 }
 
 public sealed record WebSearchSettings
@@ -85,6 +132,8 @@ public sealed record ProviderSettings
     /// <summary>明文、{env:VAR} 或 $VAR；"" 表示无需 Key（本地服务）。</summary>
     public string? ApiKey { get; init; }
     public bool? Enabled { get; init; }
+    /// <summary>从设置页与模型选择器中移除内置厂商（用于靠环境变量检测到的厂商）；重新添加时清除。</summary>
+    public bool? Hidden { get; init; }
     public Dictionary<string, string>? Headers { get; init; }
     /// <summary>写了就只启用列出的模型；值为对目录元数据的覆盖。</summary>
     public Dictionary<string, ModelSettings>? Models { get; init; }

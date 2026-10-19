@@ -17,4 +17,8 @@ public partial class SettingsView : UserControl
     private void OnDefaultModelClick(object? sender, RoutedEventArgs e) => DefaultModelPopup.IsOpen = !DefaultModelPopup.IsOpen;
 
     private void OnDefaultModelChosen(object? sender, RoutedEventArgs e) => DefaultModelPopup.IsOpen = false;
+
+    private void OnFastModelClick(object? sender, RoutedEventArgs e) => FastModelPopup.IsOpen = !FastModelPopup.IsOpen;
+
+    private void OnFastModelChosen(object? sender, RoutedEventArgs e) => FastModelPopup.IsOpen = false;
 }

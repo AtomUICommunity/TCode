@@ -85,6 +85,35 @@ public sealed class FileChangeTests
     }
 
     [Fact]
+    public void TurnCard_HidesFilesPastThePreviewUntilExpanded()
+    {
+        var many = Card(TurnChangesItemViewModel.PreviewCount + 4);
+        Assert.True(many.HasOverflow);
+        Assert.False(many.ShowAll);
+        Assert.Equal(TurnChangesItemViewModel.PreviewCount, many.VisibleFiles.Count());
+        Assert.Equal("/p/f0.cs", many.VisibleFiles.First().Path);
+
+        many.ToggleRestCommand.Execute(null);
+        Assert.True(many.ShowAll);
+        Assert.Equal(TurnChangesItemViewModel.PreviewCount + 4, many.VisibleFiles.Count());
+
+        many.ToggleRestCommand.Execute(null);
+        Assert.Equal(TurnChangesItemViewModel.PreviewCount, many.VisibleFiles.Count());
+
+        var few = Card(TurnChangesItemViewModel.PreviewCount);
+        Assert.False(few.HasOverflow);
+        Assert.Equal(TurnChangesItemViewModel.PreviewCount, few.VisibleFiles.Count());
+    }
+
+    private static TurnChangesItemViewModel Card(int count)
+    {
+        var files = Enumerable.Range(0, count)
+            .Select(i => FileChangeSet.Group([Edit($"/p/f{i}.cs")], _ => Task.FromResult(new RevertFileResult(null)))[0])
+            .ToArray();
+        return new TurnChangesItemViewModel(files, _ => { }, _ => { });
+    }
+
+    [Fact]
     public async Task Revert_HostRefusal_KeepsFileAndShowsError()
     {
         var files = FileChangeSet.Group([Edit("/p/a.cs", before: "x", after: "h")],

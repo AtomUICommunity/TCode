@@ -126,7 +126,8 @@ public sealed class AnthropicMessagesApiTests
         await Run.StreamAsync(new AnthropicMessagesApi(new HttpClient(handler)), kimi, Run.Context(UserMessage.FromText("hi")));
 
         var body = handler.Bodies[0];
-        Assert.Null(body["cache_control"]);
+        // Kimi 只认顶层自动缓存（规格 §12）
+        Assert.Equal("ephemeral", body["cache_control"]!["type"]!.GetValue<string>());
         Assert.Null(body["tools"]![0]!["eager_input_streaming"]);
         Assert.Equal("Bearer", handler.Requests[0].Headers.Authorization!.Scheme);
         Assert.Equal("https://api.moonshot.ai/anthropic/v1/messages", handler.Requests[0].RequestUri!.ToString());

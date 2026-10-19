@@ -11,7 +11,7 @@ namespace TKCode.Desktop.ViewModels;
 public abstract class TranscriptItemViewModel : ObservableObject;
 
 /// <param name="segments">输入框里的样子（含 tag）；没有 tag 时为 null。</param>
-public sealed class UserMessageItemViewModel(string text, IReadOnlyList<string>? images = null, IReadOnlyList<PromptSegmentDto>? segments = null)
+public sealed partial class UserMessageItemViewModel(string text, IReadOnlyList<string>? images = null, IReadOnlyList<PromptSegmentDto>? segments = null)
     : TranscriptItemViewModel
 {
     /// <summary>发送的原文（含「[Image #N: 路径]」引用；command 已展开）。</summary>
@@ -25,6 +25,22 @@ public sealed class UserMessageItemViewModel(string text, IReadOnlyList<string>?
 
     /// <summary>显示用：图片引用折叠为「[图片 #N]」。</summary>
     public string DisplayText { get; } = McpMentions.Collapse(ImagePrompt.Collapse(text));
+
+    /// <summary>超过这么多行就默认收起，点击展开。</summary>
+    public const int CollapsedLineLimit = 8;
+
+    /// <summary>默认收起；是否显示按钮由气泡按实际排版行数决定。</summary>
+    [ObservableProperty]
+    public partial bool IsExpanded { get; set; }
+
+    public string ToggleText => Strings.Get(IsExpanded ? TKCodeLangResourceKind.UserMessageCollapse : TKCodeLangResourceKind.UserMessageExpand);
+
+    [RelayCommand]
+    private void Toggle() => IsExpanded = !IsExpanded;
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(ToggleText));
+
+    public void RefreshLanguage() => OnPropertyChanged(nameof(ToggleText));
 
     /// <summary>附图（显示在气泡上方，点击全屏查看）。</summary>
     public IReadOnlyList<ImageAttachmentViewModel> Images { get; } =
@@ -70,6 +86,15 @@ public sealed partial class AssistantMessageItemViewModel(string messageId, Date
         _byIndex[index] = created;
         Blocks.Add(created);
         return created;
+    }
+
+    /// <summary>结束单个内容块；没有增量的空块不创建界面条目。</summary>
+    public void CompleteBlock(int index)
+    {
+        if (_byIndex.TryGetValue(index, out var block))
+        {
+            block.IsStreaming = false;
+        }
     }
 
     /// <summary>结束时间（耗时用）：历史消息用记录的时间戳，实时回复用结束的那一刻。</summary>
@@ -838,18 +863,32 @@ public sealed partial class CompactionItemViewModel : TranscriptItemViewModel
     public bool HasSummary => !IsRunning && !string.IsNullOrEmpty(Summary);
     public bool IsFailed => _error is not null || _suspended is not null;
 
+    /// <summary>
+    /// 批准计划时选了“清空上下文”（docs/design/plan-mode.md §11）：同样是历史替换，但没有摘要请求，
+    /// 分隔线显示“已清空上下文，按计划执行”，展开看到的是交接消息（计划全文）。
+    /// </summary>
+    public bool IsHandoff { get; private init; }
+
+    public Icons.LucideKind Icon => IsHandoff ? Icons.LucideKind.ClipboardCheck : Icons.LucideKind.Minimize2;
+
     public string Header =>
-        IsRunning ? Strings.Get(TKCodeLangResourceKind.CompactionRunning)
-        : _suspended is not null ? Strings.Format(TKCodeLangResourceKind.CompactionSuspendedFormat, _suspended)
+        _suspended is not null ? Strings.Format(TKCodeLangResourceKind.CompactionSuspendedFormat, _suspended)
         : _error is not null ? Strings.Format(TKCodeLangResourceKind.CompactionFailedFormat, _error)
+        : IsHandoff ? Strings.Get(TKCodeLangResourceKind.CompactionPlanHandoff)
+        : IsRunning ? Strings.Get(TKCodeLangResourceKind.CompactionRunning)
         : _preTokens is { } pre && _postTokens is { } post
             ? Strings.Format(TKCodeLangResourceKind.CompactionDoneFormat, Tokens(pre), Tokens(post))
             : Strings.Get(TKCodeLangResourceKind.CompactionDone);
 
-    public static CompactionItemViewModel Running(long preTokens) => new() { IsRunning = true, _preTokens = preTokens };
+    /// <param name="handoff">清空上下文后按计划执行（压缩触发类型 planHandoff）。</param>
+    public static CompactionItemViewModel Running(long preTokens, bool handoff = false) =>
+        new() { IsRunning = true, _preTokens = preTokens, IsHandoff = handoff };
 
     /// <summary>历史中的摘要消息（不知道压缩前后的 token 数）。</summary>
     public static CompactionItemViewModel FromSummary(string text) => new() { Summary = SummaryBody(text) };
+
+    /// <summary>历史中的交接消息（清空上下文后按计划执行）。</summary>
+    public static CompactionItemViewModel FromHandoff(string text) => new() { Summary = text.Trim(), IsHandoff = true };
 
     public static CompactionItemViewModel SuspendedNotice(string reason) => new() { _suspended = reason };
 
@@ -862,7 +901,7 @@ public sealed partial class CompactionItemViewModel : TranscriptItemViewModel
         OnPropertyChanged(nameof(IsFailed));
     }
 
-    public void SetSummary(string text) => Summary = SummaryBody(text);
+    public void SetSummary(string text) => Summary = IsHandoff ? text.Trim() : SummaryBody(text);
 
     [RelayCommand]
     private void Toggle()

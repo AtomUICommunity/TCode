@@ -14,6 +14,9 @@ public static partial class CompactionPrompts
     /// <summary>用户消息的 <c>Source</c>：压缩后重新附加的上下文（界面不显示）。</summary>
     public const string ContextSource = "compact-context";
 
+    /// <summary>用户消息的 <c>Source</c>：批准计划并清空上下文后的交接消息（界面显示为分隔卡片，docs/design/plan-mode.md §11）。</summary>
+    public const string HandoffSource = "plan-handoff";
+
     public const string TruncationMarker = "[earlier conversation truncated for compaction retry]";
 
     public const string FallbackSystemPrompt = "You are a helpful AI assistant tasked with summarizing conversations.";

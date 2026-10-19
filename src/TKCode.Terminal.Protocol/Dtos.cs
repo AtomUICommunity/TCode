@@ -64,6 +64,11 @@ public sealed record HostSettingsDto
 
     /// <summary>Desktop 启动时的原始环境（18.1 第 1 条）：新会话的环境以它为基础。</summary>
     public Dictionary<string, string>? BaseEnvironment { get; init; }
+    /// <summary>
+    /// 新建终端默认使用的 shell（settings.json 的 terminal.defaultProfile）：null 或 auto 为默认选择，
+    /// 也可以是探测到的 id（pwsh、git-bash……）、程序名或可执行文件的绝对路径。只影响之后创建的会话。
+    /// </summary>
+    public string? DefaultShell { get; init; }
 }
 
 public sealed record PersistenceSettingsDto

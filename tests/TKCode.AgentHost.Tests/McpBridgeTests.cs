@@ -27,7 +27,7 @@ public sealed class McpBridgeTests : IDisposable
     [Fact]
     public async Task ExternalSession_ReachesMcpToolsThroughBridge()
     {
-        var serverDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../TKCode.Mcp.TestServer/bin/Debug/net10.0/TKCode.Mcp.TestServer.dll"));
+        var serverDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../TKCode.Mcp.TestServer/bin/Debug/net11.0/TKCode.Mcp.TestServer.dll"));
         var config = McpServerConfig.From("test", new McpServerSettings { Command = "dotnet", Args = [serverDll], StartupTimeout = 20 },
             McpConfigSource.Global);
         var catalog = new ModelCatalog(NullLogger<ModelCatalog>.Instance, new BuiltInCatalog(),
