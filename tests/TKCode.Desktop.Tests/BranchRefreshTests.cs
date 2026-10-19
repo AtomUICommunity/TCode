@@ -69,6 +69,65 @@ public sealed class BranchRefreshTests
     }
 
     [Fact]
+    public void Reads_Branches_In_Linked_Worktree()
+    {
+        var main = NewRepository();
+        Git(main, "branch", "feature");
+        var worktree = Path.Combine(Directory.CreateTempSubdirectory("tkcode-worktree-").FullName, "wt");
+        Git(main, "worktree", "add", "-q", "-b", "wt-branch", worktree);
+        Assert.True(File.Exists(Path.Combine(worktree, ".git")), "worktree 的 .git 应是文件");
+
+        var info = new WorkspaceInfo(worktree, "wt");
+
+        // HEAD 来自 worktree 自己的 git 目录，分支列表来自主仓库
+        Assert.Equal("wt-branch", info.ReadBranch());
+        Assert.Equal(["feature", "main", "wt-branch"], info.ReadBranches());
+
+        Git(worktree, "switch", "-q", "-c", "topic");
+        Assert.Equal("topic", info.ReadBranch());
+        Assert.Contains("topic", info.ReadBranches());
+        Assert.Equal("main", new WorkspaceInfo(main, "main").ReadBranch());
+    }
+
+    [Fact]
+    public void Reads_Branches_When_Git_Dir_Is_A_File()
+    {
+        // submodule 与 --separate-git-dir 的 .git 是指向别处的文件
+        var root = Directory.CreateTempSubdirectory("tkcode-gitfile-").FullName;
+        var work = Path.Combine(root, "work");
+        Git(root, "init", "-q", "-b", "main", $"--separate-git-dir={Path.Combine(root, "elsewhere.git")}", work);
+        Git(work, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+        Git(work, "branch", "feature");
+        Assert.True(File.Exists(Path.Combine(work, ".git")));
+
+        var info = new WorkspaceInfo(work, "work");
+
+        Assert.Equal("main", info.ReadBranch());
+        Assert.Equal(["feature", "main"], info.ReadBranches());
+    }
+
+    [Fact]
+    public async Task Watcher_Fires_For_Worktree_Switch_And_For_Branch_Created_In_Main_Repository()
+    {
+        var main = NewRepository();
+        var worktree = Path.Combine(Directory.CreateTempSubdirectory("tkcode-worktree-").FullName, "wt");
+        Git(main, "worktree", "add", "-q", "-b", "wt-branch", worktree);
+        var changed = new SemaphoreSlim(0);
+        using var watcher = new GitBranchWatcher(worktree, () => changed.Release());
+
+        Git(worktree, "switch", "-q", "-c", "topic");
+        Assert.True(await changed.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken), "worktree 里 switch -c 后应收到通知");
+
+        while (changed.CurrentCount > 0)
+        {
+            await changed.WaitAsync(TestContext.Current.CancellationToken);
+        }
+        Git(main, "branch", "from-main");
+        Assert.True(await changed.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken), "主仓库里新建分支后应收到通知");
+        Assert.Contains("from-main", new WorkspaceInfo(worktree, "wt").ReadBranches());
+    }
+
+    [Fact]
     public void Watcher_Ignores_Non_Repository()
     {
         var folder = Directory.CreateTempSubdirectory("tkcode-nogit-").FullName;

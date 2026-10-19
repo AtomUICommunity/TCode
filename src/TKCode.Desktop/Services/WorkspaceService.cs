@@ -2,12 +2,16 @@ namespace TKCode.Desktop.Services;
 
 public sealed record WorkspaceInfo(string Path, string Name)
 {
-    /// <summary>读取 .git/HEAD 得到当前分支；不是 Git 仓库时返回 null。</summary>
+    /// <summary>读取 HEAD 得到当前分支（detached 时为短 hash）；不是 Git 仓库时返回 null。支持 worktree / submodule。</summary>
     public string? ReadBranch()
     {
+        if (GitLayout.Find(Path) is not { } layout)
+        {
+            return null;
+        }
         try
         {
-            var head = System.IO.Path.Combine(Path, ".git", "HEAD");
+            var head = System.IO.Path.Combine(layout.GitDir, "HEAD");
             if (!File.Exists(head))
             {
                 return null;
@@ -16,24 +20,23 @@ public sealed record WorkspaceInfo(string Path, string Name)
             const string prefix = "ref: refs/heads/";
             return text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : text[..Math.Min(7, text.Length)];
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
 
-    /// <summary>本地分支（refs/heads 与 packed-refs），按名称排序；不是 Git 仓库时为空。</summary>
+    /// <summary>本地分支（refs/heads 与 packed-refs），按名称排序；不是 Git 仓库时为空。worktree 读主仓库的分支。</summary>
     public IReadOnlyList<string> ReadBranches()
     {
-        var git = System.IO.Path.Combine(Path, ".git");
-        if (!Directory.Exists(git))
+        if (GitLayout.Find(Path) is not { } layout)
         {
             return [];
         }
         var names = new SortedSet<string>(StringComparer.Ordinal);
         try
         {
-            var heads = System.IO.Path.Combine(git, "refs", "heads");
+            var heads = System.IO.Path.Combine(layout.CommonDir, "refs", "heads");
             if (Directory.Exists(heads))
             {
                 foreach (var file in Directory.EnumerateFiles(heads, "*", SearchOption.AllDirectories))
@@ -41,7 +44,7 @@ public sealed record WorkspaceInfo(string Path, string Name)
                     names.Add(System.IO.Path.GetRelativePath(heads, file).Replace(System.IO.Path.DirectorySeparatorChar, '/'));
                 }
             }
-            var packed = System.IO.Path.Combine(git, "packed-refs");
+            var packed = System.IO.Path.Combine(layout.CommonDir, "packed-refs");
             if (File.Exists(packed))
             {
                 const string prefix = "refs/heads/";
@@ -55,7 +58,7 @@ public sealed record WorkspaceInfo(string Path, string Name)
                 }
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
         }
         return names.ToArray();

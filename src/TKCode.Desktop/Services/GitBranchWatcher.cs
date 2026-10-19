@@ -1,8 +1,8 @@
 namespace TKCode.Desktop.Services;
 
 /// <summary>
-/// 监视仓库的 .git/HEAD、packed-refs 与 refs/heads：在终端 / Agent / 外部工具里切换、新建或删除分支后触发回调，
-/// 让底部分支选择器保持最新。回调在线程池线程上、去抖之后调用。
+/// 监视仓库的 HEAD、packed-refs 与 refs/heads：在终端 / Agent / 外部工具里切换、新建或删除分支后触发回调，
+/// 让底部分支选择器保持最新。worktree 的 HEAD 与分支分处两个目录，两处都监视。回调在线程池线程上、去抖之后调用。
 /// </summary>
 public sealed class GitBranchWatcher : IDisposable
 {
@@ -14,14 +14,21 @@ public sealed class GitBranchWatcher : IDisposable
     public GitBranchWatcher(string repository, Action changed)
     {
         _timer = new Timer(_ => changed(), null, Timeout.Infinite, Timeout.Infinite);
-        var git = Path.Combine(repository, ".git");
-        if (!Directory.Exists(git))
+        if (GitLayout.Find(repository) is not { } layout)
         {
             return;
         }
-        // .git 根目录只关心 HEAD（git switch 先写 HEAD.lock 再改名）与 packed-refs（git gc / pack-refs 之后）
-        Watch(git, includeSubdirectories: false, name => name is "HEAD" or "packed-refs");
-        var heads = Path.Combine(git, "refs", "heads");
+        // git 目录只关心 HEAD（git switch 先写 HEAD.lock 再改名）与 packed-refs（git gc / pack-refs 之后）
+        if (layout.CommonDir == layout.GitDir)
+        {
+            Watch(layout.GitDir, includeSubdirectories: false, name => name is "HEAD" or "packed-refs");
+        }
+        else
+        {
+            Watch(layout.GitDir, includeSubdirectories: false, name => name is "HEAD");
+            Watch(layout.CommonDir, includeSubdirectories: false, name => name is "packed-refs");
+        }
+        var heads = Path.Combine(layout.CommonDir, "refs", "heads");
         if (Directory.Exists(heads))
         {
             Watch(heads, includeSubdirectories: true, _ => true);
