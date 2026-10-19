@@ -19,12 +19,15 @@ public sealed partial class BranchPickerViewModel : ObservableObject
 {
     private readonly Func<string, Task<string?>> _switch;
     private readonly Func<bool> _isBusy;
+    private readonly Action _reload;
     private IReadOnlyList<string> _all = [];
 
-    public BranchPickerViewModel(Func<string, Task<string?>> switchBranch, Func<bool> isBusy)
+    /// <param name="reload">重新读取当前分支与分支列表并调用 <see cref="Load"/>（弹层打开时用，终端里新建 / 切换的分支才能出现）。</param>
+    public BranchPickerViewModel(Func<string, Task<string?>> switchBranch, Func<bool> isBusy, Action reload)
     {
         _switch = switchBranch;
         _isBusy = isBusy;
+        _reload = reload;
         Strings.LanguageChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(DisplayName));
@@ -65,10 +68,18 @@ public sealed partial class BranchPickerViewModel : ObservableObject
 
     public void Load(string? current, IReadOnlyList<string> branches)
     {
+        IReadOnlyList<string> all = branches.Count > 0 || current is null ? branches : [current];
+        if (current == Current && all.SequenceEqual(_all))
+        {
+            return;
+        }
         Current = current;
-        _all = branches.Count > 0 || current is null ? branches : [current];
+        _all = all;
         Refresh();
     }
+
+    /// <summary>弹层打开：分支可能已在应用外被切换 / 新建，先重新读取。</summary>
+    public void OnOpened() => _reload();
 
     [RelayCommand]
     private void Select(BranchItemViewModel item)

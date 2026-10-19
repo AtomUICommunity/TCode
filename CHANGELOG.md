@@ -66,6 +66,7 @@ Adds a Plan mode that ends in a plan you approve, project memory for the built-i
 - Dropping files that are not images no longer also attaches the drag preview icon as an image.
 - Subagents that run on a different model now use the closest thinking level that model supports, instead of inheriting one it does not.
 - Terminal: a zero-width character such as U+200B added to the previous cell no longer leaves a stale cell on screen. This is fixed with a libghostty-vt overlay patch.
+- The branch picker under the composer follows branch changes made outside the app. A branch created, switched or deleted in the terminal or by the agent now shows up without switching projects. The list is also reloaded each time the picker opens.
 
 ### Build
 

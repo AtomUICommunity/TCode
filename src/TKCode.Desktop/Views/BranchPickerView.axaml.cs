@@ -32,8 +32,11 @@ public partial class BranchPickerView : UserControl
 
     private void OnTriggerClick(object? sender, RoutedEventArgs e) => Popup.IsOpen = !Popup.IsOpen;
 
-    private void OnPopupOpened(object? sender, EventArgs e) =>
+    private void OnPopupOpened(object? sender, EventArgs e)
+    {
+        _vm?.OnOpened();
         Dispatcher.UIThread.Post(() => SearchBox.Focus(), DispatcherPriority.Input);
+    }
 
     private void OnPopupClosed(object? sender, EventArgs e) => _vm?.OnClosed();
 }

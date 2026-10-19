@@ -272,7 +272,7 @@ public sealed partial class ConversationViewModel : ObservableObject
             Active = null;
             StatusMessage = Strings.Format(TKCodeLangResourceKind.StatusHostDisconnectedFormat, reason);
         };
-        BranchPicker = new BranchPickerViewModel(SwitchBranchAsync, IsWorkspaceBusy);
+        BranchPicker = new BranchPickerViewModel(SwitchBranchAsync, IsWorkspaceBusy, RefreshBranch);
         Picker = new ModelPickerViewModel(settings);
         ContextUsage = new ContextUsageViewModel(async (sessionId, ct) => await (await _host.GetServerAsync()).GetContextUsageAsync(sessionId, ct), logger);
         userSettings.Changed += () => ApplyDefaultModel();
@@ -304,6 +304,8 @@ public sealed partial class ConversationViewModel : ObservableObject
     public ObservableCollection<SessionItemViewModel> Sessions { get; } = [];
 
     public BranchPickerViewModel BranchPicker { get; }
+
+    private GitBranchWatcher? _branchWatcher;
 
     public string DeviceName => DeviceInfo.Name;
 
@@ -424,8 +426,8 @@ public sealed partial class ConversationViewModel : ObservableObject
     public void SetWorkspace(WorkspaceInfo? workspace)
     {
         Workspace = workspace;
-        Branch = workspace?.ReadBranch();
-        BranchPicker.Load(Branch, workspace?.ReadBranches() ?? []);
+        RefreshBranch();
+        WatchBranches(workspace);
         _settings.Current.LastWorkspace = workspace?.Path;
         if (workspace is not null)
         {
@@ -454,9 +456,27 @@ public sealed partial class ConversationViewModel : ObservableObject
             return null;
         }
         var error = await GitService.SwitchAsync(workspace.Path, branch);
-        Branch = workspace.ReadBranch();
-        BranchPicker.Load(Branch, workspace.ReadBranches());
+        RefreshBranch();
         return error;
+    }
+
+    /// <summary>重新读取当前分支与分支列表（切换项目、弹层打开、.git 变化时）。</summary>
+    private void RefreshBranch()
+    {
+        Branch = Workspace?.ReadBranch();
+        BranchPicker.Load(Branch, Workspace?.ReadBranches() ?? []);
+    }
+
+    /// <summary>
+    /// 监视当前项目的分支变化：在终端 / Agent 里 git switch、新建或删除分支后，底部分支选择器随之更新，
+    /// 不必等到下一次切换项目。
+    /// </summary>
+    private void WatchBranches(WorkspaceInfo? workspace)
+    {
+        _branchWatcher?.Dispose();
+        _branchWatcher = workspace is null
+            ? null
+            : new GitBranchWatcher(workspace.Path, () => Dispatcher.UIThread.Post(RefreshBranch, DispatcherPriority.Background));
     }
 
     [RelayCommand]
