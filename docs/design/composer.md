@@ -1,7 +1,7 @@
 # 输入框增强：@ 文件、/ 命令、Skills 与 Role
 
 状态：设计已确认（2026-10-17）；C1–C11 全部实现（`src/TKCode.Desktop/Controls/Composer/`、`ViewModels/Completion/`、`TKCode.Agent.Coding/Workspace/WorkspaceFileIndex.cs`、`TKCode.Agent.Coding/Assets/`），实现与设计的差异见 §17
-关联文档：[mcp.md](mcp.md)（§8 现有的 @ 资源 / / 提示词选择器）、[builtin-agent-tools.md](builtin-agent-tools.md)、[external-agent-runtimes.md](external-agent-runtimes.md)、[motion.md](motion.md)、[settings.md](../settings.md)
+关联文档：[mcp.md](mcp.md)（§8 现有的 @ 资源 / / 提示词选择器）、[builtin-agent-tools.md](builtin-agent-tools.md)、[external-agent-runtimes.md](external-agent-runtimes.md)、[motion.md](motion.md)、[settings.md](../settings.md)、[composer-drafts.md](composer-drafts.md)（按会话保存草稿、↑↓ 历史输入）
 
 ## 1. 目标
 

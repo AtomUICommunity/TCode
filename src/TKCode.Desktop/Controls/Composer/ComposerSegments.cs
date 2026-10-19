@@ -34,11 +34,13 @@ public static class ComposerSegments
 
     /// <summary>有 tag 时转为 DTO；只有文字时为 null（直接显示发送的文字即可）。</summary>
     public static IReadOnlyList<PromptSegmentDto>? ToDto(IReadOnlyList<Segment> segments) =>
-        segments.Any(s => s is TagSegment)
-            ? segments.Select(s => s is TagSegment tag
-                ? new PromptSegmentDto(KindOf(tag.Kind), null, tag.Value, tag.Label)
-                : new PromptSegmentDto("text", ((TextSegment)s).Text)).ToArray()
-            : null;
+        segments.Any(s => s is TagSegment) ? ToDtoList(segments) : null;
+
+    /// <summary>总是转为 DTO 列表（只有文字时也是）：草稿落盘用。</summary>
+    public static IReadOnlyList<PromptSegmentDto> ToDtoList(IReadOnlyList<Segment> segments) =>
+        segments.Select(s => s is TagSegment tag
+            ? new PromptSegmentDto(KindOf(tag.Kind), null, tag.Value, tag.Label)
+            : new PromptSegmentDto("text", ((TextSegment)s).Text)).ToArray();
 
     public static IReadOnlyList<Segment> FromDto(IReadOnlyList<PromptSegmentDto> segments) =>
         segments.Select(s => TagKindOf(s.Kind) is { } kind && s.Value is { } value

@@ -463,6 +463,19 @@ public partial class ComposerView : UserControl
                     return;
             }
         }
+        // ↑ ↓：翻当前会话发送过的输入（docs/design/composer-drafts.md §5.2）。条件不满足时照常移动光标；
+        // 补全列表打开时上面已经处理了
+        if (e.KeyModifiers == KeyModifiers.None && (e.Key is Key.Up or Key.Down) && DataContext is ConversationViewModel recalling)
+        {
+            var recalled = e.Key == Key.Up
+                ? recalling.History.ShouldRecallOlder(Input.CaretIndex, Input.IsCaretOnFirstLine, Input.HasSelection, Input.HasPreedit) && recalling.RecallOlder()
+                : recalling.History.ShouldRecallNewer(Input.IsCaretOnLastLine, Input.HasSelection, Input.HasPreedit) && recalling.RecallNewer();
+            if (recalled)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
         // Shift+Tab：切换模式（Agent → Plan → ACP → 自定义 role）
         if (e.Key == Key.Tab && e.KeyModifiers == KeyModifiers.Shift && DataContext is ConversationViewModel cycling)
         {

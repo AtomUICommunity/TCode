@@ -20,6 +20,27 @@ public static partial class ImagePrompt
 
     public static string Placeholder(int number) => Strings.Format(TKCodeLangResourceKind.ImagePlaceholderFormat, number);
 
+    /// <summary>把文字按图片占位符拆开：文字片段（<c>Number</c> 为 null）与占位符（<c>Text</c> 为 null，带编号）依次排列。</summary>
+    public static IReadOnlyList<(string? Text, int? Number)> SplitPlaceholders(string text)
+    {
+        var parts = new List<(string?, int?)>();
+        var last = 0;
+        foreach (Match match in PlaceholderPattern().Matches(text))
+        {
+            if (match.Index > last)
+            {
+                parts.Add((text[last..match.Index], null));
+            }
+            parts.Add((null, int.Parse(match.Groups[1].ValueSpan)));
+            last = match.Index + match.Length;
+        }
+        if (last < text.Length)
+        {
+            parts.Add((text[last..], null));
+        }
+        return parts;
+    }
+
     /// <summary>
     /// 把占位符展开为带路径的引用；文本里没有占位符的附件追加在末尾。
     /// 引用按附件顺序重新编号为 1..n（移除再添加后编号可能不连续），与消息里图片的显示顺序一致。

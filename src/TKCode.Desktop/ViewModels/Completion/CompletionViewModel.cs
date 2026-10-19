@@ -74,6 +74,7 @@ public sealed partial class CompletionViewModel : ObservableObject
     private bool _refreshPosted;
     // Esc 关闭的查询（按起点和触发字符记）：同一个查询不再自动打开
     private (int Start, char Trigger)? _dismissed;
+    private bool _swapped;
     private readonly List<CompletionItem> _results = [];
     private int _pending;
 
@@ -132,6 +133,14 @@ public sealed partial class CompletionViewModel : ObservableObject
     public void Refresh()
     {
         var detected = Detect(_document, Caret);
+        if (_swapped)
+        {
+            // 文档刚被整个替换：光标处的查询（草稿以 @xx 结尾）当作已被 Esc 关闭，不在用户没碰输入框时弹出
+            _swapped = false;
+            _dismissed = detected is null ? null : (detected.Start, detected.Trigger);
+            CloseList();
+            return;
+        }
         // 被 Esc 关闭的查询：查询消失或换了位置后才恢复
         if (_dismissed is { } dismissed && (detected is null || (detected.Start, detected.Trigger) != dismissed))
         {
@@ -311,6 +320,17 @@ public sealed partial class CompletionViewModel : ObservableObject
         var caret = _document.Replace(query.Start, end - query.Start, replacement);
         Host?.SetCaret(caret);
         action.Run?.Invoke();
+    }
+
+    /// <summary>
+    /// 整个文档即将被替换（切换会话的草稿）：现在关闭列表；替换之后第一次检测到的查询按 Esc 处理，
+    /// 直到用户继续编辑到别的查询。必须在替换文档之前调用。
+    /// </summary>
+    public void ResetForDocumentSwap()
+    {
+        _swapped = true;
+        _dismissed = null;
+        CloseList();
     }
 
     /// <summary>Esc：关闭并记住这个查询，继续输入时不再弹出，换一个查询后恢复。</summary>

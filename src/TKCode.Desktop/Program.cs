@@ -124,6 +124,7 @@ internal static class Program
     {
         services.AddSingleton<StateService>();
         services.AddSingleton<UserSettingsService>();
+        services.AddSingleton(_ => new DraftStore());
         services.AddSingleton<ThemeService>();
         services.AddSingleton<AgentHostConnection>();
         services.AddSingleton<WorkspaceService>();

@@ -104,6 +104,7 @@ internal static class SmokeMode
 
             CheckFilePreviews(Check, vm, window, project);
             CheckComposer(Check, window);
+            CheckDrafts(Check);
 
             // @ 文件：Host 的文件索引（rg 或内置遍历）与 workspace/searchFiles 在 AOT 下可用
             var search = Task.Run(async () =>
@@ -221,6 +222,38 @@ internal static class SmokeMode
         var restored = ComposerClipboard.Deserialize(json);
         check("composer.clipboard-json", restored is not null && restored.SequenceEqual(editor.Document.Segments), json);
         editor.Document.SetContent([]);
+    }
+
+    // 输入框草稿：落盘（源生成 JSON）与读回、↑ 历史消息还原成草稿，在 AOT 下都要可用（docs/design/composer-drafts.md）
+    private static void CheckDrafts(Action<string, bool, string?> check)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "tkcode-smoke-drafts-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var draft = new ComposerDraft(
+                [new TextSegment("看下 "), new TagSegment(TagKind.File, "README.md", "README.md")], [], 1,
+                new McpPromptSnapshot("srv", "review", null, new Dictionary<string, string> { ["file"] = "a.cs" }), now);
+            var store = new DraftStore(dir);
+            store.Set("smoke", draft);
+            store.FlushAsync().GetAwaiter().GetResult();
+            var restarted = new DraftStore(dir);
+            var loaded = restarted.LoadAsync().GetAwaiter().GetResult();
+            var restored = restarted.Get("smoke");
+            check("drafts.roundtrip", loaded == 1 && restored is { McpPrompt: { Name: "review" } } &&
+                restored.Segments.SequenceEqual(draft.Segments) && restored.McpPrompt.Arguments["file"] == "a.cs", File.Exists(Path.Combine(dir, "smoke.json")) ? null : "no file");
+
+            var message = new UserMessageItemViewModel("展开后的正文", null, ComposerSegments.ToDto(draft.Segments));
+            var recalled = InputHistory.ToDraft(message, now);
+            check("drafts.history", recalled.Segments.SequenceEqual(draft.Segments), null);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
     }
 
     // 文件预览：图片（含动图解码与 SVG 栅格化）与源码着色在 AOT 下都要可用

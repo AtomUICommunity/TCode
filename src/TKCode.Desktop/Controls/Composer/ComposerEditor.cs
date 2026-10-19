@@ -155,6 +155,19 @@ public partial class ComposerEditor : Control
 
     public bool HasSelection => _anchor != _caret;
 
+    /// <summary>光标在第一行（折行后的显示行）。↑ 翻历史输入时用。</summary>
+    public bool IsCaretOnFirstLine => EnsureLayout().LineIndexOf(ToLayout(_caret)) == 0;
+
+    /// <summary>光标在最后一行（折行后的显示行）。↓ 翻历史输入时用。</summary>
+    public bool IsCaretOnLastLine
+    {
+        get
+        {
+            var layout = EnsureLayout();
+            return layout.LineIndexOf(ToLayout(_caret)) >= layout.LineCount - 1;
+        }
+    }
+
     /// <summary>光标或选区变化。</summary>
     public event EventHandler? SelectionChanged;
 

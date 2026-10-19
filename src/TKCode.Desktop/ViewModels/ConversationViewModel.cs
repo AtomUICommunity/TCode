@@ -190,6 +190,7 @@ public sealed partial class ConversationViewModel : ObservableObject
     private readonly AgentHostConnection _host;
     private readonly StateService _settings;
     private readonly UserSettingsService _userSettings;
+    private readonly DraftStore _drafts;
     private readonly ILogger<ConversationViewModel> _logger;
     private readonly Dictionary<string, SessionViewModel> _open = [];
     private readonly HashSet<string> _manualTitleEdits = new(StringComparer.Ordinal);
@@ -199,11 +200,18 @@ public sealed partial class ConversationViewModel : ObservableObject
     private bool _navigating;
     private string? _defaultModelRef;
 
-    public ConversationViewModel(AgentHostConnection host, StateService settings, UserSettingsService userSettings,
+    public ConversationViewModel(AgentHostConnection host, StateService settings, UserSettingsService userSettings, DraftStore drafts,
         ILogger<ConversationViewModel> logger)
     {
         _host = host;
         _userSettings = userSettings;
+        _drafts = drafts;
+        _draftSaveTimer = new DispatcherTimer { Interval = DraftSaveDelay };
+        _draftSaveTimer.Tick += (_, _) =>
+        {
+            _draftSaveTimer.Stop();
+            SaveCurrentDraft();
+        };
         _defaultModelRef = userSettings.Current.Model;
         _host.ModelsChanged += OnModelsChanged;
         _host.ApprovalHandler = HandleApprovalAsync;
@@ -216,8 +224,13 @@ public sealed partial class ConversationViewModel : ObservableObject
             if (e.PropertyName == nameof(McpComposerViewModel.HasPrompt))
             {
                 SendCommand.NotifyCanExecuteChanged();
+                if (!Mcp.IsRestoring)
+                {
+                    MarkDraftEdited();
+                }
             }
         };
+        Mcp.ArgumentEdited += MarkDraftEdited;
         Files = new FileCompletionProvider(host, () => CurrentCwd, settings);
         Assets = new AssetCatalogCache(host, () => CurrentCwd, logger);
         var builtins = new BuiltinCommandProvider([
@@ -243,6 +256,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(ComposerText));
             SendCommand.NotifyCanExecuteChanged();
+            MarkDraftEdited();
         };
         PropertyChanged += (_, e) =>
         {
@@ -287,6 +301,7 @@ public sealed partial class ConversationViewModel : ObservableObject
             SendCommand.NotifyCanExecuteChanged();
             OnPropertyChanged(nameof(HasAttachments));
             OnPropertyChanged(nameof(ShowImagesUnsupported));
+            MarkDraftEdited();
         };
         Permission.ModeChosen += mode => _ = ApplyPermissionAsync(mode);
         Permission.Show(RememberedPermission());
@@ -378,6 +393,202 @@ public sealed partial class ConversationViewModel : ObservableObject
     public bool ShowImagesUnsupported => HasAttachments && Picker.Selected is { Model.SupportsImages: false };
 
     private int _nextImageNumber = 1;
+
+    // ---- 草稿：每个会话（和“新对话”空状态）一份，切换时整体替换输入框的内容（docs/design/composer-drafts.md §4） ----
+
+    private bool _applyingDraft;
+    private DateTimeOffset _draftEditedAt;
+
+    /// <summary>输入框当前内容所属的草稿键：会话 ID，空状态为 <see cref="DraftStore.NewChatKey"/>。</summary>
+    public string DraftKey => Active?.SessionId ?? DraftStore.NewChatKey;
+
+    private void MarkDraftEdited()
+    {
+        if (!_applyingDraft)
+        {
+            // 用户改了输入框：翻出来的历史消息成了他正在写的草稿，不再是“浏览”
+            History.End();
+            _historyVersion++;
+            _draftEditedAt = _drafts.Now;
+            // 防抖：停止编辑一会儿后写盘
+            _draftSaveTimer.Stop();
+            _draftSaveTimer.Start();
+        }
+    }
+
+    private static readonly TimeSpan DraftSaveDelay = TimeSpan.FromMilliseconds(800);
+    private readonly DispatcherTimer _draftSaveTimer;
+
+    /// <summary>把输入框当前的内容存进 <see cref="DraftStore"/>（同时排队写盘）；空内容等于删除。</summary>
+    private void SaveCurrentDraft() => _drafts.Set(DraftKey, CaptureDraft());
+
+    /// <summary>退出前：立即保存当前输入框的内容，并等写盘完成。</summary>
+    public void FlushDraft()
+    {
+        _draftSaveTimer.Stop();
+        SaveCurrentDraft();
+        _drafts.Flush();
+    }
+
+    /// <summary>启动后读入磁盘上的草稿；当前输入框还是空的（用户没有抢先开始写）就换上当前会话的那一份。</summary>
+    private async Task LoadDraftsAsync()
+    {
+        try
+        {
+            await _drafts.LoadAsync();
+            if (CaptureDraft().IsEmpty && _drafts.Get(DraftKey) is { } draft)
+            {
+                ApplyDraft(draft);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Loading drafts failed");
+        }
+    }
+
+    /// <summary>
+    /// 输入框里属于用户的草稿。正在翻历史时输入框里是历史消息，真正的草稿是浏览前暂存的那一份
+    /// （切换会话、落盘都应该保存它，docs/design/composer-drafts.md §5.3）。
+    /// </summary>
+    internal ComposerDraft CaptureDraft() => History.Stash ?? CaptureLive();
+
+    /// <summary>输入框此刻显示的全部状态。</summary>
+    private ComposerDraft CaptureLive() =>
+        new(Composer.Segments.ToArray(), Attachments.ToArray(), _nextImageNumber, Mcp.Capture(), _draftEditedAt);
+
+    /// <summary>用草稿整体替换输入框的内容（null 为清空）。替换本身不算用户编辑。</summary>
+    private void ApplyDraft(ComposerDraft? draft)
+    {
+        _applyingDraft = true;
+        try
+        {
+            Completion.ResetForDocumentSwap();
+            Composer.SetContent(draft?.Segments ?? []);
+            Attachments.Clear();
+            foreach (var image in draft?.Images ?? [])
+            {
+                Attachments.Add(image);
+            }
+            _nextImageNumber = draft?.NextImageNumber ?? 1;
+            Mcp.Apply(draft?.McpPrompt);
+            _draftEditedAt = draft?.EditedAt ?? default;
+        }
+        finally
+        {
+            _applyingDraft = false;
+        }
+    }
+
+    /// <summary>当前会话变了（切换、新对话、删除、断线都经过这里）：旧会话的草稿存起来，换上新会话的。</summary>
+    partial void OnActiveChanged(SessionViewModel? oldValue, SessionViewModel? newValue)
+    {
+        var from = oldValue?.SessionId ?? DraftStore.NewChatKey;
+        var to = newValue?.SessionId ?? DraftStore.NewChatKey;
+        if (from == to)
+        {
+            return;
+        }
+        _drafts.Set(from, CaptureDraft());
+        History.End();
+        _historyVersion++;
+        ApplyDraft(_drafts.Get(to));
+    }
+
+    // ---- ↑ ↓ 历史输入：当前会话已发送的消息（docs/design/composer-drafts.md §5） ----
+
+    /// <summary>↑ ↓ 翻历史的状态。</summary>
+    public InputHistory History { get; } = new();
+
+    // 用户编辑或切换会话时加一：异步翻页回来时据此判断是否还该继续
+    private int _historyVersion;
+    private bool _pagingHistory;
+
+    /// <summary>翻到更早的一条。返回是否处理了这次按键；没有历史可翻时返回 false，按键照常移动光标。</summary>
+    public bool RecallOlder(bool allowPaging = true)
+    {
+        if (Active is not { } session)
+        {
+            return false;
+        }
+        if (_pagingHistory)
+        {
+            return true;
+        }
+        if (History.Older(InputHistory.Sources(session.Items), CaptureLive) is { } step)
+        {
+            ApplyHistoryStep(step, caretAtStart: true);
+            return true;
+        }
+        // 已加载的部分翻完了：还有更早的就加载一页再接着翻
+        if (allowPaging && session.HasEarlierHistory)
+        {
+            _ = RecallOlderAfterPagingAsync(session);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>翻到更新的一条；越过最新一条时恢复浏览前的草稿。没有在浏览时返回 false。</summary>
+    public bool RecallNewer()
+    {
+        if (Active is not { } session || History.Newer(InputHistory.Sources(session.Items)) is not { } step)
+        {
+            return false;
+        }
+        ApplyHistoryStep(step, caretAtStart: false);
+        return true;
+    }
+
+    private void ApplyHistoryStep(HistoryStep step, bool caretAtStart)
+    {
+        ApplyDraft(step.Entry is { } entry ? InputHistory.ToDraft(entry, _drafts.Now) : step.Restore);
+        // 向上翻时光标放在开头，继续按 ↑ 就接着往前翻；向下翻放在末尾（ApplyDraft 默认把光标放到末尾）
+        Completion.Host?.SetCaret(caretAtStart ? 0 : Composer.Length);
+    }
+
+    private async Task RecallOlderAfterPagingAsync(SessionViewModel session)
+    {
+        _pagingHistory = true;
+        var version = _historyVersion;
+        try
+        {
+            var before = InputHistory.Sources(session.Items).Count;
+            while (session.HasEarlierHistory && Active == session && await LoadEarlierHistoryAsync())
+            {
+                if (InputHistory.Sources(session.Items).Count > before)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _pagingHistory = false;
+        }
+        // 等待期间用户编辑了输入框或切走了会话：不再替他翻
+        if (version == _historyVersion && Active == session)
+        {
+            RecallOlder(allowPaging: false);
+        }
+    }
+
+    /// <summary>
+    /// 把发送失败的内容放回它所属的草稿：还在那个会话的输入框里就直接恢复，用户已经切走就写进那个会话的草稿。
+    /// 目标里已经有新内容时，失败的内容放在前面（<see cref="ComposerDraft.Merge"/>）。
+    /// </summary>
+    internal void RestoreFailedDraft(string key, ComposerDraft failed)
+    {
+        if (key == DraftKey)
+        {
+            var current = CaptureDraft();
+            ApplyDraft(current.IsEmpty ? failed : ComposerDraft.Merge(failed, current));
+        }
+        else
+        {
+            _drafts.Set(key, _drafts.Get(key) is { } stored ? ComposerDraft.Merge(failed, stored) : failed);
+        }
+    }
 
     /// <summary>添加一张图片附件；返回它（占位符由输入框插入到光标处）。</summary>
     public ImageAttachmentViewModel AddAttachment(string path, string mimeType)
@@ -723,19 +934,23 @@ public sealed partial class ConversationViewModel : ObservableObject
             StatusMessage = Strings.Get(TKCodeLangResourceKind.McpWaitForTurn);
             return;
         }
+        var mcpSnapshot = Mcp.Capture();
         var (mcpResources, mcpPrompt, mcpError) = Mcp.Take(Composer.Segments);
         if (mcpError is not null)
         {
             StatusMessage = mcpError;
             return;
         }
+        // 发送期间用户可能切走会话：发给哪个会话、失败时草稿回到哪里，都以发送这一刻为准（docs/design/composer-drafts.md §4.3）
+        var target = Active;
+        var ownerKey = DraftKey;
         ComposerText = "";
         Attachments.Clear();
         _nextImageNumber = 1;
         try
         {
             var server = await _host.GetServerAsync();
-            if (Active is null)
+            if (target is null)
             {
                 var cwd = Workspace?.Path ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var model = Picker.Selected?.Model.Ref ?? "fake/fake-sonnet";
@@ -745,21 +960,28 @@ public sealed partial class ConversationViewModel : ObservableObject
                 var item = new SessionItemViewModel(session.SessionId, session.FilePath, session.Cwd) { Live = live, Owner = this };
                 item.SyncFrom(live);
                 Sessions.Insert(0, item);
-                foreach (var s in Sessions)
+                // 会话已经创建：之后失败，草稿属于这个新会话
+                target = live;
+                ownerKey = live.SessionId;
+                // 等待期间用户已经去了别的会话时，不把人拉回新会话
+                if (Active is null)
                 {
-                    s.IsSelected = s == item;
+                    foreach (var s in Sessions)
+                    {
+                        s.IsSelected = s == item;
+                    }
+                    Push(item.SessionId);
+                    Activate(live);
                 }
-                Push(item.SessionId);
-                Activate(live);
             }
-            else if (Active!.IsRunning)
+            else if (target.IsRunning)
             {
                 // 运行中再次发送：显示在输入框上方的队列里，本轮正常结束后按顺序发出（可编辑、移除或立即插入）
-                Active.QueuedPrompts.Add(new QueuedPromptViewModel(text, images, Active, segments) { Owner = this });
+                target.QueuedPrompts.Add(new QueuedPromptViewModel(text, images, target, segments) { Owner = this });
                 StatusMessage = null;
                 return;
             }
-            if (Active is { IsRunning: false } idle)
+            if (target is { IsRunning: false } idle)
             {
                 await server.PromptAsync(new PromptRequest(idle.SessionId, text, Images: ToDtos(images), McpResources: mcpResources, McpPrompt: mcpPrompt,
                     Segments: segments));
@@ -770,14 +992,8 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             _logger.LogError(ex, "Prompt failed");
             StatusMessage = Strings.Format(TKCodeLangResourceKind.StatusSendFailedFormat, ex.Message);
-            // 发送失败：恢复输入框（原文、图片与 MCP 引用）
-            Composer.SetContent(draft);
-            Mcp.Restore();
-            foreach (var image in images)
-            {
-                Attachments.Add(image);
-            }
-            _nextImageNumber = images.Length == 0 ? 1 : images.Max(i => i.Number) + 1;
+            // 发送失败：恢复原文、图片与 MCP 引用
+            RestoreFailedDraft(ownerKey, new ComposerDraft(draft, images, images.Length == 0 ? 1 : images.Max(i => i.Number) + 1, mcpSnapshot, _drafts.Now));
         }
     }
 
@@ -1021,6 +1237,8 @@ public sealed partial class ConversationViewModel : ObservableObject
             }
             _open.Remove(item.SessionId);
             Sessions.Remove(item);
+            // 放在 NewChat() 之后：删除的是当前会话时，切换已把它的草稿存进了 DraftStore
+            _drafts.Remove(item.SessionId);
         });
     }
 
@@ -1086,6 +1304,8 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     private async Task InitializeAsync()
     {
+        // 草稿的读取不依赖 Host，与它的启动并行
+        _ = LoadDraftsAsync();
         try
         {
             var server = await _host.GetServerAsync();

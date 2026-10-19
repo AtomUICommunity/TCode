@@ -193,7 +193,15 @@ public sealed partial class McpComposerViewModel : ObservableObject
         PromptArguments.Clear();
         foreach (var argument in prompt.Arguments)
         {
-            PromptArguments.Add(new McpPromptArgumentViewModel(argument));
+            var item = new McpPromptArgumentViewModel(argument);
+            item.PropertyChanged += (_, _) =>
+            {
+                if (!IsRestoring)
+                {
+                    ArgumentEdited?.Invoke();
+                }
+            };
+            PromptArguments.Add(item);
         }
         Prompt = prompt;
     }
@@ -228,27 +236,85 @@ public sealed partial class McpComposerViewModel : ObservableObject
                 PromptArguments.Where(a => a.Value.Length > 0).ToDictionary(a => a.Argument.Name, a => a.Value));
         }
         var resources = ResourcesIn(segments);
-        _taken = (Prompt, PromptArguments.ToList());
         ClearPrompt();
         return (resources.Count == 0 ? null : resources, prompt, null);
     }
 
-    private (McpPromptDto? Prompt, List<McpPromptArgumentViewModel> Arguments)? _taken;
+    // ---- 草稿（docs/design/composer-drafts.md §4） ----
 
-    /// <summary>发送失败：恢复刚取出的提示词（资源 tag 随输入框内容一起恢复）。</summary>
-    public void Restore()
+    private int _applyVersion;
+
+    /// <summary>选中的提示词与已填的参数值；没有选中时为 null。</summary>
+    public McpPromptSnapshot? Capture() => Prompt is { } p
+        ? new McpPromptSnapshot(p.Server, p.Name, p,
+            PromptArguments.Where(a => a.Value.Length > 0).ToDictionary(a => a.Argument.Name, a => a.Value))
+        : null;
+
+    /// <summary>
+    /// 恢复草稿里的提示词（null 为清空）。快照里只有名字时（从磁盘读出）等 MCP 目录加载后再解析；
+    /// 目录里找不到、或期间已经换了草稿 / 用户选了别的提示词，就放弃。
+    /// </summary>
+    public void Apply(McpPromptSnapshot? snapshot)
     {
-        if (_taken is not { } taken)
+        var version = ++_applyVersion;
+        ClearPrompt();
+        if (snapshot is null)
         {
             return;
         }
-        foreach (var argument in taken.Arguments)
+        if (snapshot.Prompt is { } prompt)
         {
-            PromptArguments.Add(argument);
+            Restore(prompt, snapshot.Arguments);
+            return;
         }
-        Prompt = taken.Prompt;
-        _taken = null;
+        _ = ResolveAsync(snapshot, version);
     }
+
+    private async Task ResolveAsync(McpPromptSnapshot snapshot, int version)
+    {
+        try
+        {
+            var catalog = await GetCatalogAsync();
+            if (version != _applyVersion || Prompt is not null)
+            {
+                return;
+            }
+            if (catalog.Prompts.FirstOrDefault(p => p.Server == snapshot.Server && p.Name == snapshot.Name) is { } prompt)
+            {
+                Restore(prompt, snapshot.Arguments);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Restoring the MCP prompt of a draft failed");
+        }
+    }
+
+    private void Restore(McpPromptDto prompt, IReadOnlyDictionary<string, string> arguments)
+    {
+        IsRestoring = true;
+        try
+        {
+            SelectPrompt(prompt);
+            foreach (var argument in PromptArguments)
+            {
+                if (arguments.TryGetValue(argument.Argument.Name, out var value))
+                {
+                    argument.Value = value;
+                }
+            }
+        }
+        finally
+        {
+            IsRestoring = false;
+        }
+    }
+
+    /// <summary>正在从草稿恢复提示词：它引起的变化不算用户编辑（否则草稿的保留时间会被一次次刷新）。</summary>
+    public bool IsRestoring { get; private set; }
+
+    /// <summary>用户修改了提示词参数的值。</summary>
+    public event Action? ArgumentEdited;
 }
 
 /// <summary>
