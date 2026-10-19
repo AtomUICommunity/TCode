@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.5
+
+The composer now keeps a separate draft for every session, including across restarts, and ↑ / ↓ bring back the messages you sent earlier in the session. The branch picker follows branch changes made outside the app and works in git worktrees and submodules.
+
+### Added
+
+- **Drafts per session.** Each session, and the empty new-session screen, has its own composer content: text, tags, images and a selected MCP prompt with its argument values. Switching to another session and back restores it. Before, the composer was shared, so text typed in one session showed up in all the others.
+  - Drafts are saved to `~/.tkcode/drafts/` shortly after you stop typing and when the app quits, so they survive a restart. Drafts older than 3 days are deleted.
+  - Deleting a session deletes its draft. Forking a session does not copy it.
+  - If a send fails, the message goes back into the draft of the session it was sent from, even when you have switched to another session in the meantime.
+  - The cursor position and undo history are not kept. An image whose file no longer exists is dropped together with its tag.
+- **Recall sent messages with ↑ / ↓.** In the composer, ↑ brings back the messages sent earlier in the current session, newest first, with their tags and images, ready to edit. ↓ steps forward again, and past the newest message it restores the draft you were writing. Earlier history is loaded on demand when you reach the oldest message shown.
+  - With text in the composer, the first ↑ only moves the cursor to the start, so a stray key press does not replace what you are writing. The next ↑ recalls a message. While you browse, a recalled message with several lines changes to the previous or next one only when the cursor is on its first or last line.
+  - The keys keep their usual meaning while the completion list is open, with a selection, with Shift, Cmd or Ctrl held, and during input-method composition.
+  - Editing a recalled message makes it your draft. Queued messages, MCP prompt cards and commands that only run in the interface (such as `/compact` and `/new`) are not part of the history.
+
+### Fixed
+
+- The branch picker under the composer follows branch changes made outside the app. A branch created, switched or deleted in the terminal or by the agent now shows up without switching projects. The list is also reloaded each time the picker opens.
+- The branch picker shows the branch in linked git worktrees, in submodules and in checkouts made with `--separate-git-dir`, where `.git` is a file. Before, it showed none. In a worktree it lists the branches of the main repository, and it refreshes when you switch branches in the worktree or create one in the main repository.
+
+**Full Changelog**: https://github.com/AtomUICommunity/TKCode/compare/v0.1.4...v0.1.5
+
 ## 0.1.4
 
 Adds a Plan mode that ends in a plan you approve, project memory for the built-in agent, a context usage card that shows the prompt cache hit rate, automatic session titles with a separate fast model, configurable shells, interface zoom, and tray, Dock and jump-list menus with single-instance launch. Prompt caching now covers every Anthropic Messages endpoint and most Chat Completions endpoints. The app opens without a loading page and now builds on .NET 11 RC2, AtomUI 6.2.6 and Avalonia 12.1.4.
@@ -66,7 +89,6 @@ Adds a Plan mode that ends in a plan you approve, project memory for the built-i
 - Dropping files that are not images no longer also attaches the drag preview icon as an image.
 - Subagents that run on a different model now use the closest thinking level that model supports, instead of inheriting one it does not.
 - Terminal: a zero-width character such as U+200B added to the previous cell no longer leaves a stale cell on screen. This is fixed with a libghostty-vt overlay patch.
-- The branch picker under the composer follows branch changes made outside the app. A branch created, switched or deleted in the terminal or by the agent now shows up without switching projects. The list is also reloaded each time the picker opens.
 
 ### Build
 
