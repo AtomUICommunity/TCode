@@ -44,11 +44,30 @@ PLIST
 
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     # 由内向外：先签每个嵌套的 Mach-O（dylib、agenthost、ptyhost、spawn helper），最后签整个包；不用 --deep
+    # 内容相同的文件只签一份，其余复制已签名的字节：Contents/MacOS 与 ptyhost/ 各有一份 libghostty-vt.dylib，
+    # 而 Desktop 与 pty host 用这个库文件的 SHA-256 作为构建 ID。--timestamp 每次都嵌入不同的时间戳令牌，
+    # 分别签名会让两份字节不同，host 就以 build mismatch 退出（终端打不开）。
+    # （macOS 自带 bash 3.2 没有关联数组，所以按哈希排序后逐行比较）
+    macho_list="$(mktemp)"
     while IFS= read -r f; do
         if file -b "$f" | grep -q 'Mach-O'; then
-            codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" "$f"
+            printf '%s %s\n' "$(shasum -a 256 < "$f" | cut -d' ' -f1)" "$f"
         fi
-    done < <(find "$APP/Contents/MacOS" -type f ! -path "$APP/Contents/MacOS/TKCode")
+    done < <(find "$APP/Contents/MacOS" -type f ! -path "$APP/Contents/MacOS/TKCode") | sort > "$macho_list"
+    prev_hash=""
+    prev_file=""
+    while IFS= read -r line; do
+        hash="${line%% *}"
+        f="${line#* }"
+        if [ "$hash" = "$prev_hash" ]; then
+            cp "$prev_file" "$f"
+        else
+            codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" "$f"
+            prev_hash="$hash"
+            prev_file="$f"
+        fi
+    done < "$macho_list"
+    rm -f "$macho_list"
     codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" "$APP"
     codesign --verify --strict --verbose=2 "$APP"
 fi
