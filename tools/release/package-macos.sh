@@ -25,11 +25,24 @@ notarize() {
     xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
 }
 
+# 公证通过后 stapler 要从 CloudKit 取票据，runner 上偶尔断网（Error 68）或票据还没同步完；重试几次，仍失败才算失败
+staple() {
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        if xcrun stapler staple "$1"; then
+            return 0
+        fi
+        echo "stapler staple 失败（第 $attempt 次），稍后重试" >&2
+        sleep $((attempt * 10))
+    done
+    return 1
+}
+
 # ---- .app：先公证再 staple，zip 和 dmg 里都是 staple 过的 .app（离线也能通过 Gatekeeper） ----
 if $NOTARIZE; then
     ditto -c -k --keepParent "$APP" "$WORK/notarize.zip"
     notarize "$WORK/notarize.zip"
-    xcrun stapler staple "$APP"
+    staple "$APP"
     spctl -a -t exec -vv "$APP"
 fi
 
@@ -46,7 +59,7 @@ if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
 fi
 if $NOTARIZE; then
     notarize "$DMG"
-    xcrun stapler staple "$DMG"
+    staple "$DMG"
     spctl -a -t open --context context:primary-signature -vv "$DMG"
 fi
 

@@ -256,7 +256,8 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 2. **macOS**：
    - 从 secrets 导入 Developer ID Application 证书到临时 keychain；
    - **由内向外**逐个签名所有 Mach-O 文件（dylib、tkcode-ptyhost、tkcode-pty-spawn、TKCode.AgentHost），最后签整个 `.app`；全部加上 `--options runtime --timestamp`，**不使用 `--deep`**；
-   - `tools/release/package-macos.sh`：.app 用 `xcrun notarytool submit --wait`（Apple ID + App 专用密码）公证并 staple，再生成 zip 和 dmg；dmg 签名后同样公证并 staple；
+   - **内容相同的文件只签一份，其余复制已签名的字节**（`Contents/MacOS/` 与 `ptyhost/` 各有一份 `libghostty-vt.dylib`）：构建 ID 取该库文件的 SHA-256（04 §2.4），`--timestamp` 每次嵌入不同的时间戳令牌，分别签名会让两份字节不同，pty host 以 build mismatch 退出，终端打不开。`tools/package_macos_app.sh` 按签名前的 SHA-256 分组；
+   - `tools/release/package-macos.sh`：.app 用 `xcrun notarytool submit --wait`（Apple ID + App 专用密码）公证并 staple（staple 要从 CloudKit 取票据，偶尔断网，脚本里重试 5 次），再生成 zip 和 dmg；dmg 签名后同样公证并 staple；
    - 需要先验证：AOT 程序在 hardened runtime 下是否需要额外的 entitlements（预期不需要 JIT 相关权限）。
 3. **Windows**：用 `iscc` 编译 `packaging/windows/TKCode.iss`，生成 setup.exe。签名步骤预留开关，有 secret 时才执行。
 4. **Linux**：打包 tar.gz，保留可执行权限位。

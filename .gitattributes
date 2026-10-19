@@ -1,0 +1,4 @@
+# 所有平台一律以 LF 检出。C# 原始字符串字面量（系统提示词等）的换行取决于源文件的行尾：
+# Windows 上 actions/checkout 默认 core.autocrlf=true，会把它们检成 \r\n，
+# 自检（SelfTest 的 "plan mode section"）和发给模型的提示词就与其他平台不一致。
+* text=auto eol=lf
