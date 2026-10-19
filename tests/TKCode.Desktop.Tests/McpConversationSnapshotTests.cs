@@ -25,9 +25,9 @@ public sealed class McpConversationSnapshotTests
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         var serverDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../TKCode.Mcp.TestServer/bin/Debug/net10.0/TKCode.Mcp.TestServer.dll"));
+            "../../../../TKCode.Mcp.TestServer/bin/Debug/net11.0/TKCode.Mcp.TestServer.dll"));
         File.WriteAllText(Path.Combine(home, "settings.json"), $$"""
         {
           "mcpServers": {

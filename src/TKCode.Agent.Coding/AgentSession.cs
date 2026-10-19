@@ -1,7 +1,10 @@
 using TKCode.Agent.Coding.Assets;
+using TKCode.Agent.Coding.Memory;
 using TKCode.Agent.Coding.Prompt;
 using TKCode.Agent.Coding.Sessions;
 using TKCode.Agent.Coding.Tools;
+using TKCode.Agent.Coding.Tools.Plan;
+using TKCode.Agent.Coding.Tools.Shell;
 using TKCode.Agent.Coding.Workspace;
 using TKCode.Ai;
 using TKCode.Ai.Messages;
@@ -21,12 +24,17 @@ public sealed class AgentSession : IAsyncDisposable
     private readonly List<Message> _earlier = [];
     /// <summary>打开时会话文件里已压缩掉的消息条数：不常驻内存，回看到这里时才从文件读取。</summary>
     private int _earlierOnDisk;
+    /// <summary>文件里已压缩掉的那部分消息的缓存累计（只读一次文件）。</summary>
+    private CacheTotals? _earlierOnDiskCache;
+    /// <summary>内置 Agent 的系统提示（外部运行时为 null）。</summary>
+    private readonly SystemPromptTracker? _prompt;
 
-    private AgentSession(IAgentLoop agent, SessionStore store, ToolContext? tools = null)
+    private AgentSession(IAgentLoop agent, SessionStore store, ToolContext? tools = null, SystemPromptTracker? prompt = null)
     {
         Agent = agent;
         Store = store;
         Tools = tools;
+        _prompt = prompt;
         Workspace = tools?.Workspace ?? new WorkspaceRoots(store.Cwd);
         _persistence = agent.Subscribe(async (e, ct) =>
         {
@@ -86,7 +94,9 @@ public sealed class AgentSession : IAsyncDisposable
             // 外部运行时：只读由运行时原生收紧，说明随下一条用户消息发送一次（docs/design/composer.md §11）
             if (External is { } external)
             {
-                external.SetMode(value.Name, value.IsReadOnly, SessionRole.ExternalReminder(previous, value));
+                // 原生实现 plan 的运行时（Claude）：Plan 由运行时自己的提示词负责，不发 TKCode 的说明（docs/design/plan-mode.md §12.8）
+                var reminder = external.NativePlanMode && value.Name == SessionRole.PlanName ? null : SessionRole.ExternalReminder(previous, value);
+                external.SetMode(value.Name, value.IsReadOnly, reminder);
             }
         }
     }
@@ -164,6 +174,34 @@ public sealed class AgentSession : IAsyncDisposable
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
+    /// <summary>
+    /// 上下文占用（docs/design/context-usage.md）：当前上下文的 token 数、内置 Agent 的分类估算（外部运行时为 null），
+    /// 以及整个会话（含已压缩掉的消息）的提示缓存累计。
+    /// </summary>
+    public ContextUsageReport GetContextUsage()
+    {
+        var messages = Agent.Messages;
+        ContextBreakdown? breakdown = null;
+        if (Agent is TKCode.Agent.Agent builtin && _prompt is not null)
+        {
+            breakdown = ContextUsage.Measure(_prompt.InitialSections, builtin.Tools, messages);
+        }
+        CacheTotals earlier;
+        int onDisk;
+        lock (_earlier)
+        {
+            earlier = CacheTotals.Of(_earlier);
+            onDisk = _earlierOnDisk;
+        }
+        if (onDisk > 0)
+        {
+            _earlierOnDiskCache ??= CacheTotals.Of(ReadEarlier(Store.FilePath, onDisk));
+            earlier += _earlierOnDiskCache.Value;
+        }
+        var tokens = breakdown?.Total ?? TKCode.Agent.Compaction.ContextAccounting.ContextTokens(messages);
+        return new ContextUsageReport(tokens, breakdown, earlier + CacheTotals.Of(messages));
+    }
+
     /// <summary>手动压缩（/compact）；外部运行时与没有压缩器的会话不支持。</summary>
     public Task CompactAsync(string? instructions) =>
         Agent is TKCode.Agent.Agent { Compactor: not null } builtin
@@ -181,8 +219,8 @@ public sealed class AgentSession : IAsyncDisposable
     public static AgentSession CreateBuiltin(WireApiRegistry apis, ModelInfo model, SessionStore store, Func<string, string?>? getApiKey = null,
         BuiltinOptions? options = null)
     {
-        var (agent, tools) = CreateBuiltinLoop(apis, model, store, null, getApiKey, options ?? new BuiltinOptions());
-        return new AgentSession(agent, store, tools)
+        var (agent, tools, prompt) = CreateBuiltinLoop(apis, model, store, null, getApiKey, options ?? new BuiltinOptions());
+        return new AgentSession(agent, store, tools, prompt)
         {
             ContextWindow = model.ContextWindow,
             Approvals = options?.Approvals ?? new SessionApprovals(),
@@ -194,10 +232,10 @@ public sealed class AgentSession : IAsyncDisposable
         BuiltinOptions? options = null, SessionSnapshot? snapshot = null)
     {
         (var store, snapshot) = SessionStore.OpenSnapshot(filePath, snapshot);
-        var (agent, tools) = CreateBuiltinLoop(apis, model, store, snapshot, getApiKey, options ?? new BuiltinOptions());
+        var (agent, tools, prompt) = CreateBuiltinLoop(apis, model, store, snapshot, getApiKey, options ?? new BuiltinOptions());
         agent.LoadHistory(snapshot.Messages);
         tools.Tasks.Restore(snapshot.Tasks);
-        return new AgentSession(agent, store, tools)
+        return new AgentSession(agent, store, tools, prompt)
         {
             ContextWindow = model.ContextWindow,
             Approvals = options?.Approvals ?? new SessionApprovals(),
@@ -206,29 +244,48 @@ public sealed class AgentSession : IAsyncDisposable
     }
 
     /// <summary>内置 Agent 循环：系统提示（按节，冻结开头并追加变化）、工具集、会话 id 与 Key 获取方式。</summary>
-    private static (Agent Agent, ToolContext Tools) CreateBuiltinLoop(WireApiRegistry apis, ModelInfo model, SessionStore store,
+    private static (Agent Agent, ToolContext Tools, SystemPromptTracker Prompt) CreateBuiltinLoop(WireApiRegistry apis, ModelInfo model, SessionStore store,
         SessionSnapshot? snapshot, Func<string, string?>? getApiKey, BuiltinOptions options)
     {
         var workspace = options.Workspace ?? new WorkspaceRoots(store.Cwd);
+        var memory = options.MemoryDirectory is { } memoryDirectory ? new ProjectMemory(memoryDirectory) : null;
+        if (memory is not null)
+        {
+            workspace.MemoryDirectory = memory.Directory;
+        }
         var toolContext = new ToolContext(workspace, store.SessionId, options.BackgroundTasks, options.Tasks)
         {
             Services = options.Services,
+            ShellProfile = options.ShellProfile ?? (() => null),
+            // 主会话才有计划文件与计划审批（docs/design/plan-mode.md §6）
+            PlanFile = options.ToolSet == ToolSet.Full && options.Services.PlanMode is not null ? PlanFiles.PathFor(store.FilePath) : null,
+            TranscriptPath = store.FilePath,
+            ReadOnlyToolSet = options.ToolSet == ToolSet.ReadOnly,
+            Memory = memory,
         };
         var tools = BuiltinTools.Create(toolContext, options.ToolSet);
+        Func<string> shellName = () => ShellResolver.Resolve(toolContext.ShellProfile()).Name;
+        // memory 节排在 project_context 之后、其他额外节之前（docs/design/memory.md §4.1）
+        IReadOnlyList<PromptSection>? extra = memory is null ? options.ExtraPromptSections : [memory.Section, .. options.ExtraPromptSections ?? []];
         var prompt = snapshot is null
-            ? SystemPromptTracker.Create(store, workspace, tools, model, options.ExtraPromptSections)
-            : SystemPromptTracker.Restore(store, snapshot, workspace, tools, model, options.ExtraPromptSections);
+            ? SystemPromptTracker.Create(store, workspace, tools, model, extra, shellName)
+            : SystemPromptTracker.Restore(store, snapshot, workspace, tools, model, extra, shellName);
         var agent = new Agent(apis, model, prompt.InitialPrompt, tools)
         {
             SessionId = store.SessionId,
             GetApiKey = getApiKey,
+            GetCacheTtl = options.CacheTtl,
             Compactor = new Compaction.Compactor(store, toolContext, prompt),
             AutoCompact = options.AutoCompact,
             Offload = ImageAttachments.Offload,
         };
+        toolContext.RequestContextRefresh = agent.RequestContextRefresh;
+        toolContext.RequestHandoff = agent.RequestHandoff;
         var dynamic = options.Services.DynamicTools?.Invoke(toolContext);
         toolContext.DynamicTools = dynamic;
         var firstTurn = true;
+        // 进入 Plan 时取一次计划文件是否存在，留在 Plan 期间不变（模式节不随模型写文件反复变化）
+        bool? planExisted = null;
         agent.ContextUpdates = async ct =>
         {
             // 每批用户输入之前：取当前的 MCP 工具、skills 与 role，同一轮内保持不变
@@ -245,21 +302,44 @@ public sealed class AgentSession : IAsyncDisposable
             }
             firstTurn = false;
             var role = toolContext.Role ?? SessionRole.Agent;
+            // 没有计划审批（没有宿主）时，Plan 退回到以回复给出计划的版本
+            if (ReferenceEquals(role, SessionRole.Plan) && toolContext.PlanFile is null)
+            {
+                role = SessionRole.PlanWithoutApproval;
+            }
             // 从其他模式切回 Agent：模式节换成“可以动手了”的说明，而不是直接删掉（docs/design/composer.md §18.4）
             if (role.Section is null && role.Name == SessionRole.AgentName && prompt.HasSection(SessionRole.SectionName))
             {
                 role = SessionRole.AgentResumed;
             }
+            var planFile = toolContext.PlanFile;
+            bool planExists;
+            if (role.Name == SessionRole.PlanName)
+            {
+                planExisted ??= planFile is not null && File.Exists(planFile);
+                planExists = planExisted.Value;
+            }
+            else
+            {
+                planExisted = null;
+                planExists = planFile is not null && File.Exists(planFile);
+            }
             IReadOnlyList<IAgentTool> all = set.Tools.Count == 0 ? tools : [.. tools, .. set.Tools];
-            agent.Tools = role.Tools is ["all"] ? all : all.Where(role.Allows).ToArray();
-            prompt.Dynamic = role.Section is { } section ? [.. set.Sections, section] : set.Sections;
+            // 总是经过 Allows：模式专属工具（exit_plan_mode / enter_plan_mode）在 all 下也要过滤
+            agent.Tools = all.Where(role.Allows).ToArray();
+            prompt.Dynamic = role.SectionFor(planFile, planExists) is { } section ? [.. set.Sections, section] : set.Sections;
             var updates = await prompt.UpdatesAsync(agent.Model, ct);
             agent.SystemPrompt = prompt.InitialPrompt;
+            // 当前历史里还没有记忆索引（新会话、启用前的旧会话）时随本批注入；压缩结果自带索引（docs/design/memory.md §4.2）
+            if (memory is not null && !agent.Messages.Any(ProjectMemory.IsIndexMessage))
+            {
+                return [.. updates, memory.IndexMessage()];
+            }
             return updates;
         };
         toolContext.ModelSupportsImages = () => agent.Model.SupportsImages;
         toolContext.CurrentModel = () => agent.Model;
-        return (agent, toolContext);
+        return (agent, toolContext, prompt);
     }
 
     /// <summary>

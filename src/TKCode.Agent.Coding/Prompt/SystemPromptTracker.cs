@@ -15,6 +15,7 @@ public sealed class SystemPromptTracker
     private readonly WorkspaceRoots _workspace;
     private readonly IReadOnlyList<IAgentTool> _tools;
     private readonly IReadOnlyList<PromptSection>? _extra;
+    private readonly Func<string>? _shell;
     private IReadOnlyList<PromptSection> _initial;
     /// <summary>新会话：开头快照写入会话文件之前，可按当时的动态节重建。</summary>
     private readonly bool _initialMutable;
@@ -22,9 +23,10 @@ public sealed class SystemPromptTracker
     private IReadOnlyList<PromptSection>? _recorded;
 
     private SystemPromptTracker(SessionStore store, WorkspaceRoots workspace, IReadOnlyList<IAgentTool> tools,
-        IReadOnlyList<PromptSection> initial, IReadOnlyList<PromptSection>? recorded, IReadOnlyList<PromptSection>? extra)
+        IReadOnlyList<PromptSection> initial, IReadOnlyList<PromptSection>? recorded, IReadOnlyList<PromptSection>? extra, Func<string>? shell)
     {
         _extra = extra;
+        _shell = shell;
         _store = store;
         _workspace = workspace;
         _tools = tools;
@@ -44,16 +46,20 @@ public sealed class SystemPromptTracker
     /// <summary>发给模型的开头系统提示。</summary>
     public string InitialPrompt => SystemPromptBuilder.Render(_initial);
 
+    /// <summary><see cref="InitialPrompt"/> 的各节（上下文占用分类用）。</summary>
+    public IReadOnlyList<PromptSection> InitialSections => _initial;
+
+    /// <param name="shell">bash 工具当前实际使用的 shell 名，每次重新计算各节时读取（用户改了 shell 之后随补丁更新）；为 null 时按默认选择。</param>
     public static SystemPromptTracker Create(SessionStore store, WorkspaceRoots workspace, IReadOnlyList<IAgentTool> tools, ModelInfo model,
-        IReadOnlyList<PromptSection>? extra = null) =>
-        new(store, workspace, tools, SystemPromptBuilder.Build(workspace, tools, model, extra: extra), null, extra);
+        IReadOnlyList<PromptSection>? extra = null, Func<string>? shell = null) =>
+        new(store, workspace, tools, SystemPromptBuilder.Build(workspace, tools, model, extra: extra, shell: shell?.Invoke()), null, extra, shell);
 
     /// <summary>恢复会话：沿用记录的开头与当前快照；旧会话没有记录时按当前环境重建。</summary>
     public static SystemPromptTracker Restore(SessionStore store, SessionSnapshot snapshot, WorkspaceRoots workspace,
-        IReadOnlyList<IAgentTool> tools, ModelInfo model, IReadOnlyList<PromptSection>? extra = null) =>
+        IReadOnlyList<IAgentTool> tools, ModelInfo model, IReadOnlyList<PromptSection>? extra = null, Func<string>? shell = null) =>
         snapshot.InitialSystemPrompt is { } initial
-            ? new(store, workspace, tools, initial, snapshot.SystemPrompt ?? initial, extra)
-            : Create(store, workspace, tools, model, extra);
+            ? new(store, workspace, tools, initial, snapshot.SystemPrompt ?? initial, extra, shell)
+            : Create(store, workspace, tools, model, extra, shell);
 
     /// <summary>
     /// 压缩后重新生成开头的系统提示（docs/design/compaction.md §7.3）：之前累积的补丁合并进一份新的冻结提示，
@@ -68,11 +74,11 @@ public sealed class SystemPromptTracker
     }
 
     /// <summary>按当前环境与动态节计算的系统提示（不记录）。</summary>
-    public IReadOnlyList<PromptSection> Current(ModelInfo model) => SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra);
+    public IReadOnlyList<PromptSection> Current(ModelInfo model) => SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra, shell: _shell?.Invoke());
 
     public async ValueTask<IReadOnlyList<Message>> UpdatesAsync(ModelInfo model, CancellationToken cancellationToken)
     {
-        var current = SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra);
+        var current = SystemPromptBuilder.Build(_workspace, _tools, model, extra: Extra, shell: _shell?.Invoke());
         if (_recorded is null)
         {
             // 新会话第一轮：开头直接包含当时的动态节（例如已连上的 MCP 服务器），不必再追加补丁

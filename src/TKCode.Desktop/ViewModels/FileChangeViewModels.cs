@@ -146,9 +146,15 @@ public static class FileChangeSet
         : StringComparer.Ordinal;
 }
 
-/// <summary>一轮结束后的改动卡片：“N 个文件已更改”，可整轮撤销，逐文件审查或打开。</summary>
+/// <summary>
+/// 一轮结束后的改动卡片：“N 个文件已更改”，可整轮撤销，逐文件审查或打开。
+/// 文件超过 <see cref="PreviewCount"/> 个时默认只列出前面几个，其余收起，避免长列表把对话顶出视口。
+/// </summary>
 public sealed partial class TurnChangesItemViewModel : TranscriptItemViewModel
 {
+    /// <summary>卡片里默认直接列出的文件数。</summary>
+    public const int PreviewCount = 5;
+
     private readonly Action<string> _review;
     private readonly Action<string> _open;
 
@@ -177,8 +183,34 @@ public sealed partial class TurnChangesItemViewModel : TranscriptItemViewModel
     [ObservableProperty]
     public partial bool IsExpanded { get; set; } = true;
 
+    /// <summary>超出预览数量的文件是否展开。默认收起。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VisibleFiles))]
+    [NotifyPropertyChangedFor(nameof(RestLabel))]
+    public partial bool ShowAll { get; set; }
+
+    /// <summary>当前应显示的文件：未展开时只取前 <see cref="PreviewCount"/> 个。</summary>
+    public IEnumerable<FileChangeViewModel> VisibleFiles => ShowAll ? Files : Files.Take(PreviewCount);
+
+    /// <summary>还有没列出的文件（显示“还有 N 个文件”）。</summary>
+    public bool HasOverflow => Files.Count > PreviewCount;
+
+    /// <summary>“还有 N 个文件”，展开后变成“收起”。</summary>
+    public string RestLabel => ShowAll
+        ? Strings.Get(TKCodeLangResourceKind.ChangesShowLess)
+        : Strings.Format(TKCodeLangResourceKind.ChangesShowMore, Math.Max(0, Files.Count - PreviewCount));
+
     [RelayCommand]
     private void Toggle() => IsExpanded = !IsExpanded;
+
+    [RelayCommand]
+    private void ToggleRest() => ShowAll = !ShowAll;
+
+    public void RefreshLanguage()
+    {
+        OnPropertyChanged(nameof(Header));
+        OnPropertyChanged(nameof(RestLabel));
+    }
 
     [RelayCommand]
     private async Task RevertAllAsync()

@@ -19,7 +19,11 @@ public abstract record Message
 /// 系统消息。首条为会话的系统提示；之后追加的系统消息表示提示或工具集的增量变化，
 /// 以保持历史只追加（Anthropic preserved thinking 与提示缓存都依赖这一点）。
 /// </summary>
-public sealed record SystemMessage(string Text) : Message;
+public sealed record SystemMessage(string Text) : Message
+{
+    /// <summary>不是提示补丁的系统消息的来源：<c>memory</c>（项目记忆索引，docs/design/memory.md §4.2）。null 表示提示或工具集的变化。</summary>
+    public string? Source { get; init; }
+}
 
 public sealed record UserMessage(IReadOnlyList<ContentBlock> Content) : Message
 {

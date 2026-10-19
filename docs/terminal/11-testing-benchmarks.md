@@ -356,14 +356,14 @@ tests/TKCode.Terminal.Benchmarks/
 - 数据集路径通过 `--data` 或环境变量 `TKCODE_BENCH_DATA` 传入，默认 `artifacts/bench-data/`。
 - 基准中的"关闭渲染"= 只调 `TerminalCore.Write`，不调 `CaptureFrame`。另有一组"开启渲染"= 每 8 ms（模拟 120 Hz）调用一次 `CaptureFrame` + Painter。
 - 每个基准都加 `[MemoryDiagnoser]`；热路径基准另加 `[DisassemblyDiagnoser]`（只在 JIT 作业中有意义）。
-- BenchmarkDotNet 的版本：使用支持 .NET 10 与 `nativeaot10.0` 运行时标识的版本，进入 `Directory.Packages.props` [推断：落地时选当时的最新稳定版]。
+- BenchmarkDotNet 的版本：使用支持 .NET 11 与 `nativeaot11.0` 运行时标识的版本，进入 `Directory.Packages.props` [推断：落地时选当时的最新稳定版]。
 
 ### 3.2 JIT 与 NativeAOT 两种工具链
 
 产品发布的是 NativeAOT（项目约定），而 AOT 没有动态 PGO、默认指令集基线较低（research/04 §9.1、§11 第 5 条），所以两者都跑：
 
 ```
-dotnet run -c Release --project tests/TKCode.Terminal.Benchmarks -- --runtimes net10.0 nativeaot10.0 --filter '*Parse*'
+dotnet run -c Release --project tests/TKCode.Terminal.Benchmarks -- --runtimes net11.0 nativeaot11.0 --filter '*Parse*'
 ```
 
 - NativeAOT 作业：BDN 为每个基准类生成并发布一个 AOT 程序，首次运行较慢（每个类一次 ILC），所以 PR 作业只对 S1/S3/S5 跑 AOT。

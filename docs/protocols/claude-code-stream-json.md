@@ -377,6 +377,13 @@ TKCode 发送：
 
 TKCode 内部处理审批出错（例如 UI 断开）时：回 **`behavior:"deny"`** 的成功应答（设计文档 §6 的安全规则），而不是 error 应答。
 
+**`ExitPlanMode`（计划审批，docs/design/plan-mode.md §15）**：与 `AskUserQuestion` 一样不是一键审批（`requires_user_interaction`），TKCode 不看权限档位，交给计划审批面板。
+
+- input：计划正文在 `plan`，计划文件在 `planFilePath`（CLI 在 2.1.285 起保证发给 SDK 回调的是同一条回复里刚写入的最新计划 [CHANGELOG 2.1.285]）。**字段名尚未用真实 CLI 抓帧核实**；TKCode 先取 `plan`，没有时读 `planFilePath`，都没有就 deny。
+- 批准：`allow`，`updatedInput` 为原 input（用户编辑过时替换 `plan`，并写回 `planFilePath`），`updatedPermissions: [{"type":"setMode","mode":<default|bypassPermissions>,"destination":"session"}]` 让 CLI 离开 plan [Doc:permission-modes "Approving a plan exits plan mode and switches the session to the permission mode each approve option describes"]。
+- 继续完善 / 关闭面板：`deny`，`message` 为反馈或"暂不批准，结束本轮"的说明，`interrupt: false`；CLI 留在 plan。
+- 模式同步：CLI 自己改变权限模式时（模型调用 `EnterPlanMode`、审批后的 `setMode`），`system/status.permissionMode` 与之后的 `system/init.permissionMode` 会报告新值；TKCode 只把与已应用值不同的报告当作 CLI 侧的变化，进入或离开 `plan` 时同步自己的模式。`EnterPlanMode` 不需要权限（[Doc:tools-reference]），不会经过 `can_use_tool`。
+
 ### 6.2 `hook_callback`
 
 `{"subtype":"hook_callback","callback_id":"hook_0","input":{…},"tool_use_id":"…"}`。只有在 `initialize.hooks` 里注册过回调 ID 才会出现。TKCode 不注册，收到即按 §4.4 回 error。应答体是 hook 输出对象（键名 `async`、`continue` 为原样英文）。[Py:query.py]
@@ -548,7 +555,7 @@ stdout 上的 user 帧有四种来源：
    ```
 
    - `tool_result.content` 是给模型看的内容（字符串或 block 数组，可能含图片）；`is_error` 可能缺省（视为 false）。
-   - `tool_use_result` 是工具的**结构化输出**，形状按工具而定（Bash：`stdout`/`stderr`/`interrupted`/`isImage`…；Agent/Task：子 Agent 的最终报告和统计；被移到后台的调用是 `{detachedToolCall:true}`）。UI 渲染优先用它。[TS:`SDKUserMessage.tool_use_result`；Py:message_parser.py]
+   - `tool_use_result` 是工具的**结构化输出**，形状按工具而定（Bash：`stdout`/`stderr`/`interrupted`/`isImage`…；Agent/Task：子 Agent 的最终报告和统计；被移到后台的调用是 `{detachedToolCall:true}`）。UI 渲染优先用它。**不一定是对象**：工具出错时可能是字符串（如 `"Error: File has not been read yet…"`），消费方必须先检查 `ValueKind`（0.1.2 曾因此在 UI 线程崩溃）。[TS:`SDKUserMessage.tool_use_result`；Py:message_parser.py]
    - zeron 丢弃了工具输出，TKCode **必须保留**（设计文档 §5）。
 2. **子 Agent 的帧**（`parent_tool_use_id` 非 null）：它的工具结果，以及父 Agent 发给它的 prompt / 后续消息（text 块）。
 3. **回显**（`isReplay:true`，§7.4）。

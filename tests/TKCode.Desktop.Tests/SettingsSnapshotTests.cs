@@ -23,7 +23,7 @@ public sealed class SettingsSnapshotTests
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         var settingsPath = Path.Combine(home, "settings.json");
         // 本地 HTTP 服务同时扮演 OpenAI 兼容端点（/v1/models）与 models.dev（/api.json）；端口需在 Host 启动前确定
         var port = FreePort();
@@ -219,6 +219,208 @@ public sealed class SettingsSnapshotTests
         }, TestContext.Current.CancellationToken);
 
         provider.GetRequiredService<AgentHostConnection>().Dispose();
+    }
+
+    private static ServiceProvider StartApp(string home, int catalogPort)
+    {
+        Environment.SetEnvironmentVariable("TKCODE_HOME", home);
+        Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
+        Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
+        Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+        Environment.SetEnvironmentVariable("COWORK_API_KEY", null);
+        Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
+        // 不访问真实的 models.dev
+        Environment.SetEnvironmentVariable("TKCODE_CATALOG_URL", $"http://127.0.0.1:{catalogPort}/api.json");
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        Program.ConfigureServices(services);
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// 厂商删除：草稿只是放弃（不写文件）；已配置的厂商确认后才删除；靠环境变量检测出来的内置厂商移除后写入 hidden，
+    /// 重新添加（保存）时清除。
+    /// </summary>
+    [Fact]
+    public async Task Providers_DiscardDraft_ConfirmBeforeRemove_AndHideEnvironmentProvider()
+    {
+        var home = Directory.CreateTempSubdirectory("tkcode-provider-remove-").FullName;
+        var settingsPath = Path.Combine(home, "settings.json");
+        File.WriteAllText(settingsPath, """
+            { "providers": {
+                "gw": { "name": "My Gateway", "api": "chat", "baseUrl": "http://127.0.0.1:9/v1", "apiKey": "x", "models": { "m": {} } },
+                "openai": { "apiKey": "sk-openai" } } }
+            """);
+        var savedDeepSeek = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY");
+        Environment.SetEnvironmentVariable("DEEPSEEK_API_KEY", "sk-env-deepseek");
+        await using var provider = StartApp(home, FreePort());
+        try
+        {
+            await HeadlessApp.Session.Dispatch(async () =>
+            {
+                var vm = provider.GetRequiredService<MainWindowViewModel>();
+                var window = new MainWindow { DataContext = vm, Width = 1100, Height = 760 };
+                window.Show();
+                var confirmations = new List<(string Title, string Text)>();
+                var answer = false;
+                vm.ConfirmAsync = (title, text, _) =>
+                {
+                    confirmations.Add((title, text));
+                    return Task.FromResult(answer);
+                };
+                await WaitUntil(() => vm.Conversation.Picker.AllModels.Any(m => m.Provider == "deepseek"), "env provider loaded");
+                await vm.OpenSettingsCommand.ExecuteAsync(null);
+                vm.Settings.NavigateCommand.Execute(vm.Settings.Nav[1]);
+                await vm.Settings.RefreshProvidersAsync();
+                await Settle();
+                Assert.Contains(vm.Settings.ConfiguredList, i => i.Id == "deepseek");
+                Assert.Contains(vm.Settings.ConfiguredList, i => i.Id == "gw");
+
+                // 草稿：放弃按钮不确认、不写文件
+                vm.Settings.OpenTemplatePickerCommand.Execute(null);
+                vm.Settings.PickTemplateCommand.Execute(vm.Settings.TemplateGroups.SelectMany(g => g.Items).First(t => t.Id == "nextcowork"));
+                await Settle();
+                Assert.Equal("nextcowork", vm.Settings.Selected!.Id);
+                Assert.True(vm.Settings.Selected.IsPureDraft);
+                HeadlessApp.Save(window, "settings-draft-nextcowork");
+                await vm.Settings.Selected.RemoveCommand.ExecuteAsync(null);
+                await Settle();
+                Assert.Empty(confirmations);
+                Assert.DoesNotContain(vm.Settings.ConfiguredList, i => i.Id == "nextcowork");
+                Assert.NotNull(vm.Settings.Selected);
+                Assert.DoesNotContain("nextcowork", File.ReadAllText(settingsPath));
+
+                // 已配置的自定义厂商：取消确认 → 保留；确认 → 删除条目（没有 hidden 标记）
+                vm.Settings.SelectProviderCommand.Execute(vm.Settings.ConfiguredList.Single(i => i.Id == "gw"));
+                await Settle();
+                await vm.Settings.Selected!.RemoveCommand.ExecuteAsync(null);
+                Assert.Single(confirmations);
+                Assert.Contains("gw", File.ReadAllText(settingsPath));
+                answer = true;
+                await vm.Settings.Selected!.RemoveCommand.ExecuteAsync(null);
+                await WaitUntil(() => !File.ReadAllText(settingsPath).Contains("\"gw\""), "custom provider removed");
+                await WaitUntil(() => vm.Settings.ConfiguredList.All(i => i.Id != "gw"), "custom provider left the list");
+                Assert.DoesNotContain("hidden", File.ReadAllText(settingsPath));
+
+                // 环境变量检测出来的内置厂商：确认文案点明变量名；移除后写入 hidden，模型也不再可选
+                vm.Settings.SelectProviderCommand.Execute(vm.Settings.ConfiguredList.Single(i => i.Id == "deepseek"));
+                await Settle();
+                Assert.False(vm.Settings.Selected!.IsConfigured);
+                Assert.False(vm.Settings.Selected.IsPureDraft);
+                await vm.Settings.Selected.RemoveCommand.ExecuteAsync(null);
+                Assert.Contains("DEEPSEEK_API_KEY", confirmations[^1].Text);
+                await WaitUntil(() => File.ReadAllText(settingsPath).Contains("\"hidden\": true"), "hidden marker written");
+                await WaitUntil(() => vm.Settings.ConfiguredList.All(i => i.Id != "deepseek"), "env provider left the list");
+                await WaitUntil(() => vm.Conversation.Picker.AllModels.All(m => m.Provider != "deepseek"), "env provider models removed", 15_000);
+                // 其它厂商不受影响
+                Assert.Contains(vm.Settings.ConfiguredList, i => i.Id == "openai");
+                HeadlessApp.Save(window, "settings-provider-removed");
+
+                // 重新添加：回到模板列表，保存后清除 hidden
+                vm.Settings.OpenTemplatePickerCommand.Execute(null);
+                vm.Settings.PickTemplateCommand.Execute(vm.Settings.TemplateGroups.SelectMany(g => g.Items).First(t => t.Id == "deepseek"));
+                await Settle();
+                var readded = vm.Settings.Selected!;
+                Assert.True(readded.IsPureDraft);
+                readded.KeyInput = "sk-readded";
+                readded.SaveCommand.Execute(null);
+                await WaitUntil(() => File.ReadAllText(settingsPath).Contains("sk-readded"), "re-added provider saved");
+                Assert.DoesNotContain("hidden", File.ReadAllText(settingsPath));
+                await WaitUntil(() => vm.Conversation.Picker.AllModels.Any(m => m.Provider == "deepseek"), "re-added models", 15_000);
+
+                vm.CloseSettingsCommand.Execute(null);
+                window.Close();
+                return true;
+            }, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DEEPSEEK_API_KEY", savedDeepSeek);
+            provider.GetRequiredService<AgentHostConnection>().Dispose();
+        }
+    }
+
+    /// <summary>
+    /// NextCoWork：填入 Key 后通过 /v1/models 发现模型（图像模型被排除）；Claude 固定走 Messages，其余跟随厂商的 Responses。
+    /// Base URL 指向本地服务，避免访问真实网关。
+    /// </summary>
+    [Fact]
+    public async Task NextCoWork_DiscoversModels_ClaudeOnMessages_OthersOnResponses()
+    {
+        var home = Directory.CreateTempSubdirectory("tkcode-nextcowork-").FullName;
+        var port = FreePort();
+        File.WriteAllText(Path.Combine(home, "settings.json"),
+            $$"""{ "providers": { "nextcowork": { "apiKey": "sk-cowork", "baseUrl": "http://127.0.0.1:{{port}}/v1" } } }""");
+        using var server = new System.Net.HttpListener();
+        server.Prefixes.Add($"http://127.0.0.1:{port}/");
+        server.Start();
+        string? authorization = null;
+        _ = Task.Run(async () =>
+        {
+            while (server.IsListening)
+            {
+                var context = await server.GetContextAsync();
+                var body = "{}";
+                if (context.Request.Url!.AbsolutePath == "/v1/models")
+                {
+                    authorization = context.Request.Headers["Authorization"];
+                    body = """
+                        { "object": "list", "data": [ { "id": "claude-opus-5-5" }, { "id": "claude-sonnet-5-5" }, { "id": "gpt-6-sol" },
+                            { "id": "deepseek-v4-pro" }, { "id": "gpt-image-2" }, { "id": "grok-imagine-image" } ] }
+                        """;
+                }
+                var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+                context.Response.ContentType = "application/json";
+                await context.Response.OutputStream.WriteAsync(bytes);
+                context.Response.Close();
+            }
+        });
+
+        await using var provider = StartApp(home, FreePort());
+        try
+        {
+            await HeadlessApp.Session.Dispatch(async () =>
+            {
+                var vm = provider.GetRequiredService<MainWindowViewModel>();
+                var window = new MainWindow { DataContext = vm, Width = 1100, Height = 760 };
+                window.Show();
+                await WaitUntil(() => vm.Conversation.Picker.AllModels.Any(m => m.Provider == "nextcowork"), "nextcowork models discovered");
+                Assert.Equal("Bearer sk-cowork", authorization);
+                Assert.DoesNotContain(vm.Conversation.Picker.AllModels, m => m.Id.StartsWith("gpt-image", StringComparison.Ordinal));
+                Assert.DoesNotContain(vm.Conversation.Picker.AllModels, m => m.Id.StartsWith("grok-imagine", StringComparison.Ordinal));
+
+                await vm.OpenSettingsCommand.ExecuteAsync(null);
+                vm.Settings.NavigateCommand.Execute(vm.Settings.Nav[1]);
+                await vm.Settings.RefreshProvidersAsync();
+                await Settle();
+                Assert.Equal("nextcowork", vm.Settings.Selected?.Id);
+                var detail = vm.Settings.Selected!;
+                Assert.True(detail.IsBuiltIn);
+                var models = detail.Models.ToDictionary(m => m.Id);
+                Assert.Equal(["claude-opus-5-5", "claude-sonnet-5-5", "deepseek-v4-pro", "gpt-6-sol"], models.Keys.Order());
+                Assert.True(models["claude-opus-5-5"].ApiOverridden);
+                Assert.Equal("messages", models["claude-opus-5-5"].Model.Api);
+                Assert.False(models["gpt-6-sol"].ApiOverridden);
+                Assert.Equal("responses", models["gpt-6-sol"].Model.Api);
+                HeadlessApp.Save(window, "settings-nextcowork");
+
+                // 编辑 Claude 模型：“跟随厂商”指向它自己的默认协议（Messages），而不是厂商的 Responses
+                detail.EditModelCommand.Execute(models["claude-opus-5-5"]);
+                Assert.Equal("", detail.Editing!.ApiInput);
+                Assert.Contains(ProviderModelItemViewModel.ProtocolLabel("messages"), detail.Editing.ProviderApiText);
+                HeadlessApp.Save(window, "settings-nextcowork-edit");
+
+                vm.CloseSettingsCommand.Execute(null);
+                window.Close();
+                return true;
+            }, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            server.Stop();
+            provider.GetRequiredService<AgentHostConnection>().Dispose();
+        }
     }
 
     /// <summary>models.dev 格式的最小目录：Anthropic 的 Opus 5.5 与 DeepSeek。</summary>

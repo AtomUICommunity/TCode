@@ -89,6 +89,11 @@ public sealed record ParsedToolDetails
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
+            // 外部运行时原样转发结构化结果（如 Claude Code 的 tool_use_result 出错时是字符串），不是对象就不认识
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
             var kind = Str(root, "kind") ?? "";
             return kind switch
             {
@@ -110,7 +115,7 @@ public sealed record ParsedToolDetails
                     SubagentStatus = Str(root, "status"),
                     SubagentActivity = Str(root, "currentActivity"),
                     ToolUses = Int(root, "toolUses") ?? 0,
-                    Tokens = root.TryGetProperty("tokens", out var t) && t.TryGetInt64(out var tokens) ? tokens : 0,
+                    Tokens = root.TryGetProperty("tokens", out var t) && t.ValueKind == JsonValueKind.Number && t.TryGetInt64(out var tokens) ? tokens : 0,
                 },
                 "command" => new ParsedToolDetails { Kind = kind, OutputPath = Str(root, "outputPath"), ExitCode = Int(root, "exitCode") },
                 "backgroundTask" => new ParsedToolDetails { Kind = kind, OutputPath = Str(root, "outputPath") },
@@ -179,11 +184,12 @@ public sealed record ParsedToolDetails
             int.TryParse(range.AsSpan(1).ToString().Split(',')[0], out var n) ? n : 0;
     }
 
+    // 只对对象取属性：JsonElement.TryGetProperty 对非对象抛 InvalidOperationException
     private static string? Str(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     private static int? Int(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
 }
 
 /// <summary>

@@ -26,6 +26,33 @@ public sealed class DifferentialTests
     [InlineData(4)]
     public void IncrementalCaptureMatchesFullRebuild(int seed) => Run(seed, steps: 400);
 
+    /// <summary>
+    /// overlay O6：mode 2027 关闭时，零宽码点（U+200B、组合符）追加到前一个 cell。上游这条路径不标脏，
+    /// 增量帧会沿用只有 "x" 的旧行。先捕获一帧让行进入增量缓存，再追加。
+    /// </summary>
+    [Theory]
+    [InlineData("​")]
+    [InlineData("́")]
+    public void ZeroWidthCodepointAppendedToPreviousCellMarksRowDirty(string zeroWidth)
+    {
+        var options = new TerminalCoreOptions(new TerminalSize(20, 4, 8, 16));
+        using var incremental = TerminalCore.Create(options);
+        using var reference = TerminalCore.Create(options);
+        foreach (var core in new[] { incremental, reference })
+        {
+            core.Write("\x1b[?2027l\x1b[2Jx"u8);
+        }
+        _ = incremental.CaptureFrame(force: true);
+
+        var append = Encoding.UTF8.GetBytes(zeroWidth);
+        incremental.Write(append);
+        reference.Write(append);
+
+        var actual = incremental.CaptureFrame(force: true)!;
+        AssertSameScreen(reference.CaptureFresh(), actual, "zero-width append");
+        Assert.Equal("x" + zeroWidth, actual.Rows[0].TextAt(0));
+    }
+
     /// <summary>大规模扫描：TKCODE_DIFF_SEEDS=N 时跑 N 个种子 × 3000 步（每晚 / 升级 libghostty 时）。</summary>
     [Fact]
     public void IncrementalCaptureMatchesFullRebuildSweep()

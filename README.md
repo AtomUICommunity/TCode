@@ -8,7 +8,7 @@
 
 [简体中文](README.zh-CN.md) · English
 
-![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+![.NET](https://img.shields.io/badge/.NET-11_RC2-512BD4?logo=dotnet&logoColor=white)
 ![Avalonia](https://img.shields.io/badge/Avalonia-12.1-8B44AC)
 ![NativeAOT](https://img.shields.io/badge/NativeAOT-ready-success)
 ![Status](https://img.shields.io/badge/status-early%20development-orange)
@@ -86,7 +86,8 @@ Dependencies point one way. `TKCode.Ai`, `TKCode.Agent`, and `TKCode.Agent.Codin
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (pinned in `global.json`, `latestFeature` roll-forward)
+- [.NET 11 RC2 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) (`11.0.100-rc.2.26504.105` or newer in the same major/minor release; pinned in `global.json`, `latestFeature` roll-forward with prereleases enabled). Runtime Async is enabled for all projects, including NativeAOT builds.
+- [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), required by AtomUI 6.2.6's isolated build tools. A .NET 10 SDK installation also provides it. Published NativeAOT applications include their runtime.
 - A [Rust toolchain](https://rustup.rs/), used once to build the native LaTeX library for StreamMark.
 - **StreamMark** comes in as a git submodule (`external/StreamMark`). Its `StreamMark.*` packages are read from a local feed (`packages/streammark`, set in `nuget.config`), so pack them first:
 
@@ -95,7 +96,7 @@ Dependencies point one way. `TKCode.Ai`, `TKCode.Agent`, and `TKCode.Agent.Codin
   tools/streammark/pack.sh
   ```
 
-- AtomUI (`AtomUI.Desktop.Controls`) is consumed from nuget.org; no source checkout is needed.
+- AtomUI (`AtomUI.Desktop.Controls` 6.2.6) is consumed from nuget.org; Avalonia is pinned to 12.1.4, AtomUI's minimum. No source checkout is needed.
 
 ### Build and run
 

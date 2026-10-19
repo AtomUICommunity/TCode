@@ -21,7 +21,8 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
 {
     private readonly PtyHostService _hosts;
     private readonly string? _cwd;
-    private readonly InputEncoder _encoder = new();  // 只在 UI 线程上使用
+    // 只在 UI 线程上使用。启动会话时才创建：它调用 libghostty-vt，原生库缺失时要显示为启动失败，不能在构造（按钮点击）中抛出
+    private InputEncoder? _encoder;
     private TerminalSession? _session;
     private PtyHostClient? _client;
     private TerminalSize? _size;
@@ -184,6 +185,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
     /// <summary>测试用：直接挂上一个已经创建好的客户端与会话（不经过 host 发现）。</summary>
     internal void AttachForTesting(PtyHostClient client, TerminalSession session)
     {
+        _encoder ??= new InputEncoder();
         _client = client;
         _session = session;
     }
@@ -203,6 +205,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         SetStatus(TKCodeLangResourceKind.TerminalStarting);
         try
         {
+            _encoder ??= new InputEncoder();  // 第一个 await 之前，仍在 UI 线程
             var client = await _hosts.GetAsync().ConfigureAwait(false);
             _client = client;
             _ = client.Completion.ContinueWith(_ => Dispatcher.UIThread.Post(OnHostLost), TaskScheduler.Default);
@@ -243,7 +246,15 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             {
                 _exited = true;
                 OnPropertyChanged(nameof(CanRestart));
-                SetStatus(TKCodeLangResourceKind.TerminalStartFailedFormat, e.Message);
+                if (e is DllNotFoundException)
+                {
+                    // 本地构建没有终端原生库（只有构建警告）。异常消息是几十行 dlopen 记录，不直接显示
+                    SetStatus(TKCodeLangResourceKind.TerminalNativeMissing);
+                }
+                else
+                {
+                    SetStatus(TKCodeLangResourceKind.TerminalStartFailedFormat, e.Message);
+                }
             });
         }
         finally
@@ -514,7 +525,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             }
             return false;
         }
-        if (_session is not { } session)
+        if (_session is not { } session || _encoder is not { } encoder)
         {
             return false;
         }
@@ -522,9 +533,9 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         {
             session.Post(core => core.ScrollViewport(ViewportScroll.Bottom));
         }
-        _encoder.Apply(session.Modes);
+        encoder.Apply(session.Modes);
         Span<byte> buffer = stackalloc byte[128];
-        var n = _encoder.EncodeKey(input, buffer);
+        var n = encoder.EncodeKey(input, buffer);
         if (n > 0)
         {
             session.SendBytes(buffer[..n]);
@@ -605,7 +616,7 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
 
     public void HandlePointer(TerminalPointerEventArgs e)
     {
-        if (_session is not { } session)
+        if (_session is not { } session || _encoder is not { } encoder)
         {
             return;
         }
@@ -621,13 +632,13 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
             {
                 _dragging = false;
             }
-            SendMouse(session, e);
+            SendMouse(session, encoder, e);
             return;
         }
         switch (e.Kind)
         {
             case TerminalPointerKind.Wheel:
-                HandleWheel(session, e, modes);
+                HandleWheel(session, encoder, e, modes);
                 break;
             case TerminalPointerKind.Press when e.Mouse.Button == MouseButton.Left:
                 if (e.Mouse.Mods.HasFlag(KeyMods.Ctrl) || e.Mouse.Mods.HasFlag(KeyMods.Super))
@@ -668,18 +679,18 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
     }
 
     /// <summary>鼠标上报（程序开启了鼠标模式时）：编码后直接发送。</summary>
-    private void SendMouse(TerminalSession session, TerminalPointerEventArgs e)
+    private void SendMouse(TerminalSession session, InputEncoder encoder, TerminalPointerEventArgs e)
     {
-        _encoder.Apply(session.Modes);
+        encoder.Apply(session.Modes);
         Span<byte> buffer = stackalloc byte[64];
-        var n = _encoder.EncodeMouse(e.Mouse, e.Geometry, anyButtonPressed: _dragging, buffer);
+        var n = encoder.EncodeMouse(e.Mouse, e.Geometry, anyButtonPressed: _dragging, buffer);
         if (n > 0)
         {
             session.SendBytes(buffer[..n]);
         }
     }
 
-    private void HandleWheel(TerminalSession session, TerminalPointerEventArgs e, InputModes modes)
+    private void HandleWheel(TerminalSession session, InputEncoder encoder, TerminalPointerEventArgs e, InputModes modes)
     {
         var notches = (int)Math.Round(Math.Abs(e.WheelDelta));
         if (notches == 0)
@@ -689,11 +700,11 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         if (modes.MouseTracking != MouseTracking.None)
         {
             // 程序开启了鼠标上报：滚轮作为按钮 4 / 5 报告（交给程序）
-            _encoder.Apply(modes);
+            encoder.Apply(modes);
             Span<byte> buffer = stackalloc byte[64];
             for (var i = 0; i < notches; i++)
             {
-                var n = _encoder.EncodeMouse(e.Mouse, e.Geometry, anyButtonPressed: false, buffer);
+                var n = encoder.EncodeMouse(e.Mouse, e.Geometry, anyButtonPressed: false, buffer);
                 if (n > 0)
                 {
                     session.SendBytes(buffer[..n]);
@@ -705,11 +716,11 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         {
             // 备用屏且未开鼠标：滚轮转成方向键（xterm 的 alternate scroll，1007）
             var key = e.WheelDelta > 0 ? TerminalKey.ArrowUp : TerminalKey.ArrowDown;
-            _encoder.Apply(modes);
+            encoder.Apply(modes);
             Span<byte> buffer = stackalloc byte[32];
             for (var i = 0; i < notches * 3; i++)
             {
-                var n = _encoder.EncodeKey(new KeyInput(key, KeyAction.Press, KeyMods.None), buffer);
+                var n = encoder.EncodeKey(new KeyInput(key, KeyAction.Press, KeyMods.None), buffer);
                 if (n > 0)
                 {
                     session.SendBytes(buffer[..n]);
@@ -748,6 +759,6 @@ public sealed partial class TerminalTabViewModel : WorkbenchTabViewModel, IAsync
         {
             await session.DisposeAsync().ConfigureAwait(false);
         }
-        _encoder.Dispose();
+        _encoder?.Dispose();
     }
 }

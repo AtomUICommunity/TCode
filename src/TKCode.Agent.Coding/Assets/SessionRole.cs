@@ -21,9 +21,44 @@ public sealed record SessionRole(string Name, string? Instructions, IReadOnlyLis
 
     public static SessionRole Agent { get; } = new(AgentName, null, ["all"]);
 
-    // 提示词的设计与原则见 docs/design/composer.md §18
+    // 提示词的设计与原则见 docs/design/composer.md §18、docs/design/plan-mode.md §12
 
+    /// <summary>
+    /// Plan（docs/design/plan-mode.md）：调研、澄清后把计划写进计划文件，用 exit_plan_mode 请求批准。
+    /// write / edit 只放行计划文件（ToolContext.InPlanMode），子 Agent 只能是只读的 explore / plan。
+    /// 模式节里的 {planPath} / {planFileState} 由 <see cref="SectionFor"/> 填入。
+    /// </summary>
     public static SessionRole Plan { get; } = new(PlanName, """
+        You are in Plan mode. The user wants to review a plan before anything is changed. Investigate, settle open decisions with the user, write the plan to the plan file, and then ask for approval with exit_plan_mode. Do not implement the plan.
+
+        Plan file: {planPath}
+        {planFileState} This is the only file you may write or edit in this mode.
+
+        Work in this order:
+        1. Understand the request and the code it touches. Read files yourself for focused questions. For broad questions, launch up to three explore subagents in parallel with the agent tool, each with its own focus. Keep facts you verified separate from assumptions.
+        2. For a design with several reasonable options, you may launch a plan subagent with what you found, then check its proposal against the code.
+        3. If a choice would materially change scope, behavior, compatibility, data or user experience, and the code does not settle it, ask the user with ask_user. Ask only what you cannot find out yourself.
+        4. Write the plan to the plan file in Markdown:
+           - Context: the problem, and what will be true when the work is done.
+           - Approach: the recommended design and why. Mention a rejected alternative only in a sentence, and only if the user is likely to ask about it.
+           - Changes: every file to create or modify, and what changes in it.
+           - Edge cases and risks.
+           - Verification: the tests and checks that will prove it works.
+           Keep it short enough to scan and specific enough to carry out without this conversation.
+        5. Call exit_plan_mode. If the user asks for changes, update the plan file and call exit_plan_mode again.
+
+        While you are planning a change, end your turn only by calling ask_user or exit_plan_mode. Do not ask whether the plan is acceptable in any other way: not in text, and not with ask_user. If the user says in a message that they approve, call exit_plan_mode so they can choose how to proceed. If the user only asks a question or wants research rather than a change, answer directly; do not write a plan or call exit_plan_mode.
+
+        Constraints: apart from the plan file you cannot write or edit files or use MCP tools in this mode, and subagents you launch are read-only. Commands you run must not modify the workspace; any command that might will need the user's approval. Never claim that something was changed.
+        """, ["readonly", "write", "edit", "agent"]);
+
+    private const string PlanFileMissing = "It does not exist yet; create it with write.";
+    private const string PlanFileExists = "A plan from earlier in this session is already there: read it, then update it rather than starting over.";
+
+    /// <summary>
+    /// 没有计划文件与审批服务时（没有宿主的会话，例如测试）的 Plan：以一段回复给出计划，由用户手动切换模式。
+    /// </summary>
+    public static SessionRole PlanWithoutApproval { get; } = new(PlanName, """
         You are in Plan mode. Turn the user's request into one implementation plan that can be reviewed and then carried out. Do not implement it.
 
         Work in this order:
@@ -69,9 +104,9 @@ public sealed record SessionRole(string Name, string? Instructions, IReadOnlyLis
         ["read", "ls", "glob", "grep", "web_fetch", "web_search", "skill", "task_create", "task_get", "task_list", "task_update", "task_stop",
          "agent", "send_message", "list_agents", "ask_user"]);
 
-    /// <summary>从其他模式切回 Agent 时的模式节（新会话一开始就是 Agent 时没有这一节）。</summary>
+    /// <summary>从其他模式切回 Agent 时的模式节（新会话一开始就是 Agent 时没有这一节）；{planLine} 由 <see cref="SectionFor"/> 填入。</summary>
     public static SessionRole AgentResumed { get; } = new(AgentName,
-        "You are in Agent mode again: you can read, edit and write files and run commands to carry out the user's task. " +
+        "You are in Agent mode again: you can read, edit and write files and run commands to carry out the user's task.{planLine} " +
         "If a plan was agreed earlier in this conversation, follow it unless the user says otherwise, and say where you deviate from it.",
         ["all"]);
 
@@ -173,6 +208,15 @@ public sealed record SessionRole(string Name, string? Instructions, IReadOnlyLis
     /// <summary>这个 role 下工具是否可用。</summary>
     public bool Allows(IAgentTool tool)
     {
+        // 模式专属工具（docs/design/plan-mode.md §8）：与 Tools 列表无关
+        if (tool.Name == global::TKCode.Agent.Coding.Tools.Plan.ExitPlanModeTool.ToolName)
+        {
+            return Name == PlanName && !ReferenceEquals(this, PlanWithoutApproval);
+        }
+        if (tool.Name == global::TKCode.Agent.Coding.Tools.Plan.EnterPlanModeTool.ToolName)
+        {
+            return Name == AgentName;
+        }
         foreach (var entry in Tools)
         {
             if (entry.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -196,5 +240,26 @@ public sealed record SessionRole(string Name, string? Instructions, IReadOnlyLis
     }
 
     /// <summary>系统提示的模式节；agent 没有。</summary>
-    public Prompt.PromptSection? Section => Instructions is { Length: > 0 } text ? new Prompt.PromptSection(SectionName, text) : null;
+    public Prompt.PromptSection? Section => SectionFor(null, false);
+
+    /// <summary>
+    /// 填入计划文件后的模式节（Plan 与切回 Agent）：<paramref name="planFile"/> 为 null 时不提计划文件。
+    /// <paramref name="planExists"/> 只在进入 Plan 时取一次，避免模型写文件后模式节反复变化。
+    /// </summary>
+    public Prompt.PromptSection? SectionFor(string? planFile, bool planExists)
+    {
+        if (Instructions is not { Length: > 0 } text)
+        {
+            return null;
+        }
+        if (ReferenceEquals(this, Plan) && planFile is not null)
+        {
+            text = text.Replace("{planPath}", planFile).Replace("{planFileState}", planExists ? PlanFileExists : PlanFileMissing);
+        }
+        else if (ReferenceEquals(this, AgentResumed))
+        {
+            text = text.Replace("{planLine}", planFile is not null && planExists ? $" The plan for this session is saved at {planFile}." : "");
+        }
+        return new Prompt.PromptSection(SectionName, text);
+    }
 }

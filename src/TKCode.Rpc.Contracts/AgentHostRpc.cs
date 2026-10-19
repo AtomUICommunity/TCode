@@ -80,6 +80,9 @@ public sealed class AgentHostServerProxy(JsonRpcConnection rpc) : IAgentHostServ
     public Task CompactAsync(string sessionId, string? instructions, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.Compact, new CompactParams(sessionId, instructions), J.CompactParams, cancellationToken);
 
+    public Task<ContextUsageDto> GetContextUsageAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ContextUsage, new SessionIdParams(sessionId), J.SessionIdParams, J.ContextUsageDto, cancellationToken);
+
     public Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.SetModel, new SetModelParams(sessionId, modelId), J.SetModelParams, J.SessionOptionsDto, cancellationToken);
 
@@ -156,6 +159,7 @@ public static class AgentHostServerDispatcher
         rpc.AddRequestHandler(RpcMethods.Prompt, j.PromptRequest, j.PromptResult, server.PromptAsync);
         rpc.AddRequestHandler(RpcMethods.Abort, j.SessionIdParams, (p, ct) => server.AbortAsync(p.SessionId, ct));
         rpc.AddRequestHandler(RpcMethods.Compact, j.CompactParams, (p, ct) => server.CompactAsync(p.SessionId, p.Instructions, ct));
+        rpc.AddRequestHandler(RpcMethods.ContextUsage, j.SessionIdParams, j.ContextUsageDto, (p, ct) => server.GetContextUsageAsync(p.SessionId, ct));
         rpc.AddRequestHandler(RpcMethods.SetModel, j.SetModelParams, j.SessionOptionsDto, (p, ct) => server.SetModelAsync(p.SessionId, p.ModelId, ct));
         rpc.AddRequestHandler(RpcMethods.SetOptions, j.SetOptionsParams, j.SessionOptionsDto, (p, ct) => server.SetOptionsAsync(p.SessionId, p.Options, ct));
         rpc.AddRequestHandler(RpcMethods.CloseSession, j.SessionIdParams, (p, ct) => server.CloseSessionAsync(p.SessionId, ct));
@@ -201,6 +205,9 @@ public sealed class AgentHostClientProxy(JsonRpcConnection rpc) : IAgentHostClie
 
     public Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default) =>
         rpc.InvokeAsync(RpcMethods.RequestInput, request, J.UserInputRequest, J.UserInputResponse, cancellationToken);
+
+    public Task<PlanReviewResponse> ReviewPlanAsync(PlanReviewRequest request, CancellationToken cancellationToken = default) =>
+        rpc.InvokeAsync(RpcMethods.ReviewPlan, request, J.PlanReviewRequest, J.PlanReviewResponse, cancellationToken);
 }
 
 /// <summary>UI 侧：把 Host 发来的通知与请求分发到 <see cref="IAgentHostClient"/> 实现。</summary>
@@ -217,5 +224,6 @@ public static class AgentHostClientDispatcher
         rpc.AddRequestHandler(RpcMethods.McpOpenUrl, j.McpOpenUrlRequest, j.McpOpenUrlResponse, client.OpenMcpUrlAsync);
         rpc.AddNotificationHandler(RpcMethods.AssetsChanged, j.AssetsChangedNotification, client.OnAssetsChanged);
         rpc.AddRequestHandler(RpcMethods.RequestInput, j.UserInputRequest, j.UserInputResponse, client.RequestUserInputAsync);
+        rpc.AddRequestHandler(RpcMethods.ReviewPlan, j.PlanReviewRequest, j.PlanReviewResponse, client.ReviewPlanAsync);
     }
 }

@@ -79,7 +79,7 @@ auto 与 reactive 在 Agent 内部完成，事件照常发出；运行（run）�
 
 - 前缀与上一轮请求完全相同 → 命中 prompt cache，摘要请求几乎只为新增的一条消息付全价。
 - 工具定义保留（删掉会使缓存失效），也**不**设 `tool_choice: none`（同理）；靠提示中的 “Do NOT call any tools” 约束。回复中出现工具调用即视为失败，走回退。
-- `max_tokens = min(model.MaxTokens, 20_000)`；不写入新的缓存断点（Anthropic 去掉末尾自动 `cache_control`，对应 Claude Code 的 `skipCacheWrite`）。
+- `max_tokens = min(model.MaxTokens, 20_000)`；只读缓存、不为摘要请求独有的尾部写入新条目：消息断点放在摘要指令之前的末块（与主循环共享前缀的末尾），对应 Claude Code 的 `skipCacheWrite`（anthropic-messages.md §8.3）。
 - 不持久化、不进入历史；流式文本只用于 UI 的“正在压缩”进度（可选）。
 
 ### 6.2 回退：独立摘要请求
@@ -240,7 +240,7 @@ Continue the conversation from where it left off without asking the user any fur
 ### 8.1 模型上下文
 
 ```
-[新系统提示]  UserMessage(摘要, §7.2)  UserMessage(重新附加, §7.3)  ……后续对话
+[新系统提示]  SystemMessage(记忆索引)  UserMessage(摘要, §7.2)  UserMessage(重新附加, §7.3)  ……后续对话
 ```
 
 两条连续用户消息由适配器按协议合并（Anthropic 要求交替时合并为一条多块消息；需在实现时核对三个适配器的现有行为）。
@@ -293,7 +293,7 @@ Continue the conversation from where it left off without asking the user any fur
 
 照 Claude Code 的客户端 keep-recent 模式，在不额外破坏缓存的时机清理：
 
-- **时机**：距上一次模型回复超过缓存有效期（Anthropic 用的是 5 分钟 ephemeral；OpenAI 自动缓存同量级，统一按 5 分钟）时，下一次请求前执行 —— 缓存已冷，清理不会多花一次重建。
+- **时机**：距上一次模型回复超过缓存有效期（Anthropic 按全局设置 `promptCacheTtl`，5 分钟或 1 小时；OpenAI 自动缓存按 5 分钟）时，下一次请求前执行 —— 缓存已冷，清理不会多花一次重建。
 - **范围**：read、bash、grep、glob、ls、web_fetch、web_search、edit、write 的结果；MCP 工具结果不清（与 Claude Code 一致）。保留最近 5 个，更早的结果内容替换为 `[Old tool result content cleared]`；bash 等已把完整输出落盘的，替换为落盘路径提示。
 - **门槛**：估算能省下 ≥ 20,000 token 才执行。
 - **持久化**：只影响发给模型的内容，不改 JSONL 中的原始消息；追加一条 `microcompact` 记录（被清理的 toolCallId 列表），恢复会话时重放同样的替换。
@@ -368,7 +368,7 @@ Continue the conversation from where it left off without asking the user any fur
 | 模块 | 文件 |
 |---|---|
 | 超窗识别 | `TKCode.Ai/Messages/ContextOverflow.cs`；`AssistantMessage.ContextOverflow`；`AssistantMessageBuilder.Fail` 按文案识别；Anthropic `model_context_window_exceeded` 打标记 |
-| 不写缓存 | `StreamOptions.SkipCacheWrite`（Anthropic 去掉顶层 `cache_control`） |
+| 不写缓存 | `StreamOptions.SkipCacheWrite`（消息断点挪到最后一条消息之前，只读主循环写下的条目） |
 | 计量与阈值 | `TKCode.Agent/Compaction/ContextAccounting.cs` |
 | 契约 | `TKCode.Agent/Compaction/Compaction.cs`（`ICompactor`、`CompactionRequest/Result`） |
 | 触发、重试与熔断 | `Agent.CompactBeforeRequestAsync` / `TryCompactAsync` / `CompactAsync` |

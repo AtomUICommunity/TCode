@@ -7,6 +7,7 @@ using TKCode.Agent.Coding.Sessions;
 using TKCode.Agent.Coding.Tools.Agents;
 using TKCode.AgentHost.Peers;
 using TKCode.Ai.Messages;
+using TKCode.Ai.Models;
 
 namespace TKCode.AgentHost;
 
@@ -46,7 +47,7 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
         var parent = sessions.Get(request.ParentSessionId);
         var model = request.Model is { Length: > 0 } modelRef
             ? sessions.FindBuiltinModel(modelRef) ?? throw new InvalidOperationException($"Model '{modelRef}' is not available for subagents.")
-            : parent.Agent.Model;
+            : sessions.FastModelFor(parent.Agent.Model);
         if (parent.Tools is null)
         {
             throw new InvalidOperationException("Subagents are only available in built-in agent sessions.");
@@ -63,13 +64,15 @@ public sealed class AgentCoordinator(SessionManager sessions, PeerDirectory peer
             Approvals = parent.Approvals,
             ToolSet = SubagentTypes.ToolSetOf(request.AgentType),
             ExtraPromptSections = SubagentTypes.PromptOf(request.AgentType, sessions.NameOf(parent)),
-            Services = sessions.ServicesFor(parent.Cwd) with { UserInput = null },   // 子 Agent 不向用户提问
+            Services = sessions.ServicesFor(parent.Cwd) with { UserInput = null, PlanMode = null },   // 子 Agent 不向用户提问，也没有 Plan 模式
             AutoCompact = parent.Agent is TKCode.Agent.Agent { AutoCompact: var autoCompact } ? autoCompact : true,
+            CacheTtl = sessions.CacheTtl,
+            ShellProfile = sessions.ShellProfile,
         });
         // 子 Agent 沿用父会话的上下文预算（自动压缩阈值据此计算）
         session.ContextWindow = parent.ContextWindow > 0 ? Math.Min(parent.ContextWindow, model.ContextWindow) : model.ContextWindow;
         session.Agent.PermissionMode = parent.Agent.PermissionMode;
-        session.Agent.ThinkingLevel = parent.Agent.ThinkingLevel;
+        session.Agent.ThinkingLevel = SessionOptions.Nearest(ThinkingLevels.Available(model), parent.Agent.ThinkingLevel);
 
         var child = new Child(store.SessionId, name, request.AgentType, request.ParentSessionId, session)
         {

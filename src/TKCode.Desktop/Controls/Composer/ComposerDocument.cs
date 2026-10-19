@@ -13,6 +13,12 @@ public enum TagKind
 
     /// <summary>外部运行时自带的命令：原样以 /名称 发给运行时，由它自己处理。</summary>
     RuntimeCommand,
+
+    /// <summary>
+    /// 附件文件（日志、办公文档或其他任意非图片文件）。值为绝对路径。
+    /// 文件内容不进会话；发送时纯文本是包着绝对路径的提示，由 Agent 自己读取。
+    /// </summary>
+    AttachedFile,
 }
 
 /// <summary>文档片段：一段文本或一个 tag。</summary>
@@ -27,7 +33,7 @@ public sealed record TextSegment(string Text) : Segment
     public override int Length => Text.Length;
 }
 
-/// <param name="Value">tag 指向的对象：文件为相对路径，命令 / skill 为名称，MCP 资源为 URI，图片为附件编号。</param>
+/// <param name="Value">tag 指向的对象：文件为相对路径，附件文件为绝对路径，命令 / skill 为名称，MCP 资源为 URI，图片为附件编号。</param>
 /// <param name="Label">显示文字。</param>
 public sealed record TagSegment(TagKind Kind, string Value, string Label) : Segment
 {
@@ -41,6 +47,7 @@ public sealed record TagSegment(TagKind Kind, string Value, string Label) : Segm
         TagKind.Command or TagKind.Skill or TagKind.McpPrompt or TagKind.RuntimeCommand => "/" + Value,
         TagKind.McpResource => "@" + Value,
         TagKind.Image => "[" + Label + "]",
+        TagKind.AttachedFile => AttachedFiles.Reference(Value),
         _ => Label,
     };
 

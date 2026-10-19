@@ -24,6 +24,9 @@ public sealed class AgentHostServer(
 {
     private const int MaxListedSessions = 200;
 
+    /// <summary>单次查询的上限。侧栏按“展开更多”逐页累加，会话总数超过它时不再返回更多。</summary>
+    private const int MaxQuerySessions = 2000;
+
     public Task<HostInfo> InitializeAsync(InitializeRequest request, CancellationToken cancellationToken = default)
     {
         if (request.ProtocolVersion != RpcProtocol.Version)
@@ -68,7 +71,7 @@ public sealed class AgentHostServer(
                 m.Model.SupportsImages, m.InCatalog, m.Model.MaxTokens, m.Model.SupportsFastMode,
                 m.Catalog?.Cost is [{ } input, ..] ? input : null,
                 m.Catalog?.Cost is [_, { } output, ..] ? output : null,
-                m.IsDiscovered, m.HasOverride, m.Api, m.ApiOverridden)).ToArray(),
+                m.IsDiscovered, m.HasOverride, m.Api, m.ApiOverridden, m.DefaultApi)).ToArray(),
             p.Errors,
             p.SupportsDiscovery,
             p.DiscoveryError)).ToArray();
@@ -128,7 +131,7 @@ public sealed class AgentHostServer(
     {
         var all = Filter(index.Refresh(), cwd).ToArray();
         offset = Math.Max(0, offset);
-        limit = Math.Clamp(limit, 1, MaxListedSessions);
+        limit = Math.Clamp(limit, 1, MaxQuerySessions);
         var page = all.Skip(offset).Take(limit).Select(ToSummary).ToArray();
         var next = offset + page.Length < all.Length ? offset + page.Length : (int?)null;
         return Task.FromResult(new SessionPageDto(page, all.Length, next));
@@ -197,11 +200,13 @@ public sealed class AgentHostServer(
             throw new InvalidOperationException("The session has no messages to continue from.");
         }
         var store = SessionStore.Create(snapshot.Cwd);
+        // 计划文件跟着会话走（docs/design/plan-mode.md §6）
+        TKCode.Agent.Coding.Tools.Plan.PlanFiles.CopyFor(filePath, store.FilePath);
         if (snapshot.ModelId is not null)
         {
             await store.AppendModelChangeAsync(snapshot.ModelProvider ?? "", snapshot.ModelId, cancellationToken);
         }
-        var permission = snapshot.PermissionMode is TKCode.Agent.PermissionMode.FullAccess ? TKCode.Agent.PermissionMode.Ask : snapshot.PermissionMode;
+        var permission = snapshot.PermissionMode;
         await store.AppendOptionsChangeAsync(snapshot.ThinkingLevel, snapshot.FastMode, snapshot.ContextWindow, cancellationToken, permission, snapshot.Role);
         if (snapshot.CustomTitle is { } title)
         {
@@ -324,6 +329,15 @@ public sealed class AgentHostServer(
         // 不等待压缩完成：进度与结果以会话事件推送
         _ = session.CompactAsync(string.IsNullOrWhiteSpace(instructions) ? null : instructions.Trim());
         return Task.CompletedTask;
+    }
+
+    public Task<ContextUsageDto> GetContextUsageAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var usage = sessions.Get(sessionId).GetContextUsage();
+        var breakdown = usage.Breakdown is { } b
+            ? new ContextBreakdownDto(b.SystemPrompt, b.SystemTools, b.McpTools, b.Skills, b.Messages, b.Other)
+            : null;
+        return Task.FromResult(new ContextUsageDto(usage.Tokens, breakdown, usage.Cache.HitRate));
     }
 
     public async Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default)

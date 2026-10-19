@@ -51,11 +51,39 @@ public sealed class UserSettingsService : IDisposable
 
     public void SetTheme(ThemeMode mode) => Update(root => root["theme"] = mode.ToString().ToLowerInvariant());
 
+    /// <summary>当前界面缩放比例（已限制在合法范围内）。</summary>
+    public double UiScale => UiScaleLevels.Clamp(Current.UiScale ?? UiScaleLevels.Default);
+
+    /// <summary>界面缩放：默认值（1）写回时删除该字段。</summary>
+    public void SetUiScale(double scale) =>
+        Update(root => SettingsFile.Set(root, "uiScale", UiScaleLevels.IsDefault(scale) ? null : JsonValue.Create(Math.Round(UiScaleLevels.Clamp(scale), 2))));
+
+    /// <summary>沿档位放大（正）或缩小（负）一档；已到头时不写文件。</summary>
+    public void StepUiScale(int direction)
+    {
+        var next = UiScaleLevels.Step(UiScale, direction);
+        if (!UiScaleLevels.Same(next, UiScale))
+        {
+            SetUiScale(next);
+        }
+    }
+
     public void SetReduceMotion(bool value) => Update(root => SettingsFile.Set(root, "reduceMotion", value ? JsonValue.Create(true) : null));
 
     public void SetOriginalImages(bool value) => Update(root => SettingsFile.Set(root, "originalImages", value ? JsonValue.Create(true) : null));
 
     public void SetCloseToTray(bool value) => Update(root => SettingsFile.Set(root, "closeToTray", value ? null : JsonValue.Create(false)));
+
+    /// <summary>提示缓存有效期："5m"（默认，写回时删除该字段）或 "1h"。</summary>
+    public void SetPromptCacheTtl(string ttl) => Update(root => SettingsFile.Set(root, "promptCacheTtl", ttl == "1h" ? JsonValue.Create("1h") : null));
+
+    /// <summary>bash 工具使用的 shell（agent.shell.profile）：null 为 auto，写回时删除该字段（空的 agent / shell 节一并删除）。</summary>
+    public void SetAgentShell(string? profile) =>
+        Update(root => SetPath(root, ["agent", "shell", "profile"], profile is null ? null : JsonValue.Create(profile)));
+
+    /// <summary>新建终端默认使用的 shell（terminal.defaultProfile）：null 为 auto，写回时删除该字段。</summary>
+    public void SetTerminalShell(string? profile) =>
+        Update(root => SetPath(root, ["terminal", "defaultProfile"], profile is null ? null : JsonValue.Create(profile)));
 
     public void SetDefaultRole(string? role) => Update(root => SettingsFile.Set(root, "defaultRole", role is null or "agent" ? null : JsonValue.Create(role)));
 
@@ -64,6 +92,30 @@ public sealed class UserSettingsService : IDisposable
 
     /// <summary>自动检查更新：true 写回时删除该字段（默认值）。</summary>
     public void SetAutoCheckUpdates(bool value) => Update(root => SetUpdateField(root, "autoCheck", value ? null : JsonValue.Create(false)));
+
+    /// <summary>设置或删除（value 为 null）嵌套路径上的字段；沿途缺失的节在设置时创建、删除后变空时一并删除。</summary>
+    private static void SetPath(JsonObject root, string[] path, JsonNode? value)
+    {
+        var chain = new List<JsonObject> { root };
+        for (var i = 0; i < path.Length - 1; i++)
+        {
+            if (chain[^1][path[i]] is not JsonObject child)
+            {
+                if (value is null)
+                {
+                    return;
+                }
+                child = [];
+                chain[^1][path[i]] = child;
+            }
+            chain.Add(child);
+        }
+        SettingsFile.Set(chain[^1], path[^1], value);
+        for (var i = chain.Count - 1; i > 0 && chain[i].Count == 0; i--)
+        {
+            chain[i - 1].Remove(path[i - 1]);
+        }
+    }
 
     private static void SetUpdateField(JsonObject root, string key, JsonNode? value)
     {
@@ -85,6 +137,9 @@ public sealed class UserSettingsService : IDisposable
     }
 
     public void SetDefaultModel(string? modelRef) => Update(root => SettingsFile.Set(root, "model", modelRef is null ? null : JsonValue.Create(modelRef)));
+
+    /// <summary>快速模型；null 表示跟随会话，写回时删除该字段。</summary>
+    public void SetFastModel(string? modelRef) => Update(root => SettingsFile.Set(root, "fastModel", string.IsNullOrWhiteSpace(modelRef) ? null : JsonValue.Create(modelRef.Trim())));
 
     /// <summary>修改 settings.json：只改动涉及的节点，写完立即重新读取并通知。</summary>
     public void Update(Action<JsonObject> mutate)

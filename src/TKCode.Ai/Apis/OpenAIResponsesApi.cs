@@ -70,7 +70,7 @@ public sealed class OpenAIResponsesApi(HttpClient http) : HttpWireApi(http)
         }
         if (!string.IsNullOrEmpty(options.SessionId))
         {
-            body["prompt_cache_key"] = "tkcode:" + options.SessionId;
+            body["prompt_cache_key"] = PromptCache.Key(options.SessionId);
         }
 
         var request = JsonPost(JoinUrl(model.BaseUrl, "https://api.openai.com/v1", "/responses"), body);

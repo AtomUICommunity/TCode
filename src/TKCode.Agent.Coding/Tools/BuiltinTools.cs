@@ -1,5 +1,6 @@
 using TKCode.Agent.Coding.Tools.Agents;
 using TKCode.Agent.Coding.Tools.Files;
+using TKCode.Agent.Coding.Tools.Plan;
 using TKCode.Agent.Coding.Tools.Questions;
 using TKCode.Agent.Coding.Tools.Search;
 using TKCode.Agent.Coding.Tools.Shell;
@@ -42,6 +43,12 @@ public static class BuiltinTools
         if (context.Services.UserInput is not null)
         {
             tools.Add(new AskUserTool(context));
+        }
+        // 模式专属：exit_plan_mode 只在 Plan、enter_plan_mode 只在 Agent 模式下出现（SessionRole.Allows）
+        if (set == ToolSet.Full && context.Services.PlanMode is not null && context.PlanFile is not null)
+        {
+            tools.Add(new ExitPlanModeTool(context));
+            tools.Add(new EnterPlanModeTool(context));
         }
         return tools;
     }

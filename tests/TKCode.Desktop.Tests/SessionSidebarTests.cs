@@ -11,7 +11,7 @@ using Xunit;
 namespace TKCode.Desktop.Tests;
 
 /// <summary>
-/// 侧栏会话列表：分页加载（首屏 50 条，滚到底部加载更多）、虚拟化（只创建可见行），
+/// 侧栏会话列表：分页加载（默认 20 条，底部“展开更多”每次再加 20 条）、虚拟化（只创建可见行），
 /// 以及右键菜单的重命名 / 置顶 / 删除。会话文件直接写到临时数据目录。
 /// </summary>
 public sealed class SessionSidebarTests
@@ -35,7 +35,7 @@ public sealed class SessionSidebarTests
         }
         Environment.SetEnvironmentVariable("TKCODE_HOME", home);
         Environment.SetEnvironmentVariable("TKCODE_AGENTHOST_DIR", Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "../../../../../src/TKCode.AgentHost/bin/Debug/net10.0")));
+            "../../../../../src/TKCode.AgentHost/bin/Debug/net11.0")));
         Environment.SetEnvironmentVariable("TKCODE_FAKE_PROVIDER", "1");
         Environment.SetEnvironmentVariable("TKCODE_EXTERNAL_RUNTIMES", "0");
         var settings = new StateService(Path.Combine(home, "state.json"));
@@ -53,10 +53,10 @@ public sealed class SessionSidebarTests
             var window = new MainWindow { DataContext = vm, Width = 1100, Height = 720 };
             window.Show();
             var conversation = vm.Conversation;
-            await WaitUntil(() => vm.Sidebar.VisibleSessions.Count >= 50, "first page");
+            await WaitUntil(() => vm.Sidebar.VisibleSessions.Count >= 20, "first page");
 
-            // 分页：首屏 50 条，最新的在前
-            Assert.Equal(50, conversation.Sessions.Count);
+            // 分页：默认 20 条，多返回一条说明还有下一页；最新的在前
+            Assert.Equal(20, conversation.Sessions.Count);
             Assert.True(conversation.HasMoreSessions);
             Assert.Equal("会话 119", conversation.Sessions[0].DisplayTitle);
             // 虚拟化：只为可见区域创建行
@@ -64,13 +64,28 @@ public sealed class SessionSidebarTests
             Assert.InRange(realized, 1, 40);
             HeadlessApp.Save(window, "sidebar-paged");
 
-            // 滚到底部加载下一页
-            var list = window.FindControl<ItemsControl>("SessionList")!;
-            var viewer = list.GetVisualDescendants().OfType<ScrollViewer>().First();
-            viewer.Offset = new Avalonia.Vector(0, viewer.Extent.Height);
-            await WaitUntil(() => conversation.Sessions.Count == 100, "second page");
-            viewer.Offset = new Avalonia.Vector(0, viewer.Extent.Height);
-            await WaitUntil(() => conversation.Sessions.Count == 120 && !conversation.HasMoreSessions, "last page");
+            // “展开更多”：每次多显示 20 条（20 → 40 → 60），按钮仍显示
+            var loadMore = window.FindControl<Button>("SessionLoadMore")!;
+            Assert.True(loadMore.IsVisible);
+            await conversation.LoadMoreSessionsCommand.ExecuteAsync(null);
+            await WaitUntil(() => conversation.Sessions.Count == 40, "second page");
+            Assert.True(loadMore.IsVisible);
+            await conversation.LoadMoreSessionsCommand.ExecuteAsync(null);
+            await WaitUntil(() => conversation.Sessions.Count == 60, "third page");
+            Assert.True(conversation.HasMoreSessions);
+            HeadlessApp.Save(window, "sidebar-load-more");
+
+            // 一直展开到最后一页：按钮隐藏
+            while (conversation.HasMoreSessions)
+            {
+                await conversation.LoadMoreSessionsCommand.ExecuteAsync(null);
+                await Settle();
+            }
+            Assert.Equal(120, conversation.Sessions.Count);
+            Assert.False(loadMore.IsVisible);
+
+            var viewer = window.FindControl<ItemsControl>("SessionList")!.GetVisualDescendants().OfType<ScrollViewer>().First();
+            viewer.Offset = new Avalonia.Vector(0, 0);
 
             // 重命名（行内编辑）
             var target = conversation.Sessions.Single(s => s.DisplayTitle == "会话 100");

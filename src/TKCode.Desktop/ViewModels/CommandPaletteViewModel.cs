@@ -248,6 +248,21 @@ public sealed partial class CommandPaletteViewModel : ObservableObject
         {
             Icon = LucideKind.Languages,
         };
+        yield return new PaletteItemViewModel(Strings.Get(TKCodeLangResourceKind.ZoomIn), () => Run(_main.ZoomInCommand.Execute))
+        {
+            Icon = LucideKind.ZoomIn,
+            Shortcut = mod + "+",
+        };
+        yield return new PaletteItemViewModel(Strings.Get(TKCodeLangResourceKind.ZoomOut), () => Run(_main.ZoomOutCommand.Execute))
+        {
+            Icon = LucideKind.ZoomOut,
+            Shortcut = mod + "-",
+        };
+        yield return new PaletteItemViewModel(Strings.Get(TKCodeLangResourceKind.ZoomReset), () => Run(_main.ZoomResetCommand.Execute))
+        {
+            Icon = LucideKind.Scan,
+            Shortcut = mod + "0",
+        };
         yield return new PaletteItemViewModel(Strings.Get(TKCodeLangResourceKind.ToggleSidebar), () => Run(_main.ToggleSidebarCommand.Execute))
         {
             Icon = LucideKind.PanelLeft,

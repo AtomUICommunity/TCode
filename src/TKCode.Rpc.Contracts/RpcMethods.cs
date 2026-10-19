@@ -28,6 +28,7 @@ public static class RpcMethods
     public const string Prompt = "session/prompt";
     public const string Abort = "session/abort";
     public const string Compact = "session/compact";
+    public const string ContextUsage = "session/contextUsage";
     public const string SetModel = "session/setModel";
     public const string SetOptions = "session/setOptions";
     public const string CloseSession = "session/close";
@@ -51,6 +52,7 @@ public static class RpcMethods
     public const string McpElicit = "mcp/elicit";
     public const string McpOpenUrl = "mcp/openUrl";
     public const string RequestInput = "input/request";
+    public const string ReviewPlan = "plan/review";
     public const string AssetsChanged = "assets/changed";
 }
 

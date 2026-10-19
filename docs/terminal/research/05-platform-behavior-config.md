@@ -19,7 +19,7 @@
 | GT | GNOME/gnome-terminal | `1079728`（3.97.1，GTK4 版） | |
 | PX | GNOME/ptyxis | `ecc97d3`（50.2） | Fedora / Ubuntu 新版的默认终端 |
 | KO | KDE/konsole | `6ab4bb0`（2026-10-13） | |
-| AV | AvaloniaUI/Avalonia | `8973430`（master，12.2.999） | TKCode 当前用 12.1.3，最新稳定版 12.1.4 |
+| AV | AvaloniaUI/Avalonia | `8973430`（master，12.2.999） | TKCode 当前用 12.1.4，与 AtomUI 6.2.6 的最低版本一致 |
 | LOGIN | apple-oss-distributions/system_cmds `login/login.c` | `408bba7453` | macOS 的 login(1) |
 | local | 本机 macOS 26.6.2（25G83），Terminal.app 2.15（470.2） | | 只读命令：`ps`、`strings`、`plutil`、`cat /etc/*` |
 
@@ -47,7 +47,7 @@
    - **冲突：** TKCode 的 ⌘K（命令面板）与 macOS 终端惯例的 ⌘K 清屏冲突。Win/Linux 上 TKCode 的全局键 Ctrl+K/N/B 由窗口的 Tunnel 处理器拦截，会抢走 readline 的 kill-line、下一条历史、光标左移，需要用户决策（§4.6、§11）。
 6. **鼠标。**
    - 右键：Windows 有选区时复制、否则粘贴；macOS 选中单词并弹出上下文菜单；Linux 弹出上下文菜单。
-   - Linux 上选中的文本自动进入 PRIMARY，中键粘贴 PRIMARY。**Avalonia 只在 master 分支（预计 12.2）的 X11 后端上支持 PRIMARY**，TKCode 当前用的 12.1.3 还没有。
+   - Linux 上选中的文本自动进入 PRIMARY，中键粘贴 PRIMARY。**Avalonia 只在 master 分支（预计 12.2）的 X11 后端上支持 PRIMARY**，TKCode 当前用的 12.1.4 还没有。
 7. **粘贴。**
    - 多行警告默认 `auto`：只在 bracketed paste 关闭且内容含换行时警告，WT、VS Code、Ghostty 都是这样。
    - 始终过滤 ESC 等控制字符，并把 LF 转成 CR；单行粘贴去掉末尾换行。

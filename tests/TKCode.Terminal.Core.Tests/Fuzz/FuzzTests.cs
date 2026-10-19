@@ -70,8 +70,20 @@ public sealed class FuzzTests
         {
             var seed = Random.Shared.Next();
             TestContext.Current.TestOutputHelper?.WriteLine($"seed {seed}");
+            // 原生崩溃会带走测试输出缓冲：当前种子落盘到 artifacts/test-results/（失败时 CI 上传），崩溃后文件里就是最后一个种子
+            FixtureCatalog.WriteActual("fuzz/current-seed", ".txt", seed.ToString());
             RunGenerated(seed, totalBytes: 4 << 20);
         }
+    }
+
+    /// <summary>重放长跑失败时日志里打印的种子：TKCODE_FUZZ_SEED=N（字节数与长跑一致）。</summary>
+    [Fact]
+    [Trait("Category", "FuzzLong")]
+    public void ReplaySeed()
+    {
+        var seed = int.TryParse(Environment.GetEnvironmentVariable("TKCODE_FUZZ_SEED"), out var s) ? s : (int?)null;
+        Assert.SkipWhen(seed is null, "set TKCODE_FUZZ_SEED to replay a fuzz seed");
+        RunGenerated(seed!.Value, totalBytes: 4 << 20);
     }
 
     /// <summary>一个种子：分批写入，穿插 resize、reset、视口滚动、选区、搜索；每批之后检查不变量。</summary>

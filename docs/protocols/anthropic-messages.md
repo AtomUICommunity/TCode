@@ -568,11 +568,16 @@ data: {"type":"message_stop"}
 | Opus 4.7、Haiku 3.5 | 2048 |
 | Opus 4.6、Opus 4.5、Haiku 4.5 | 4096 |
 
-### 8.3 TKCode 推荐布局（agent loop）
+### 8.3 TKCode 布局（agent loop，参考 Claude Code）
 
 1. 工具按 name 排序，确定性序列化（JSON key 顺序固定，不放时间戳或 UUID）。
 2. 在**静态 system 的最后一个 block** 上放显式断点，同时缓存 tools 和 system。
-3. 加顶层 `cache_control: {"type":"ephemeral"}`，让自动断点跟随对话尾部。
+3. 消息里**只放一个显式断点**：最后一条消息的末块（跳过 `role:"system"` turn 与 thinking block，往前找可放的块）。每次请求在新的末尾写入，并从断点往前最多 20 个位置找到上一次请求的条目读取。不用顶层自动缓存：旧版 Bedrock 集成对顶层 `cache_control` 返回 400，部分中转会丢弃这个字段；显式断点在官方、Bedrock、Vertex 和中转上都有效。
+   - 分叉请求（压缩摘要，`StreamOptions.SkipCacheWrite`）把这个断点放在**最后一条消息之前的末块**——与主循环共享前缀的末尾，只读取已有条目，不为分叉独有的尾部写入新条目（同 Claude Code 的 `skipCacheWrite`）。只去掉断点而不另放读取点会让整段对话按全价重算。
+   - 只认顶层自动缓存的端点（Kimi，§12）额外发顶层 `cache_control`，分叉请求不发。
+   - 所有断点使用同一 TTL：全局设置 `promptCacheTtl`（`5m` 默认，不发 `ttl` 字段；`1h` 发 `"ttl":"1h"`），见 [settings.md](../settings.md)。
+   - 默认对**所有** Messages 端点开启（中转 / 网关后面多半就是 Anthropic，没有断点就完全不缓存；不支持的厂商会忽略）；`compat.supportsCacheControl:false` 可以关闭。
+   - `metadata.user_id` 按会话发送，沿用 Claude Code 的形状 `user_<sha256>_account__session_<uuid>`（只含哈希与会话 id）：中转站据其中的 session 把同一会话粘在同一上游账号上——缓存按组织隔离，换账号必然不命中。
 4. 动态信息（日期、模式、cwd 变化等）**不要写进 system**，改用追加的 `role:"system"` 消息；不支持该特性的模型，用 tool_result 之后的 text block。
 5. 每个请求的 thinking 配置和 effort 保持固定。变化会让 messages 缓存失效，在部分模型上也会让 tools 和 system 的缓存失效。
 6. 单个 turn 新增超过 20 个“位置”时，自动断点可能找不到上一次的缓存（20-block lookback 窗口；连续的 tool_use 或 tool_result 序列算作一个位置）。这种情况下每隔约 15 个位置补一个断点。
@@ -675,7 +680,6 @@ data: {"type":"message_stop"}
   "stream": true,
   "thinking": {"type": "adaptive", "display": "summarized"},
   "output_config": {"effort": "medium"},
-  "cache_control": {"type": "ephemeral"},
   "system": [
     {"type": "text", "text": "<TKCode 静态 system prompt>", "cache_control": {"type": "ephemeral"}}
   ],
@@ -687,7 +691,7 @@ data: {"type":"message_stop"}
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
   ],
   "tool_choice": {"type": "auto"},
-  "metadata": {"user_id": "sha256:..."},
+  "metadata": {"user_id": "user_<sha256>_account__session_<uuid>"},
   "messages": [
     {"role": "user", "content": "修复 build"},
     {"role": "assistant", "content": [
@@ -695,7 +699,7 @@ data: {"type":"message_stop"}
       {"type": "tool_use", "id": "toolu_01", "name": "read_file", "input": {"path": "src/a.cs"}}
     ]},
     {"role": "user", "content": [
-      {"type": "tool_result", "tool_use_id": "toolu_01", "content": "…文件内容…"}
+      {"type": "tool_result", "tool_use_id": "toolu_01", "content": "…文件内容…", "cache_control": {"type": "ephemeral"}}
     ]},
     {"role": "system", "content": "Note: files under src/gen are generated; do not edit them."}
   ]
@@ -749,7 +753,7 @@ data: {"type":"message_stop"}
 1. 对第三方端点**默认不发送**：`anthropic-beta`、`eager_input_streaming`、`block_binding`、`role:"system"` 消息（统一降级为 user 文本）、`display:"updates"`、`clear_at`、`fallbacks`。
 2. thinking block 带上来源标记（provider+model）。**跨 provider 切换时剥离对方产生的 thinking 和 redacted_thinking**；同 provider 内原样回放。
 3. tool_result 出错时，在 content 文本里显式写出 “Error: …”，因为 DeepSeek 等会忽略 `is_error`。
-4. 可以放心使用的 `cache_control` 只有 Anthropic 官方；Kimi 只支持顶层；DeepSeek 忽略；MiniMax 和智谱未知。
+4. `cache_control`：Anthropic 官方与转发到 Anthropic 的中转 / 网关都需要它；Kimi 只支持顶层；DeepSeek 忽略；MiniMax 和智谱未知。TKCode 默认对所有端点发送（§8.3），个别端点报错时用 `compat.supportsCacheControl:false` 关闭。
 5. 流事件格式基本一致，但必须容忍字段缺失（例如 `cache_*` 为 null、没有 `signature_delta`）和未知事件。
 
 ---
@@ -806,12 +810,12 @@ data: {"type":"message_stop"}
 
 **缓存**
 
-- [ ] 在静态 system 的最后一个 block 上放显式断点，加上顶层自动缓存；断点总数不超过 4；1h TTL 的断点排在 5m 之前。
+- [ ] 在静态 system 的最后一个 block 上放显式断点，最后一条消息的末块再放一个（分叉请求放在倒数第二条消息上）；断点总数不超过 4；所有断点同一 TTL。
 - [ ] 不在 `clear_at` 的 system 消息和 thinking block 上放 `cache_control`。
 - [ ] 会话中固定 thinking 配置和 effort（需要调整时使用按消息调整 effort 的 beta）；同一会话不切换模型。
 - [ ] 监控 `cache_read_input_tokens`；连续两个请求在相同前缀下读取为 0 时报警。
 
 **第三方端点**
 
-- [ ] 维护每个 provider 的能力描述；第三方端点默认不发送 beta 字段、`role:"system"` 消息、`eager_input_streaming` 和 `cache_control`（仅在 provider 声明支持时发送）。
+- [ ] 维护每个 provider 的能力描述；第三方端点默认不发送 beta 字段、`role:"system"` 消息和 `eager_input_streaming`；`cache_control` 默认发送（中转后面多半是 Anthropic），可按 provider 关闭。
 - [ ] 错误信息同时写进 tool_result 文本中（DeepSeek 等会忽略 `is_error`）。

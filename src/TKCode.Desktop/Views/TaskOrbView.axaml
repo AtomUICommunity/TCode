@@ -9,6 +9,7 @@
              xmlns:loc="using:TKCode.Desktop.Localization"
              x:Class="TKCode.Desktop.Views.TaskOrbView"
              x:DataType="vm:SessionViewModel"
+             ClipToBounds="False"
              IsVisible="{Binding HasTaskOrb, FallbackValue=False}">
     <UserControl.Styles>
         <Style Selector="TextBlock.task.done">
@@ -29,6 +30,7 @@
         </Style>
     </UserControl.Styles>
     <Panel>
+        <!-- 投影画在球的外面：UserControl 默认按自身边界裁剪，这里关掉（ClipToBounds=False），否则投影只剩四角 -->
         <Border CornerRadius="15" BoxShadow="{StaticResource TKCode.FloatShadow}" HorizontalAlignment="Right" VerticalAlignment="Top">
             <!-- 运行中：转圈 + 运行数，宽度随内容变成胶囊；空闲：清单图标 -->
             <ToggleButton x:Name="OrbToggle" Theme="{StaticResource TKCode.RowButton}" MinWidth="30" Height="30" MinHeight="30" Padding="8,0"

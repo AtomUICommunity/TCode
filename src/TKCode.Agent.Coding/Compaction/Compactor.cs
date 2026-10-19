@@ -27,6 +27,10 @@ public sealed class Compactor(SessionStore store, ToolContext tools, SystemPromp
 
     public async Task<CompactionResult> CompactAsync(CompactionRequest request, CancellationToken cancellationToken)
     {
+        if (request.Handoff is { } handoff)
+        {
+            return await HandoffAsync(request, handoff);
+        }
         if (!request.Messages.Any(m => m is AssistantMessage))
         {
             throw new CompactionException("Not enough messages to compact.");
@@ -53,12 +57,46 @@ public sealed class Compactor(SessionStore store, ToolContext tools, SystemPromp
             messages.Add(new UserMessage([new TextContent(context)]) { Source = CompactionPrompts.ContextSource });
         }
 
-        var durationMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        return await CommitAsync(request, messages, summary, truncated, Stopwatch.GetElapsedTime(started));
+    }
+
+    /// <summary>
+    /// 批准计划并清空上下文（docs/design/plan-mode.md §11）：不请求模型，历史换成交接消息，
+    /// 再附上未完成的任务与仍在运行的后台任务；读取记录清空，文件要按计划重新读。
+    /// </summary>
+    private async Task<CompactionResult> HandoffAsync(CompactionRequest request, string handoff)
+    {
+        var started = Stopwatch.GetTimestamp();
+        tools.Files.Clear();
+        var messages = new List<Message>
+        {
+            new UserMessage([new TextContent(handoff)]) { Source = CompactionPrompts.HandoffSource },
+        };
+        var work = OpenWork();
+        if (work.Count > 0)
+        {
+            messages.Add(new UserMessage([new TextContent(
+                "<system-reminder>\nContext carried over from the planning conversation:\n\n" + string.Join("\n\n", work) + "\n</system-reminder>")])
+            {
+                Source = CompactionPrompts.ContextSource,
+            });
+        }
+        return await CommitAsync(request, messages, handoff, false, Stopwatch.GetElapsedTime(started));
+    }
+
+    /// <summary>记录压缩、按当前各节重建开头的系统提示（之前的补丁合并进去）；新历史以重新读取的记忆索引开头。</summary>
+    private async Task<CompactionResult> CommitAsync(CompactionRequest request, List<Message> messages, string summary, bool truncated, TimeSpan elapsed)
+    {
+        if (tools.Memory is { } memory)
+        {
+            // 压缩后的第一次请求就带上最新的记忆索引（docs/design/memory.md §4.2）
+            messages.Insert(0, memory.IndexMessage());
+        }
         var sections = prompt.Current(request.Model);
         var postTokens = ContextAccounting.EstimateText(SystemPromptBuilder.Render(sections)) + ContextAccounting.Estimate(messages) +
                          request.Tools.Sum(t => ContextAccounting.EstimateText(t.Description) + ContextAccounting.EstimateText(t.ParametersSchemaJson));
-        await store.AppendCompactionAsync(request.Trigger, summary, request.PreTokens, postTokens, durationMs, request.Instructions, truncated,
-            CancellationToken.None);
+        await store.AppendCompactionAsync(request.Trigger, summary, request.PreTokens, postTokens, (long)elapsed.TotalMilliseconds,
+            request.Instructions, truncated, CancellationToken.None);
         var rebased = await prompt.RebaseAsync(sections, CancellationToken.None);
         tools.ResetNestedInstructions();
         return new CompactionResult(rebased, messages, summary, postTokens);
@@ -262,6 +300,17 @@ public sealed class Compactor(SessionStore store, ToolContext tools, SystemPromp
             sections.Add("Skills loaded earlier in this session (still in effect):\n\n" + string.Join("\n\n", skills));
         }
 
+        sections.AddRange(OpenWork());
+
+        return sections.Count == 0
+            ? null
+            : "<system-reminder>\nContext restored after compaction:\n\n" + string.Join("\n\n", sections) + "\n</system-reminder>";
+    }
+
+    /// <summary>未完成的任务与仍在运行的后台任务（§7.3）。</summary>
+    private List<string> OpenWork()
+    {
+        var sections = new List<string>();
         var open = tools.Tasks.Items.Where(t => t.Status != "completed").ToArray();
         if (open.Length > 0)
         {
@@ -274,10 +323,7 @@ public sealed class Compactor(SessionStore store, ToolContext tools, SystemPromp
             sections.Add("Background tasks still running:\n" + string.Join("\n", background.Select(t =>
                 $"- {t.Id} ({t.Type}): {Clip(t.Description, 200)}{(t.OutputPath is null ? "" : $" — output: {t.OutputPath}")}")));
         }
-
-        return sections.Count == 0
-            ? null
-            : "<system-reminder>\nContext restored after compaction:\n\n" + string.Join("\n\n", sections) + "\n</system-reminder>";
+        return sections;
     }
 
     /// <summary>与 read 工具相同的 cat -n 格式。</summary>

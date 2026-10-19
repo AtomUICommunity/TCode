@@ -676,10 +676,10 @@ TKCode 的 `AgentStarted` 和 `AgentEnded` 由 `ExternalAgent` 发出。`Message
 | `item/started{userMessage}`，`clientId` 匹配某个 steer | `UserMessageAsync(steer)` | `messageEnded`（草稿）、`messageStarted(user)` |
 | `item/started{reasoning}` | 延迟到第一个增量时再 `BeginBlockAsync(Thinking)` | `messageStarted(assistant)`（如果还没有草稿） |
 | `summaryPartAdded{i>0}` / `summaryTextDelta` / `textDelta` | `AppendAsync(block, 分隔符 + delta)` | `thinkingDelta` |
-| `item/completed{reasoning}` | `EndBlockAsync(block, string.Join("\n\n", summary))`（summary 为空且从没打开过块时跳过） | `thinkingDelta`（补差） |
+| `item/completed{reasoning}` | `EndBlockAsync(block, string.Join("\n\n", summary))`（summary 为空且从没打开过块时跳过） | `thinkingDelta`（补差）、`thinkingEnded` |
 | `item/started{agentMessage}` | `BeginBlockAsync(Text)` | `messageStarted`（如果需要） |
 | `item/agentMessage/delta` | `AppendAsync` | `textDelta` |
-| `item/completed{agentMessage}` | `EndBlockAsync(block, item.text)` | `textDelta`（补差） |
+| `item/completed{agentMessage}` | `EndBlockAsync(block, item.text)` | `textDelta`（补差）、`textEnded` |
 | `item/started{commandExecution}` | `ToolCallAsync(item.id, "shell", {"command","cwd","commandActions"})` | `toolCallStarted` + `toolCallDelta` + `toolCallEnded` |
 | 命令开始执行（下列情况中最先发生的：approvalPolicy 为 never 时的 item/started、我方回复 accept 类决定、第一个 outputDelta、item/completed） | `ToolStartedAsync` | `toolExecutionStarted` |
 | `item/commandExecution/outputDelta` / `terminalInteraction` | `ToolProgressAsync(id, "shell", delta)` | （进度） |

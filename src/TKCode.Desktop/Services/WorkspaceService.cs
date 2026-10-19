@@ -79,6 +79,32 @@ public sealed class WorkspaceService(StateService settings)
             .ToList();
     }
 
+    /// <summary>
+    /// 托盘 / Dock / 跳转列表的项目菜单：最近使用的在前；用过的不足 <paramref name="count"/> 个时按侧栏顺序补齐，
+    /// 这样从没切换过项目时菜单也不是空的。
+    /// </summary>
+    public IReadOnlyList<WorkspaceInfo> Recent(int count)
+    {
+        var all = Load();
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var ordered = new List<WorkspaceInfo>();
+        foreach (var path in settings.Current.RecentWorkspaces)
+        {
+            if (all.FirstOrDefault(w => string.Equals(w.Path, path, comparison)) is { } known && !ordered.Contains(known))
+            {
+                ordered.Add(known);
+            }
+        }
+        foreach (var workspace in all)
+        {
+            if (!ordered.Contains(workspace))
+            {
+                ordered.Add(workspace);
+            }
+        }
+        return ordered.Take(count).ToList();
+    }
+
     public WorkspaceInfo Add(string path)
     {
         if (!settings.Current.Workspaces.Contains(path))

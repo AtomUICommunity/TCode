@@ -82,7 +82,7 @@
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `agent.shell.mode` | `auto` \| `terminal` \| `process` | `auto` | 见 §2.3 |
-| `agent.shell.profile` | string \| null | null | Agent 终端使用的 shell。null = 沿用 `ShellResolver` 的选择（Unix bash/zsh，Windows Git Bash → pwsh），**不使用**交互终端的默认 profile（研究 05 §10）。可以填 `terminal.profiles` 中的 id |
+| `agent.shell.profile` | string \| null | null | Agent 终端使用的 shell。null / `auto` = 沿用 `ShellResolver` 的选择（Unix bash/zsh，Windows PowerShell 7 最新稳定版 → Git Bash → Windows PowerShell），**不使用**交互终端的默认 profile（研究 05 §10）。可以填探测到的 id、程序名或可执行文件的绝对路径，以后也可以是 `terminal.profiles` 中的 id。**进程模式已实现**（`TKCode.Shell` + 设置页「通用」，见 [settings.md](../settings.md) §2.8），终端模式随本文其余部分落地 |
 | `agent.shell.onTimeout` | `interrupt` \| `background` | `interrupt` | 超时后中断（与进程模式一致），或转成后台任务（VS Code 的做法）（§6） |
 | `agent.shell.reveal` | `never` \| `onInput` \| `always` | `onInput` | Agent 终端标签何时自动前置：从不 / 需要输入时 / 每条命令。标签本身总是创建，只是不抢焦点 |
 | `agent.shell.idleInputSeconds` | number | 3 | 执行中输出静止多少秒后做"是否在等输入"检查（§7） |

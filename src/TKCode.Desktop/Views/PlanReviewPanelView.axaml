@@ -1,0 +1,154 @@
+<!--
+  计划审批面板（docs/design/plan-mode.md §14.1）：exit_plan_mode / Claude ExitPlanMode 请求批准时替换输入框，外观沿用输入框的卡片。
+  标题栏：来源 + 计划文件名，编辑 / 在编辑器中打开 / 停止；计划用 StreamMark 渲染（最高约窗口的 55%，可滚动），
+  编辑时换成等宽的 Markdown 源码编辑框；下面是批准方式与“继续完善”（附反馈）。键盘操作见代码隐藏。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:smv="using:StreamMark.Avalonia"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:views="using:TKCode.Desktop.Views"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.PlanReviewPanelView"
+             x:DataType="vm:PlanReviewViewModel"
+             Focusable="True">
+    <UserControl.Styles>
+        <Style Selector="Border.pnum">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Background" Value="{DynamicResource TKCode.KbdBg}" />
+        </Style>
+        <Style Selector="Border#ReviseRow.highlighted">
+            <Setter Property="Background" Value="{DynamicResource TKCode.SelectedBg}" />
+        </Style>
+        <Style Selector="atom|TextArea#PlanEditor">
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontFamily" Value="{StaticResource TKCode.MonoFont}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border x:Name="Frame" Background="{DynamicResource TKCode.ComposerBg}" BorderBrush="{DynamicResource TKCode.ComposerBorder}"
+            BorderThickness="1" CornerRadius="{StaticResource TKCode.RadiusLarge}" Padding="14,10,14,10">
+        <StackPanel Spacing="10">
+            <!-- 标题：来源 + 文件名 + 已编辑；编辑、在编辑器中打开、停止 -->
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <icons:LucideIcon Kind="ClipboardCheck" Width="15" Height="15" VerticalAlignment="Center"
+                                  StrokeBrush="{DynamicResource TKCode.Accent}" />
+                <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Title}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <!-- 排队数、已编辑在前，文件名最后填充：窄的时候只截断文件名 -->
+                <DockPanel Grid.Column="2" Margin="8,0,8,0" VerticalAlignment="Center">
+                    <Border DockPanel.Dock="Left" Classes="kbd" Margin="0,0,8,0" IsVisible="{Binding HasMore}">
+                        <TextBlock Text="{Binding MoreText}" />
+                    </Border>
+                    <Border DockPanel.Dock="Left" Classes="kbd" Margin="0,0,8,0" IsVisible="{Binding ShowEditedTag}">
+                        <TextBlock Text="{loc:TKCodeLangResource PlanReviewEdited}" />
+                    </Border>
+                    <TextBlock DockPanel.Dock="Left" Classes="tertiary" Text="·" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Classes="secondary" Text="{Binding FileName}" FontSize="12" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PlanPath}" />
+                </DockPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <atom:Button x:Name="EditButton" SizeType="Small" Variant="Text" Color="Default" Focusable="False"
+                                 Command="{Binding ToggleEditCommand}" ToolTip.Tip="{loc:TKCodeLangResource PlanReviewEditTip}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Panel VerticalAlignment="Center">
+                                <icons:LucideIcon Kind="Pencil" Width="12" Height="12" IsVisible="{Binding !IsEditing}" />
+                                <icons:LucideIcon Kind="Check" Width="12" Height="12" IsVisible="{Binding IsEditing}" />
+                            </Panel>
+                            <TextBlock Text="{Binding EditButtonText}" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </atom:Button>
+                    <atom:Button SizeType="Small" Variant="Text" Shape="Circle" Focusable="False"
+                                 Command="{Binding OpenInEditorCommand}" ToolTip.Tip="{loc:TKCodeLangResource PlanReviewOpenInEditor}">
+                        <atom:Button.Icon><icons:LucideIcon Kind="ExternalLink" /></atom:Button.Icon>
+                    </atom:Button>
+                    <atom:Button SizeType="Small" Variant="Text" Shape="Circle" Focusable="False"
+                                 Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.StopCommand, FallbackValue={x:Null}}"
+                                 ToolTip.Tip="{loc:TKCodeLangResource QuestionStopTip}">
+                        <atom:Button.Icon><icons:LucideIcon Kind="StopFilled" /></atom:Button.Icon>
+                    </atom:Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- 计划：渲染视图 / 源码编辑框（最高约窗口的 55%，由代码隐藏随窗口高度设置） -->
+            <Border x:Name="PlanBox" Background="{DynamicResource TKCode.CodeBg}" CornerRadius="{StaticResource TKCode.RadiusSmall}"
+                    BorderBrush="{DynamicResource TKCode.Divider}" BorderThickness="1" ClipToBounds="True">
+                <Panel>
+                    <ScrollViewer x:Name="PlanScroll" IsVisible="{Binding !IsEditing}" atom:ScrollViewer.IsLiteMode="True"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <smv:MarkdownView x:Name="PlanView" Markdown="{Binding Plan}" Margin="14,10,14,12" HorizontalAlignment="Stretch" />
+                    </ScrollViewer>
+                    <atom:TextArea x:Name="PlanEditor" IsVisible="{Binding IsEditing}" StyleVariant="Borderless" Background="Transparent"
+                                   IsAutoSize="False" VerticalContentAlignment="Top" Text="{Binding EditText, Mode=TwoWay}" Margin="4,2" />
+                </Panel>
+            </Border>
+
+            <!-- 批准方式（按请求的顺序） -->
+            <StackPanel Spacing="0">
+                <ItemsControl ItemsSource="{Binding ApproveOptions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PlanReviewOptionViewModel">
+                            <Button Theme="{StaticResource TKCode.RowButton}" Classes.selected="{Binding IsHighlighted}" MinHeight="32" Padding="8,4"
+                                    Focusable="False" Margin="0,1"
+                                    Command="{Binding Owner.SelectCommand}" CommandParameter="{Binding}" DoubleTapped="OnOptionDoubleTapped">
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                    <Border Classes="pnum" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Number}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TKCode.KbdFg}" />
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Label}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Classes="secondary" Text="{Binding Suffix}" FontSize="12" Margin="8,0,0,0"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasSuffix}" />
+                                    <icons:LucideIcon Grid.Column="3" Kind="CornerDownLeft" Width="12" Height="12" Margin="8,0,2,0" VerticalAlignment="Center"
+                                                      StrokeBrush="{DynamicResource TKCode.TextTertiary}" IsVisible="{Binding IsHighlighted}" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <!-- 继续完善：选中这一行就进入反馈框 -->
+                <Border x:Name="ReviseRow" CornerRadius="{StaticResource TKCode.RadiusSmall}" Padding="8,4" MinHeight="32" Margin="0,1"
+                        Background="Transparent" Classes.highlighted="{Binding IsReviseHighlighted}">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                        <Border Classes="pnum" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ReviseNumber}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TKCode.KbdFg}" />
+                        </Border>
+                        <TextBlock Grid.Column="1" Classes="strong" Text="{Binding ReviseOption.Label}" Margin="10,0,12,0" VerticalAlignment="Center" />
+                        <atom:LineEdit x:Name="FeedbackInput" Grid.Column="2" SizeType="Small" StyleVariant="Borderless" Background="Transparent"
+                                       Text="{Binding Feedback, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="{Binding FeedbackPlaceholder}"
+                                       VerticalAlignment="Center" />
+                        <icons:LucideIcon Grid.Column="3" Kind="CornerDownLeft" Width="12" Height="12" Margin="8,0,2,0" VerticalAlignment="Center"
+                                          StrokeBrush="{DynamicResource TKCode.TextTertiary}" IsVisible="{Binding IsReviseHighlighted}" />
+                    </Grid>
+                </Border>
+                <TextBlock Text="{loc:TKCodeLangResource PlanReviewDiscardWarning}" FontSize="12" Margin="38,2,8,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TKCode.GitModified}" IsVisible="{Binding ShowDiscardWarning}" />
+            </StackPanel>
+
+            <!-- 底部：快捷键提示；暂不批准（Esc）；确认（Enter） -->
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Classes="tertiary" Text="{Binding HintsText}" FontSize="12" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="2,0" />
+                <atom:Button Grid.Column="1" SizeType="Small" Color="Default" Variant="Text" Focusable="False" Command="{Binding DismissCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{loc:TKCodeLangResource PlanReviewDismiss}" VerticalAlignment="Center" />
+                        <Border Classes="kbd"><TextBlock Text="Esc" /></Border>
+                    </StackPanel>
+                </atom:Button>
+                <atom:Button x:Name="ConfirmButton" Grid.Column="2" SizeType="Small" Color="Default" Variant="Solid" Focusable="False" Margin="6,0,0,0"
+                             Command="{Binding ConfirmCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{loc:TKCodeLangResource PlanReviewConfirm}" VerticalAlignment="Center" />
+                        <icons:LucideIcon Kind="CornerDownLeft" Width="12" Height="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                </atom:Button>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

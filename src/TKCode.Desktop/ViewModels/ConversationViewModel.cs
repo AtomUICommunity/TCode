@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Avalonia.Threading;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -191,20 +192,24 @@ public sealed partial class ConversationViewModel : ObservableObject
     private readonly UserSettingsService _userSettings;
     private readonly ILogger<ConversationViewModel> _logger;
     private readonly Dictionary<string, SessionViewModel> _open = [];
+    private readonly HashSet<string> _manualTitleEdits = new(StringComparer.Ordinal);
     /// <summary>导航历史：会话 ID，null 表示新对话（空状态）。</summary>
     private readonly List<string?> _history = [null];
     private int _historyIndex;
     private bool _navigating;
+    private string? _defaultModelRef;
 
     public ConversationViewModel(AgentHostConnection host, StateService settings, UserSettingsService userSettings,
         ILogger<ConversationViewModel> logger)
     {
         _host = host;
         _userSettings = userSettings;
+        _defaultModelRef = userSettings.Current.Model;
         _host.ModelsChanged += OnModelsChanged;
         _host.ApprovalHandler = HandleApprovalAsync;
         _host.ElicitationHandler = HandleElicitationAsync;
         _host.UserInputHandler = HandleUserInputAsync;
+        _host.PlanReviewHandler = HandlePlanReviewAsync;
         Mcp = new McpComposerViewModel(host, () => CurrentCwd, logger);
         Mcp.PropertyChanged += (_, e) =>
         {
@@ -249,6 +254,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         };
         _settings = settings;
         _logger = logger;
+        OpenPlanFile = path => ShellOpen.Open(path, logger);
         _host.SessionEvent += OnSessionEvent;
         _host.Disconnected += reason =>
         {
@@ -268,6 +274,8 @@ public sealed partial class ConversationViewModel : ObservableObject
         };
         BranchPicker = new BranchPickerViewModel(SwitchBranchAsync, IsWorkspaceBusy);
         Picker = new ModelPickerViewModel(settings);
+        ContextUsage = new ContextUsageViewModel(async (sessionId, ct) => await (await _host.GetServerAsync()).GetContextUsageAsync(sessionId, ct), logger);
+        userSettings.Changed += () => ApplyDefaultModel();
         Picker.SelectionChanged += () =>
         {
             RolePicker.AcpAvailable = Picker.Selected?.Model.SupportsSubagents != false;
@@ -283,7 +291,8 @@ public sealed partial class ConversationViewModel : ObservableObject
         Permission.ModeChosen += mode => _ = ApplyPermissionAsync(mode);
         Permission.Show(RememberedPermission());
         Strings.LanguageChanged += (_, _) => RefreshLanguage();
-        _ = InitializeAsync();
+        // 先让窗口完成首帧布局和渲染，再启动 Host、加载模型与会话。
+        Dispatcher.UIThread.Post(() => _ = InitializeAsync(), DispatcherPriority.Background);
     }
 
     public ModelPickerViewModel Picker { get; }
@@ -300,13 +309,26 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     /// <summary>当前会话；null 表示空状态（下一次发送时创建会话）。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty), nameof(HeaderTitle), nameof(HeaderSubtitle), nameof(HeaderIconKey), nameof(IsAnsweringQuestion))]
+    [NotifyPropertyChangedFor(nameof(IsEmpty), nameof(HeaderTitle), nameof(HeaderSubtitle), nameof(HeaderIconKey), nameof(IsAnsweringQuestion),
+        nameof(IsReviewingPlan), nameof(ShowPlanReview), nameof(ShowDockedComposer))]
     public partial SessionViewModel? Active { get; private set; }
 
     public bool IsEmpty => Active is null || Active.IsEmpty;
 
     /// <summary>当前会话有待回答的提问：问答面板替换输入框，用户必须先回答或拒绝回答（docs/design/ask-user.md §9）。</summary>
     public bool IsAnsweringQuestion => Active?.HasPendingQuestion == true;
+
+    /// <summary>当前会话有待批准的计划：审批面板替换输入框，用户必须先处理（docs/design/plan-mode.md §14.1）。</summary>
+    public bool IsReviewingPlan => Active?.HasPendingPlanReview == true;
+
+    /// <summary>审批面板可见（同时有提问时先显示问答面板）。</summary>
+    public bool ShowPlanReview => IsReviewingPlan && !IsAnsweringQuestion;
+
+    /// <summary>停靠的输入框可见：没有被问答面板或审批面板替换。草稿保留在 <see cref="Composer"/> 里。</summary>
+    public bool ShowDockedComposer => !IsAnsweringQuestion && !IsReviewingPlan;
+
+    /// <summary>用系统默认程序打开计划文件（审批面板的“在编辑器中打开”；测试中替换）。</summary>
+    public Action<string> OpenPlanFile { get; set; }
 
     partial void OnActiveChanged(SessionViewModel? value)
     {
@@ -385,22 +407,8 @@ public sealed partial class ConversationViewModel : ObservableObject
     [ObservableProperty]
     public partial string? StatusMessage { get; private set; }
 
-    /// <summary>上下文占用比例（0–1）：最近一次助手回复的 输入 + 缓存 + 输出 tokens 除以上下文预算。</summary>
-    [ObservableProperty]
-    public partial double ContextUsage { get; private set; }
-
-    [ObservableProperty]
-    public partial string ContextUsageText { get; private set; } = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasContextUsage))]
-    public partial string? ContextUsageTip { get; private set; }
-
-    public bool HasContextUsage => ContextUsageTip is not null;
-
-    /// <summary>上下文接近自动压缩阈值（占用环变色并提示 /compact）。</summary>
-    [ObservableProperty]
-    public partial bool IsContextNearlyFull { get; private set; }
+    /// <summary>输入框下方的上下文占用环与悬停卡片。</summary>
+    public ContextUsageViewModel ContextUsage { get; }
 
     public string WorkspaceName => Workspace?.Name ?? Strings.Get(TKCodeLangResourceKind.NoProjectName);
     public string BranchName => Branch ?? Strings.Get(TKCodeLangResourceKind.NoBranch);
@@ -419,6 +427,10 @@ public sealed partial class ConversationViewModel : ObservableObject
         Branch = workspace?.ReadBranch();
         BranchPicker.Load(Branch, workspace?.ReadBranches() ?? []);
         _settings.Current.LastWorkspace = workspace?.Path;
+        if (workspace is not null)
+        {
+            _settings.Current.TouchRecentWorkspace(workspace.Path);
+        }
         _settings.Save();
         WorkspaceChanged?.Invoke();
         if (Active is not null && workspace is not null && !SamePath(Active.Cwd, workspace.Path))
@@ -455,6 +467,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         // 新会话从默认模式开始（settings.json 的 defaultRole）
         RolePicker.Show(_userSettings.Current.DefaultRole);
         Picker.SetScope(null);
+        ApplyDefaultModel(force: true);
         foreach (var item in Sessions)
         {
             item.IsSelected = false;
@@ -649,7 +662,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         }
     }
 
-    private bool CanSend() => !IsAnsweringQuestion && (!string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0 || Mcp.HasPrompt);
+    private bool CanSend() => !IsAnsweringQuestion && !IsReviewingPlan && (!string.IsNullOrWhiteSpace(ComposerText) || Attachments.Count > 0 || Mcp.HasPrompt);
 
     private static IReadOnlyList<ImageAttachmentDto>? ToDtos(IReadOnlyList<ImageAttachmentViewModel> images) =>
         images.Count == 0 ? null : images.Select(i => new ImageAttachmentDto(i.Path, i.MimeType)).ToArray();
@@ -657,14 +670,16 @@ public sealed partial class ConversationViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
-        if (IsAnsweringQuestion)
+        if (IsAnsweringQuestion || IsReviewingPlan)
         {
             return;
         }
         var images = Attachments.ToArray();
         var draft = Composer.Segments.ToArray();
-        // 占位符展开为「[Image #N: 路径]」；图片本身由 AgentHost 读取附件文件、以 base64 发送。
+        // 图片占位符展开为「[Image #N: 路径]」，图片本身由 AgentHost 读取后以 base64 发送。
+        // 其他文件不进会话：tag 的纯文本已是「[Attached file: 绝对路径]」，再补一句让 Agent 自己去读。
         // command tag 不在文字里：Host 按 segments 读取正文放在前面
+        var hasFile = draft.Any(s => s is TagSegment { Kind: TagKind.AttachedFile });
         var text = ImagePrompt.Expand(ComposerSegments.ModelText(draft).Trim(), images);
         var segments = ComposerSegments.ToDto(draft);
         var hasCommand = draft.Any(s => s is TagSegment { Kind: TagKind.Command });
@@ -672,11 +687,15 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             return;
         }
-        if (images.Length == 0 && !hasCommand && !Mcp.HasPrompt && Active is { Runtime: null } && CompactInstructions(text) is { } compact)
+        if (images.Length == 0 && !hasFile && !hasCommand && !Mcp.HasPrompt && Active is { Runtime: null } && CompactInstructions(text) is { } compact)
         {
             ComposerText = "";
             await CompactActiveAsync(compact.Length == 0 ? null : compact);
             return;
+        }
+        if (hasFile)
+        {
+            text = AttachedFiles.AppendInstruction(text);
         }
         var title = ImagePrompt.Title(ComposerDocument.PlainText(draft).Trim());
         if ((Mcp.HasPrompt || McpComposerViewModel.ResourcesIn(Composer.Segments).Count > 0) && Active is { IsRunning: true })
@@ -803,36 +822,41 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     // ---- 会话列表：分页加载 ----
 
-    private const int SessionPageSize = 50;
-    private int? _nextSessionOffset;
+    /// <summary>每次“展开更多”多显示的会话条数。</summary>
+    private const int SessionPageSize = 20;
+    private int _sessionLimit = SessionPageSize;
     private bool _loadingSessions;
     private string? _sessionFilter;
 
-    /// <summary>还有更多会话可以加载（侧栏滚动到底部时加载下一页）。</summary>
-    public bool HasMoreSessions => _nextSessionOffset is not null;
+    /// <summary>还有更多会话：列表底部显示“展开更多”按钮。</summary>
+    public bool HasMoreSessions { get; private set; }
 
-    /// <summary>侧栏筛选的项目变化：按项目重新分页加载。</summary>
+    /// <summary>侧栏筛选的项目变化：按项目重新加载，重新从第一页开始。</summary>
     public Task SetSessionFilterAsync(string? cwd)
     {
         _sessionFilter = cwd;
+        _sessionLimit = SessionPageSize;
         return RefreshSessionsAsync();
     }
 
-    /// <summary>从 Host 重新加载第一页（至少覆盖已加载的数量），保留已打开会话的实时状态。</summary>
+    /// <summary>
+    /// 从 Host 重新加载前 <see cref="_sessionLimit"/> 条会话（多取一条判断是否还有下一页），
+    /// 保留已打开会话的实时状态。
+    /// </summary>
     public async Task RefreshSessionsAsync()
     {
         try
         {
             var server = await _host.GetServerAsync();
-            var count = Math.Max(SessionPageSize, Sessions.Count(s => s.Live is null || !string.IsNullOrEmpty(s.Title)));
-            var page = await server.QuerySessionsAsync(_sessionFilter, 0, count);
+            // 多取一条：返回条数超过显示上限，说明还有下一页
+            var page = await server.QuerySessionsAsync(_sessionFilter, 0, _sessionLimit + 1);
             var existing = Sessions.ToDictionary(s => s.SessionId);
             Sessions.Clear();
-            foreach (var summary in page.Items)
+            foreach (var summary in page.Items.Take(_sessionLimit))
             {
                 Sessions.Add(Merge(existing.GetValueOrDefault(summary.SessionId), summary));
             }
-            _nextSessionOffset = page.NextOffset;
+            HasMoreSessions = page.Items.Count > _sessionLimit;
             // 刚创建、尚未写盘的会话不在文件列表中
             foreach (var item in existing.Values.Where(i => i.Live is not null && !Sessions.Contains(i)))
             {
@@ -846,10 +870,14 @@ public sealed partial class ConversationViewModel : ObservableObject
         OnPropertyChanged(nameof(HasMoreSessions));
     }
 
+    /// <summary>
+    /// “展开更多”：显示上限加一页，再取一次前 N 条（多取一条判断是否还有下一页），
+    /// 只追加尚未显示的会话，保留列表滚动位置与行对象。
+    /// </summary>
     [RelayCommand]
     private async Task LoadMoreSessionsAsync()
     {
-        if (_loadingSessions || _nextSessionOffset is not { } offset)
+        if (_loadingSessions || !HasMoreSessions)
         {
             return;
         }
@@ -857,13 +885,16 @@ public sealed partial class ConversationViewModel : ObservableObject
         try
         {
             var server = await _host.GetServerAsync();
-            var page = await server.QuerySessionsAsync(_sessionFilter, offset, SessionPageSize);
+            var limit = _sessionLimit + SessionPageSize;
+            var page = await server.QuerySessionsAsync(_sessionFilter, 0, limit + 1);
             var known = Sessions.Select(s => s.SessionId).ToHashSet();
-            foreach (var summary in page.Items.Where(s => !known.Contains(s.SessionId)))
+            foreach (var summary in page.Items.Take(limit).Where(s => !known.Contains(s.SessionId)))
             {
                 Sessions.Add(Merge(null, summary));
             }
-            _nextSessionOffset = page.NextOffset;
+            _sessionLimit = limit;
+            // Host 单次查询有上限：达到上限后返回的条数不再增长，按钮随之隐藏
+            HasMoreSessions = page.Items.Count > limit;
         }
         catch (Exception ex)
         {
@@ -914,6 +945,7 @@ public sealed partial class ConversationViewModel : ObservableObject
         await RunSessionActionAsync(async server =>
         {
             await server.RenameSessionAsync(item.FilePath, title);
+            _manualTitleEdits.Add(item.SessionId);
             item.CustomTitle = title.Length == 0 ? null : title;
             if (item.Live is { } live)
             {
@@ -1046,15 +1078,25 @@ public sealed partial class ConversationViewModel : ObservableObject
             _logger.LogError(ex, "Failed to start agent host");
             StatusMessage = Strings.Format(TKCodeLangResourceKind.StatusHostStartFailedFormat, ex.Message);
         }
-        finally
-        {
-            IsInitialized = true;
-        }
     }
 
-    /// <summary>首次连接 Agent Host、加载模型与会话列表已完成（成功或失败）：启动加载页据此退场。</summary>
-    [ObservableProperty]
-    public partial bool IsInitialized { get; private set; }
+    private readonly TKCodeLangResourceKind _welcomeQuip = WelcomeQuips[Random.Shared.Next(WelcomeQuips.Length)];
+    private static readonly TKCodeLangResourceKind[] WelcomeQuips =
+    [
+        TKCodeLangResourceKind.WelcomeQuip1,
+        TKCodeLangResourceKind.WelcomeQuip2,
+        TKCodeLangResourceKind.WelcomeQuip3,
+        TKCodeLangResourceKind.WelcomeQuip4,
+        TKCodeLangResourceKind.WelcomeQuip5,
+        TKCodeLangResourceKind.WelcomeQuip6,
+        TKCodeLangResourceKind.WelcomeQuip7,
+        TKCodeLangResourceKind.WelcomeQuip8,
+        TKCodeLangResourceKind.WelcomeQuip9,
+        TKCodeLangResourceKind.WelcomeQuip10,
+    ];
+
+    /// <summary>空状态的静态歇后语，不使用动画或轮播计时器。</summary>
+    public string WelcomeQuip => Strings.Get(_welcomeQuip);
 
     /// <summary>撤销文件改动：经宿主执行（宿主负责校验文件指纹）。</summary>
     private async Task<RevertFileResult> RevertFileAsync(RevertFileRequest request)
@@ -1085,6 +1127,15 @@ public sealed partial class ConversationViewModel : ObservableObject
         session.PendingApprovals.CollectionChanged += (_, _) => SyncWaiting();
         session.PendingElicitations.CollectionChanged += (_, _) => SyncWaiting();
         session.PendingQuestions.CollectionChanged += (_, _) => SyncWaiting();
+        session.PendingPlanReviews.CollectionChanged += (_, _) => SyncWaiting();
+        // Host 主动切换了模式或权限（计划批准、进入 Plan 模式）：选择器随 Options 更新；权限变了时与手动选择一样按项目记住
+        session.HostOptionsChanged += (previous, options) =>
+        {
+            if (options.PermissionMode != previous.PermissionMode)
+            {
+                RememberPermission(ProjectOf(session), options.PermissionMode);
+            }
+        };
         session.Items.CollectionChanged += (_, _) =>
         {
             if (session == Active)
@@ -1105,9 +1156,17 @@ public sealed partial class ConversationViewModel : ObservableObject
                     break;
                 case nameof(SessionViewModel.HasPendingQuestion):
                     OnPropertyChanged(nameof(IsAnsweringQuestion));
+                    OnPropertyChanged(nameof(ShowPlanReview));
+                    OnPropertyChanged(nameof(ShowDockedComposer));
                     SendCommand.NotifyCanExecuteChanged();
                     break;
-                case nameof(SessionViewModel.LastUsageTokens):
+                case nameof(SessionViewModel.HasPendingPlanReview):
+                    OnPropertyChanged(nameof(IsReviewingPlan));
+                    OnPropertyChanged(nameof(ShowPlanReview));
+                    OnPropertyChanged(nameof(ShowDockedComposer));
+                    SendCommand.NotifyCanExecuteChanged();
+                    break;
+                case nameof(SessionViewModel.LastUsageTokens) or nameof(SessionViewModel.LastUsage):
                     UpdateContextUsage();
                     break;
                 case nameof(SessionViewModel.Title):
@@ -1146,8 +1205,15 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             return;
         }
+        var item = Sessions.FirstOrDefault(s => s.SessionId == n.SessionId);
+        // 已保存的命名优先，避免排队中的自动标题事件覆盖刚完成的手动重命名。
+        if (n.Event is SessionTitleChanged title && (_manualTitleEdits.Contains(n.SessionId) ||
+            item?.CustomTitle is { } savedTitle && savedTitle != title.Title))
+        {
+            return;
+        }
         session.Apply(n.Event);
-        if (Sessions.FirstOrDefault(s => s.SessionId == n.SessionId) is { } item)
+        if (item is not null)
         {
             item.SyncFrom(session);
             // 有新活动的会话移到列表顶部
@@ -1219,6 +1285,45 @@ public sealed partial class ConversationViewModel : ObservableObject
     /// <summary>新的提问出现在当前会话（视图据此把焦点移到问答面板）。</summary>
     public event Action? QuestionOpened;
 
+    /// <summary>
+    /// 计划审批（docs/design/plan-mode.md §14.1）：加入发起会话的审批队列，审批面板替换输入框。
+    /// 会话不在 UI 中打开时（理论上不会发生）视为暂不批准。
+    /// </summary>
+    private Task<PlanReviewResponse> HandlePlanReviewAsync(PlanReviewRequest request, CancellationToken ct)
+    {
+        if (!_open.TryGetValue(request.SessionId, out var session))
+        {
+            return Task.FromResult(PlanReviewResponse.Dismiss);
+        }
+        var review = new PlanReviewViewModel(request, RuntimeDisplayName(request.Source), ContextPercent(session), path => OpenPlanFile(path));
+        session.AddPlanReview(review);
+        WithdrawOnCancel(ct, review.Cancel);
+        if (session == Active)
+        {
+            PlanReviewOpened?.Invoke();
+        }
+        return review.Result;
+    }
+
+    /// <summary>新的计划审批出现在当前会话（视图据此把焦点移到审批面板）。</summary>
+    public event Action? PlanReviewOpened;
+
+    /// <summary>规划用掉的上下文比例（与上下文占用环同一组数据：最近一次回复的 tokens / 会话的上下文窗口）；不知道时为 null。</summary>
+    private int? ContextPercent(SessionViewModel session)
+    {
+        var budget = session.Options.ContextWindow ?? 0;
+        if (budget <= 0)
+        {
+            budget = Picker.ContextWindowValue;
+        }
+        var tokens = session.LastUsageTokens;
+        if (tokens <= 0 || budget <= 0)
+        {
+            return null;
+        }
+        return (int)Math.Round(Math.Clamp((double)tokens / budget, 0, 1) * 100);
+    }
+
     /// <summary>面板标题里的来源名：内置为 null（“TKCode 提问”），外部运行时用其显示名。</summary>
     private string? RuntimeDisplayName(string source) => source switch
     {
@@ -1261,23 +1366,41 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     // ---- 权限档位 ----
 
-    /// <summary>项目记住的档位；“完全授权”从不记住，所以新会话至多是“自动放行”。</summary>
+    /// <summary>项目记住的档位；空状态和新会话沿用，包括“完全授权”。</summary>
     private string RememberedPermission() =>
         Workspace?.Path is { } path && _settings.Current.PermissionModes.TryGetValue(path, out var mode)
             ? PermissionPickerViewModel.Normalize(mode)
             : PermissionPickerViewModel.Ask;
 
+    /// <summary>按项目记住档位，包括“完全授权”（本项目的新会话沿用）。已有会话重新打开时也按文件里的档位恢复。</summary>
+    private void RememberPermission(string? project, string? mode)
+    {
+        if (project is null || mode is null)
+        {
+            return;
+        }
+        var remembered = PermissionPickerViewModel.Normalize(mode);
+        if (_settings.Current.PermissionModes.TryGetValue(project, out var existing) && existing == remembered)
+        {
+            return;
+        }
+        _settings.Current.PermissionModes[project] = remembered;
+        _settings.Save();
+    }
+
+    /// <summary>会话所在的项目（已添加的工作区）；不在项目中工作时为 null。</summary>
+    private string? ProjectOf(SessionViewModel session) =>
+        Workspace?.Path is { } current && SamePath(current, session.Cwd)
+            ? current
+            : _settings.Current.Workspaces.FirstOrDefault(w => SamePath(w, session.Cwd));
+
     /// <summary>
-    /// 用户在选择器中选定档位：按项目记住（完全授权记为“询问”），并同步到当前会话；
+    /// 用户在选择器中选定档位：按项目记住（包括完全授权），并同步到当前会话；
     /// 放开后顺带处理已在等待的审批。失败时恢复会话的实际档位。
     /// </summary>
     private async Task ApplyPermissionAsync(string mode)
     {
-        if (Workspace?.Path is { } path)
-        {
-            _settings.Current.PermissionModes[path] = mode == PermissionPickerViewModel.FullAccess ? PermissionPickerViewModel.Ask : mode;
-            _settings.Save();
-        }
+        RememberPermission(Workspace?.Path, mode);
         if (Active is not { } session)
         {
             return; // 空状态：创建会话时随 CreateSessionRequest 发送
@@ -1288,7 +1411,8 @@ public sealed partial class ConversationViewModel : ObservableObject
             session.Options = await server.SetOptionsAsync(session.SessionId, new SessionOptionsDto(PermissionMode: mode));
             if (session.Options.PermissionMode != PermissionPickerViewModel.Ask)
             {
-                foreach (var pending in session.PendingApprovals.ToList())
+                // Plan 模式下可能修改工作区的命令在任何档位下都要用户确认（docs/design/plan-mode.md §8），不跟着档位自动放行
+                foreach (var pending in session.PendingApprovals.Where(a => !a.RequiresUser).ToList())
                 {
                     pending.AllowOnceCommand.Execute(null);
                 }
@@ -1313,8 +1437,30 @@ public sealed partial class ConversationViewModel : ObservableObject
         {
             Picker.ShowSession(session.ModelId, session.Options);
         }
+        else
+        {
+            ApplyDefaultModel();
+        }
         OnPropertyChanged(nameof(HeaderIconKey));
         ModelsChanged?.Invoke(n);
+    }
+
+    private void ApplyDefaultModel(bool force = false)
+    {
+        if (Active is not null)
+        {
+            return;
+        }
+        var modelRef = _userSettings.Current.Model;
+        if (string.IsNullOrWhiteSpace(modelRef))
+        {
+            _defaultModelRef = modelRef;
+        }
+        else if ((force || modelRef != _defaultModelRef) && Picker.SelectByRef(modelRef))
+        {
+            // 模型可能和厂商配置一起新增；暂时找不到时等 models/changed 后重试。
+            _defaultModelRef = modelRef;
+        }
     }
 
     /// <summary>转发 Host 的模型变化（设置页刷新厂商状态用）。</summary>
@@ -1322,22 +1468,12 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     private void UpdateContextUsage()
     {
-        var budget = Picker.ContextWindowValue;
+        long budget = Picker.ContextWindowValue;
         var tokens = Active?.LastUsageTokens ?? 0;
-        if (tokens <= 0 || budget <= 0)
-        {
-            ContextUsage = 0;
-            ContextUsageText = "";
-            ContextUsageTip = null;
-            return;
-        }
-        ContextUsage = Math.Clamp((double)tokens / budget, 0, 1);
-        ContextUsageText = $"{Math.Round(ContextUsage * 100):0}%";
-        var usage = Strings.Format(TKCodeLangResourceKind.ContextUsageFormat, tokens.ToString("N0"), budget.ToString("N0"));
         // 警告带：自动压缩阈值之前 20K（按 20K 输出预留估算；Host 用模型的真实 max_tokens，docs/design/compaction.md §4）
         var autoCompactAt = Math.Max(budget - 20_000 - 13_000, (long)((budget - 20_000) * 0.6));
-        IsContextNearlyFull = Active?.Runtime is null && tokens >= autoCompactAt - 20_000;
-        ContextUsageTip = IsContextNearlyFull ? Strings.Format(TKCodeLangResourceKind.ContextUsageWarnFormat, usage) : usage;
+        var nearlyFull = Active?.Runtime is null && tokens >= autoCompactAt - 20_000;
+        ContextUsage.Update(Active?.SessionId, tokens, budget, nearlyFull);
     }
 
     /// <summary>选择器变化时同步到当前会话：换模型走 session/setModel，其余走 session/setOptions；以 Host 返回值为准。</summary>
@@ -1378,6 +1514,7 @@ public sealed partial class ConversationViewModel : ObservableObject
 
     private void RefreshLanguage()
     {
+        OnPropertyChanged(nameof(WelcomeQuip));
         OnPropertyChanged(nameof(WorkspaceName));
         OnPropertyChanged(nameof(BranchName));
         OnPropertyChanged(nameof(HeaderTitle));

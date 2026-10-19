@@ -67,7 +67,7 @@
 3. **`Crossfade`（Panel）**：同一位置的内容互换，比如发送 ↔ 停止、Eye ↔ EyeOff、最大化 ↔ 还原、标签页内容、设置分区。
    - 旧内容淡出并缩小到 0.9，新内容淡入并从 0.9 弹回 1，可选横向位移。
 4. **`ItemsMotion`（附加属性，挂在 ItemsControl 上）**：
-   - 容器 `ContainerPrepared` 时，如果这一项是**初次加载之后**新增的，就淡入、上移 8px 并错开入场；初次加载、分页加载和切换数据源时不播。
+   - 容器 `ContainerPrepared` 时，如果这一项是**初次加载之后**新增的，就淡入、上移 8px 并错开入场；初次加载、切换数据源时不播。侧栏“展开更多”追加的行同样播放入场（只限于当时已创建的行）。
    - 删除项可选折叠退出（延迟真正移除）。
 5. **`Rotate`（附加属性）**：箭头只保留一个 `ChevronRight`，`IsExpanded` 时 `RotateTransform` 从 0 转到 90°。替代现在的两个图标互换。
 6. **`Morph`（FLIP 工具）**：给输入框这类会“重新排版”的控件用。
@@ -163,7 +163,7 @@
 
 ## 8. 实现状态（2026-10-16）
 
-代码在 `src/TKCode.Desktop/Motion/`，测试在 `tests/TKCode.Desktop.Tests/MotionTests.cs`、`PanelMotionTests.cs`、`SplashTests.cs`。
+代码在 `src/TKCode.Desktop/Motion/`，测试在 `tests/TKCode.Desktop.Tests/MotionTests.cs`、`PanelMotionTests.cs`。
 
 | 件 | 文件 | 说明 |
 |---|---|---|
@@ -179,7 +179,6 @@
 | FLIP | `Morph.cs` | 输入框单行 ↔ 两段时工具栏部件滑到新位置 |
 | 弹层 | `Popover.cs` | `atom:Popup` 子类 + `PopoverIn/OutMotion`，缩放原点随 Placement / 翻转 |
 | 微交互过渡 | `MotionTransitions.cs` | 颜色、数值、圆角、变换过渡，动效关闭时立即切换 |
-| 启动加载页 | `Views/SplashView.axaml(.cs)` | Logo 浮动 + 光晕、渐变字标、轮播歇后语（前半句先出、后半句揭晓，中英各 10 条）；初始化完成且至少展示 1.8s 后放大淡出，主界面入场；最多等 12s |
 
 面板开合在 `MainWindow.UpdateColumns`：一个进度值同时插值编辑区与文件树列宽；动画期间编辑区 / 文件树内容与会话视图固定为终值宽度（降载），结束后各自只重排一次。侧栏动画期间同样冻结会话视图宽度。
 

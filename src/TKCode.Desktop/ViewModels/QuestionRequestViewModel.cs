@@ -11,9 +11,25 @@ public sealed partial class QuestionOptionViewModel(QuestionPageViewModel page, 
 {
     public QuestionPageViewModel Page { get; } = page;
     public int Index { get; } = index;
-    public string Label { get; } = option.Label;
-    public string? Description { get; } = option.Description;
+
+    /// <summary>回答里带回的标签（选项原文）。</summary>
+    public string Value { get; } = option.Label;
+
+    /// <summary>显示的标签：进入 Plan 模式的确认按界面语言显示，其余照原文。</summary>
+    public string Label => Page.Owner.IsEnterPlanMode ? EnterPlanModeText.Label(Value) ?? Value : Value;
+
+    public string? Description => Page.Owner.IsEnterPlanMode && EnterPlanModeText.Label(Value) is not null
+        ? EnterPlanModeText.Description(Value)
+        : option.Description;
+
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public void RefreshLanguage()
+    {
+        OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(Description));
+        OnPropertyChanged(nameof(HasDescription));
+    }
 
     /// <summary>行首的序号（1–9；更多的选项没有数字快捷键）。</summary>
     public string Number => Index < 9 ? (Index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
@@ -37,6 +53,8 @@ public sealed partial class QuestionPageViewModel : ObservableObject
         // 没有选项（Codex options 为空）时只有文本框，必须提供输入
         AllowOther = question.AllowOther || Options.Count == 0;
         Highlight = 0;
+        // 初始值就是 0，属性不会通知：直接同步一次，第一行一出现就是高亮的
+        OnHighlightChanged(Highlight);
     }
 
     public QuestionRequestViewModel Owner { get; }
@@ -47,7 +65,11 @@ public sealed partial class QuestionPageViewModel : ObservableObject
     public bool MultiSelect => Question.MultiSelect;
     public bool IsSecret => Question.IsSecret;
     public string Header => Question.Header.Length > 12 ? Question.Header[..12] + "…" : Question.Header;
-    public string Text => Question.Question;
+
+    /// <summary>问题正文；进入 Plan 模式的确认没有理由时，默认问题按界面语言显示。</summary>
+    public string Text => Owner.IsEnterPlanMode && Question.Question == EnterPlanModeText.DefaultQuestion
+        ? Strings.Get(TKCodeLangResourceKind.EnterPlanDefaultQuestion)
+        : Question.Question;
 
     /// <summary>“其他”行的序号。</summary>
     public string OtherNumber => Options.Count < 9 ? (Options.Count + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
@@ -171,14 +193,43 @@ public sealed partial class QuestionPageViewModel : ObservableObject
     }
 
     public UserAnswerDto ToAnswer() => new(Question.Id,
-        Options.Where(o => o.IsSelected).Select(o => o.Label).ToArray(),
+        Options.Where(o => o.IsSelected).Select(o => o.Value).ToArray(),
         IsOtherSelected && !string.IsNullOrWhiteSpace(OtherText) ? OtherText.Trim() : null);
 
     public void RefreshLanguage()
     {
         OnPropertyChanged(nameof(OtherPlaceholder));
         OnPropertyChanged(nameof(AnswerSummary));
+        OnPropertyChanged(nameof(Text));
+        foreach (var option in Options)
+        {
+            option.RefreshLanguage();
+        }
     }
+}
+
+/// <summary>
+/// 进入 Plan 模式的确认（input/request 的 source 为 enterPlanMode，docs/design/plan-mode.md §7.2、§12.4）：
+/// Host 给的是英文的问题与选项，界面按语言显示；回答仍是 Host 的选项原文。
+/// </summary>
+public static class EnterPlanModeText
+{
+    /// <summary>SessionManager.EnterPlanModeSource。</summary>
+    public const string Source = "enterPlanMode";
+
+    /// <summary>EnterPlanModeTool 的选项与没有理由时的默认问题。</summary>
+    public const string PlanOption = "Plan first";
+    public const string ProceedOption = "Proceed";
+    public const string DefaultQuestion = "Plan before making changes?";
+
+    public static string? Label(string value) => value switch
+    {
+        PlanOption => Strings.Get(TKCodeLangResourceKind.EnterPlanOptionPlan),
+        ProceedOption => Strings.Get(TKCodeLangResourceKind.EnterPlanOptionProceed),
+        _ => null,
+    };
+
+    public static string? Description(string value) => value == PlanOption ? Strings.Get(TKCodeLangResourceKind.EnterPlanOptionPlanDesc) : null;
 }
 
 /// <summary>
@@ -192,7 +243,8 @@ public sealed partial class QuestionRequestViewModel : ObservableObject
     public QuestionRequestViewModel(UserInputRequest request, string? sourceName = null)
     {
         Request = request;
-        SourceName = sourceName;
+        IsEnterPlanMode = request.Source == EnterPlanModeText.Source;
+        SourceName = IsEnterPlanMode ? null : sourceName;
         Pages = request.Questions.Select((q, i) => new QuestionPageViewModel(this, i, q)).ToArray();
         Tabs = [.. Pages.Cast<object>()];
         if (HasReview)
@@ -209,6 +261,11 @@ public sealed partial class QuestionRequestViewModel : ObservableObject
     /// <summary>运行时的显示名（Claude Agent / Codex）；内置 Agent 为 null。</summary>
     public string? SourceName { get; }
 
+    /// <summary>enter_plan_mode 的确认：标题与选项按界面语言显示（docs/design/plan-mode.md §12.4）。</summary>
+    public bool IsEnterPlanMode { get; }
+
+    public Icons.LucideKind Icon => IsEnterPlanMode ? Icons.LucideKind.ClipboardList : Icons.LucideKind.MessageCircleQuestion;
+
     public event Action<QuestionRequestViewModel>? Decided;
 
     public IReadOnlyList<QuestionPageViewModel> Pages { get; }
@@ -219,9 +276,10 @@ public sealed partial class QuestionRequestViewModel : ObservableObject
     public bool HasReview => Pages.Count > 1;
     public bool ShowTabs => Pages.Count > 1;
 
-    public string Title => SourceName is { Length: > 0 } name
-        ? Strings.Format(TKCodeLangResourceKind.QuestionTitleFormat, name)
-        : Strings.Get(TKCodeLangResourceKind.QuestionTitle);
+    public string Title => IsEnterPlanMode ? Strings.Get(TKCodeLangResourceKind.EnterPlanTitle)
+        : SourceName is { Length: > 0 } name
+            ? Strings.Format(TKCodeLangResourceKind.QuestionTitleFormat, name)
+            : Strings.Get(TKCodeLangResourceKind.QuestionTitle);
 
     /// <summary>当前标签页（问题序号；等于 Pages.Count 时是“提交”页）。</summary>
     [ObservableProperty]

@@ -33,6 +33,7 @@
             <SolidColorBrush x:Key="TKCode.CodeBg" Color="#1C1C1C" />
             <SolidColorBrush x:Key="TKCode.Success" Color="#40A167" />
             <SolidColorBrush x:Key="TKCode.Danger" Color="#E5534B" />
+            <SolidColorBrush x:Key="TKCode.DangerBorder" Color="#55E5534B" />
             <SolidColorBrush x:Key="TKCode.DiffAddBg" Color="#1F3B2B" />
             <SolidColorBrush x:Key="TKCode.DiffRemoveBg" Color="#3E2427" />
             <SolidColorBrush x:Key="TKCode.DiffHunkBg" Color="#222222" />
@@ -66,6 +67,13 @@
             <SolidColorBrush x:Key="TKCode.BadgeBg" Color="#3A4150" />
             <SolidColorBrush x:Key="TKCode.BadgeFg" Color="#C9D1E0" />
             <SolidColorBrush x:Key="TKCode.TreeLine" Color="#3A3A3C" />
+            <!-- 上下文容量的分类色：颜色跟着类别走；按叠放顺序（提示词→工具→MCP→技能→消息）校验过相邻对的色觉差异，“其他”用中性灰 -->
+            <SolidColorBrush x:Key="TKCode.ContextSystemPrompt" Color="#9085E9" />
+            <SolidColorBrush x:Key="TKCode.ContextSystemTools" Color="#D95926" />
+            <SolidColorBrush x:Key="TKCode.ContextMcpTools" Color="#199E70" />
+            <SolidColorBrush x:Key="TKCode.ContextSkills" Color="#C98500" />
+            <SolidColorBrush x:Key="TKCode.ContextMessages" Color="#3987E5" />
+            <SolidColorBrush x:Key="TKCode.ContextOther" Color="#6E6E72" />
             <!-- 背景光晕：主区顶部偏右的灰白光、左侧的暗绿光；侧栏左下的冷色光 -->
             <RadialGradientBrush x:Key="TKCode.GlowMain" Center="62%,22%" GradientOrigin="62%,22%" RadiusX="42%" RadiusY="34%">
                 <GradientStop Offset="0" Color="#1CFFFFFF" />
@@ -107,6 +115,7 @@
             <SolidColorBrush x:Key="TKCode.CodeBg" Color="#F5F5F5" />
             <SolidColorBrush x:Key="TKCode.Success" Color="#2F9E5C" />
             <SolidColorBrush x:Key="TKCode.Danger" Color="#D1362F" />
+            <SolidColorBrush x:Key="TKCode.DangerBorder" Color="#55D1362F" />
             <SolidColorBrush x:Key="TKCode.DiffAddBg" Color="#E3F4EA" />
             <SolidColorBrush x:Key="TKCode.DiffRemoveBg" Color="#FBE6E4" />
             <SolidColorBrush x:Key="TKCode.DiffHunkBg" Color="#EFEFF1" />
@@ -140,6 +149,13 @@
             <SolidColorBrush x:Key="TKCode.BadgeBg" Color="#DCE2EC" />
             <SolidColorBrush x:Key="TKCode.BadgeFg" Color="#3A4458" />
             <SolidColorBrush x:Key="TKCode.TreeLine" Color="#DADADD" />
+            <!-- 上下文容量的分类色：颜色跟着类别走；按叠放顺序（提示词→工具→MCP→技能→消息）校验过相邻对的色觉差异，“其他”用中性灰 -->
+            <SolidColorBrush x:Key="TKCode.ContextSystemPrompt" Color="#6250D6" />
+            <SolidColorBrush x:Key="TKCode.ContextSystemTools" Color="#EB6834" />
+            <SolidColorBrush x:Key="TKCode.ContextMcpTools" Color="#1BAF7A" />
+            <SolidColorBrush x:Key="TKCode.ContextSkills" Color="#EDA100" />
+            <SolidColorBrush x:Key="TKCode.ContextMessages" Color="#2A78D6" />
+            <SolidColorBrush x:Key="TKCode.ContextOther" Color="#A8A8AC" />
             <RadialGradientBrush x:Key="TKCode.GlowMain" Center="62%,22%" GradientOrigin="62%,22%" RadiusX="42%" RadiusY="34%">
                 <GradientStop Offset="0" Color="#0A000000" />
                 <GradientStop Offset="1" Color="#00000000" />
@@ -154,6 +170,10 @@
             </RadialGradientBrush>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
+
+    <!-- StreamMark 选区：与 Composer / SelectableTextBlock 同色，两套主题通用。
+         不沿用 AtomUI 映射的 ColorPrimaryBgHover：主色是近黑 / 近白，亮色下推导出深灰，选中后黑底黑字 -->
+    <SolidColorBrush x:Key="Md.SelectionBackground" Color="#553B82F6" />
 
     <CornerRadius x:Key="TKCode.RadiusSmall">6</CornerRadius>
     <CornerRadius x:Key="TKCode.RadiusMedium">10</CornerRadius>

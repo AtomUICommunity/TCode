@@ -36,6 +36,35 @@ public sealed record CatalogProvider
     public List<string>? Featured { get; init; }
     /// <summary>本地服务，不需要 API Key。</summary>
     public bool KeyOptional { get; init; }
+    /// <summary>填了 Key 后通过 GET /models 获取模型列表（TKCode 补充，目录中的模型之外再并入发现的模型）。</summary>
+    public bool Discover { get; init; }
+    /// <summary>模型 id 前缀 → 固定协议（TKCode 补充）：同一厂商的网关按模型系列提供不同协议，用户仍可逐个模型覆盖。</summary>
+    public Dictionary<string, string>? ModelApis { get; init; }
+    /// <summary>发现结果中要排除的模型 id 前缀（图像生成等不能对话的模型）。</summary>
+    public List<string>? ExcludedModels { get; init; }
+
+    /// <summary>该模型固定使用的协议；没有匹配的规则时为 null（跟随厂商）。</summary>
+    public string? ApiFor(string modelId)
+    {
+        if (ModelApis is not { Count: > 0 })
+        {
+            return null;
+        }
+        var id = BuiltInCatalog.BaseModelId(modelId);
+        foreach (var (prefix, api) in ModelApis)
+        {
+            if (id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return api;
+            }
+        }
+        return null;
+    }
+
+    public bool IsExcluded(string modelId) =>
+        ExcludedModels is { Count: > 0 } excluded
+        && BuiltInCatalog.BaseModelId(modelId) is var id
+        && excluded.Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 }
 
 internal sealed record CatalogFile
@@ -63,7 +92,10 @@ public sealed class BuiltInCatalog
     private const int AutoFeaturedCount = 8;
 
     /// <summary>设置页“推荐厂商”：即使没有配置也会列出，方便填写 Key。</summary>
-    public static readonly string[] Recommended = ["anthropic", "openai", "deepseek", "moonshotai-cn", "zhipuai", "alibaba-cn", "openrouter"];
+    public static readonly string[] Recommended = [NextCoWorkId, "anthropic", "openai", "deepseek", "moonshotai-cn", "zhipuai", "alibaba-cn", "openrouter"];
+
+    /// <summary>TKCode 内置的 NextCoWork 网关（models.dev 没有收录）。</summary>
+    public const string NextCoWorkId = "nextcowork";
 
     /// <summary>在线同步的缓存（~/.tkcode/cache/catalog.json）。</summary>
     public static string CachePath => Path.Combine(TKCode.Config.ConfigPaths.Home, "cache", "catalog.json");
@@ -248,6 +280,18 @@ public sealed class BuiltInCatalog
         Patch("deepseek", p => p with { Featured = ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"] });
         Patch("lmstudio", p => p with { KeyOptional = true });
         ApplyDefaultContextWindows(result);
+        // NextCoWork（https://nextco.work）：OpenAI / Anthropic 兼容的模型网关。默认走 Responses，Claude 系列固定走 Messages
+        // （Messages 适配器需要不带 /v1 的 Base URL，由 ModelCatalog.NormalizeBaseUrl 处理）。模型列表在填入 Key 后通过 /v1/models 获取。
+        result[NextCoWorkId] = new CatalogProvider
+        {
+            Name = "NextCoWork",
+            Api = KnownApisShort.Responses,
+            BaseUrl = "https://nextco.work/v1",
+            Env = ["COWORK_API_KEY"],
+            Discover = true,
+            ModelApis = new Dictionary<string, string>(StringComparer.Ordinal) { ["claude-"] = KnownApisShort.Messages },
+            ExcludedModels = ["gpt-image-", "grok-imagine-"],
+        };
         // models.dev 只收录了 Ollama Cloud；本地 Ollama 的模型由用户在 settings.json 中列出
         result.TryAdd("ollama", new CatalogProvider
         {

@@ -2,6 +2,7 @@ using TKCode.Agent.Coding.Prompt;
 using TKCode.Agent.Coding.Tools;
 using TKCode.Agent.Coding.Tools.Tasks;
 using TKCode.Agent.Coding.Workspace;
+using TKCode.Ai;
 
 namespace TKCode.Agent.Coding;
 
@@ -21,6 +22,18 @@ public sealed record BuiltinOptions
 
     /// <summary>自动压缩上下文（settings.json 的 autoCompact，docs/design/compaction.md §4）；手动 /compact 不受影响。</summary>
     public bool AutoCompact { get; init; } = true;
+
+    /// <summary>缓存断点的有效期（settings.json 的 promptCacheTtl），每次请求读取；为 null 时用 5 分钟。</summary>
+    public Func<PromptCacheTtl>? CacheTtl { get; init; }
+
+    /// <summary>bash 工具使用的 shell（settings.json 的 agent.shell.profile），每次执行命令时读取；为 null 时用默认选择。</summary>
+    public Func<string?>? ShellProfile { get; init; }
+
+    /// <summary>
+    /// 项目记忆目录（settings.json 的 autoMemory，docs/design/memory.md）：加 memory 节、在会话开头注入索引、目录读写免审批。
+    /// null 表示不启用（子 Agent 不启用）。
+    /// </summary>
+    public string? MemoryDirectory { get; init; }
 }
 
 public enum ToolSet

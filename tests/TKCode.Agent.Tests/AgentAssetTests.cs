@@ -234,9 +234,20 @@ public sealed class AgentAssetTests
         Assert.False(reviewer.Allows(Tool("bash")));
         Assert.False(reviewer.Allows(Tool("mcp__other__x")));
         Assert.True(SessionRole.Plan.Allows(Tool("skill")));
-        Assert.False(SessionRole.Plan.Allows(Tool("edit")));
-        Assert.False(SessionRole.Plan.Allows(Tool("agent")));
+        // Plan：write / edit 只放行计划文件、agent 只能派只读子 Agent（由工具在执行时限制，docs/design/plan-mode.md §8）
+        Assert.True(SessionRole.Plan.Allows(Tool("edit")));
+        Assert.True(SessionRole.Plan.Allows(Tool("agent")));
+        Assert.True(SessionRole.Plan.Allows(Tool("exit_plan_mode")));
+        Assert.False(SessionRole.Plan.Allows(Tool("enter_plan_mode")));
         Assert.False(SessionRole.Plan.Allows(Tool("mcp__gh__create_issue")));
+        // 没有计划审批时的 Plan：仍是纯只读
+        Assert.False(SessionRole.PlanWithoutApproval.Allows(Tool("edit")));
+        Assert.False(SessionRole.PlanWithoutApproval.Allows(Tool("agent")));
+        Assert.False(SessionRole.PlanWithoutApproval.Allows(Tool("exit_plan_mode")));
+        // 模式专属工具
+        Assert.True(SessionRole.Agent.Allows(Tool("enter_plan_mode")));
+        Assert.False(SessionRole.Agent.Allows(Tool("exit_plan_mode")));
+        Assert.False(reviewer.Allows(Tool("enter_plan_mode")));
         // ACP：主 Agent 只协调，写文件与命令交给子 Agent
         Assert.Same(SessionRole.Acp, SessionRole.Resolve("acp", catalog));
         Assert.True(SessionRole.Acp.Allows(Tool("agent")));
@@ -246,6 +257,8 @@ public sealed class AgentAssetTests
         Assert.False(SessionRole.Acp.Allows(Tool("edit")));
         Assert.False(SessionRole.Acp.Allows(Tool("bash")));
         Assert.False(SessionRole.Acp.Allows(Tool("mcp__gh__create_issue")));
+        Assert.False(SessionRole.Acp.Allows(Tool("enter_plan_mode")));
+        Assert.False(SessionRole.Acp.Allows(Tool("exit_plan_mode")));
     }
 
     [Fact]

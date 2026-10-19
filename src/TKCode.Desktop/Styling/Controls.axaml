@@ -6,6 +6,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:motion="using:TKCode.Desktop.Motion"
+        xmlns:controls="using:TKCode.Desktop.Controls"
         xmlns:composer="using:TKCode.Desktop.Controls.Composer">
     <Styles.Resources>
         <!-- 侧栏导航、列表行、菜单行：透明背景，悬停/选中时填充 -->
@@ -176,6 +177,117 @@
                     <Setter Property="RenderTransform" Value="scaleX(1)" />
                 </Style>
             </Style>
+        </ControlTheme>
+
+        <!-- 输入框的发送 / 停止：强调色实心圆，无描边无投影；不可用时整体变淡（箭头像镂空），而不是换成描边样式。
+             状态只作用在模板里的圆上：按钮自身的透明度 / 变换留给 motion:Presence 的弹出切换 -->
+        <ControlTheme x:Key="TKCode.SendButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource TKCode.AccentBg}" />
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.AccentFg}" />
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="CornerRadius" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border x:Name="PART_Disk" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+                        <Border.Transitions>
+                            <Transitions>
+                                <motion:MotionDoubleTransition Property="Opacity" />
+                                <motion:MotionTransformTransition Property="RenderTransform" />
+                            </Transitions>
+                        </Border.Transitions>
+                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover /template/ Border#PART_Disk">
+                <Setter Property="Opacity" Value="0.85" />
+            </Style>
+            <Style Selector="^:pressed /template/ Border#PART_Disk">
+                <Setter Property="RenderTransform" Value="scale(0.9)" />
+            </Style>
+            <Style Selector="^:disabled">
+                <Setter Property="Cursor" Value="Arrow" />
+                <Style Selector="^ /template/ Border#PART_Disk">
+                    <Setter Property="Opacity" Value="0.3" />
+                </Style>
+            </Style>
+        </ControlTheme>
+
+        <!-- 悬停卡片：触发内容 + 弹层；弹层里的卡片四周留出阴影空间（HoverCard.ShadowMargin），偏移在代码里按放置方向换算 -->
+        <ControlTheme x:Key="{x:Type controls:HoverCard}" TargetType="controls:HoverCard">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Panel Background="{TemplateBinding Background}">
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        <motion:Popover x:Name="PART_Popup">
+                            <controls:ZoomHost>
+                                <ContentPresenter x:Name="PART_CardHost" Content="{TemplateBinding Card}" />
+                            </controls:ZoomHost>
+                        </motion:Popover>
+                    </Panel>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+
+        <!-- 信息卡片外壳：与弹层菜单同一套表面（背景、描边、圆角、投影）；标题行 · 正文 · 分隔线 · 底栏 -->
+        <ControlTheme x:Key="{x:Type controls:InfoCard}" TargetType="controls:InfoCard">
+            <Setter Property="Background" Value="{DynamicResource TKCode.MenuBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TKCode.MenuBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource TKCode.RadiusMenu}" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="Foreground" Value="{DynamicResource TKCode.TextPrimary}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            BoxShadow="{StaticResource TKCode.MenuShadow}"
+                            Padding="{TemplateBinding Padding}">
+                        <StackPanel>
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12"
+                                  IsVisible="{TemplateBinding Title, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <TextBlock Text="{TemplateBinding Title}" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TKCode.TextPrimary}" VerticalAlignment="Center" />
+                                <ContentPresenter Grid.Column="1" Content="{TemplateBinding Extra}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                  FontSize="12" Foreground="{DynamicResource TKCode.TextSecondary}" />
+                            </Grid>
+                            <ContentPresenter x:Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}" />
+                            <StackPanel IsVisible="{TemplateBinding Footer, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <Border Height="1" Margin="0,12,0,10" Background="{DynamicResource TKCode.MenuBorder}" />
+                                <ContentPresenter Content="{TemplateBinding Footer}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+
+        <!-- 卡片里的一行统计：色点 · 标签（次要文字）· 右对齐数值（主要文字） -->
+        <ControlTheme x:Key="{x:Type controls:CardStatRow}" TargetType="controls:CardStatRow">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid ColumnDefinitions="Auto,*,Auto" Background="Transparent">
+                        <Ellipse Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center" Fill="{TemplateBinding Marker}"
+                                 IsVisible="{TemplateBinding Marker, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <TextBlock Grid.Column="1" Text="{TemplateBinding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TKCode.TextSecondary}" />
+                        <TextBlock Grid.Column="2" Text="{TemplateBinding Value}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TKCode.TextPrimary}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
         </ControlTheme>
 
         <ControlTheme x:Key="TKCode.Splitter" TargetType="GridSplitter">

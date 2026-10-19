@@ -48,7 +48,15 @@ public sealed class FakeWireApi : IWireApi
                 builder.EndBlock(thinking);
             }
 
-            if (last is UserMessage summaryUser && IsSummaryRequest(summaryUser))
+            if (context.Tools.Count == 0 && context.SystemPrompt?.StartsWith("Generate a short title for this conversation.", StringComparison.Ordinal) == true)
+            {
+                var title = string.Concat((last as UserMessage)?.Content.OfType<TextContent>().Select(t => t.Text) ?? [])
+                    .Trim().Split('\n')[0];
+                var block = builder.BeginText();
+                await EmitAsync(builder, block, title[..Math.Min(title.Length, 24)], ct);
+                builder.EndBlock(block);
+            }
+            else if (last is UserMessage summaryUser && IsSummaryRequest(summaryUser))
             {
                 // 压缩上下文的摘要请求（docs/design/compaction.md §7.1）：给一段简短的结构化摘要
                 var text = builder.BeginText();

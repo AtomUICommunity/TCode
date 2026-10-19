@@ -4,6 +4,7 @@ using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using TKCode.Config;
 using TKCode.Desktop.Services;
 
 namespace TKCode.Desktop.ViewModels;
@@ -84,8 +85,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>⌘K 命令面板。</summary>
     public CommandPaletteViewModel Palette => field ??= new CommandPaletteViewModel(this);
 
+    /// <summary>确认框（由主窗口提供）：标题、正文、确定按钮文字。设置页惰性创建，所以经由这里转发。</summary>
+    public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
+
     /// <summary>设置页（全页，覆盖侧栏与主区域）。</summary>
-    public SettingsViewModel Settings => field ??= new SettingsViewModel(userSettings, host, Conversation, Themes, SetLanguageAsync, settingsLogger);
+    public SettingsViewModel Settings => field ??= new SettingsViewModel(userSettings, host, Conversation, Themes, SetLanguageAsync, settingsLogger)
+    {
+        ConfirmAsync = (title, text, ok) => ConfirmAsync?.Invoke(title, text, ok) ?? Task.FromResult(false),
+    };
 
     [ObservableProperty]
     public partial bool IsSettingsOpen { get; private set; }
@@ -109,6 +116,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void CloseSettings() => IsSettingsOpen = false;
 
+    /// <summary>托盘 / Dock / 跳转列表的「新会话」：先离开设置页。</summary>
+    public void StartNewSession()
+    {
+        IsSettingsOpen = false;
+        Sidebar.NewSessionCommand.Execute(null);
+    }
+
+    /// <summary>托盘 / Dock / 跳转列表的项目条目：先离开设置页，再像在侧栏里选中该项目一样进入。</summary>
+    public void OpenProject(string path)
+    {
+        IsSettingsOpen = false;
+        Sidebar.OpenProject(path);
+    }
+
     public bool IsChinese => Application.Current?.GetLanguageManager()?.Current.CurrentLanguage == LanguageTags.ZhCN;
 
     [ObservableProperty]
@@ -125,6 +146,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     [RelayCommand]
     private Task ToggleTheme() => Themes.ToggleAsync();
+
+    /// <summary>界面缩放：沿设置页的档位放大 / 缩小一档，或恢复 100%（⌘+ ⌘- ⌘0、命令面板）。</summary>
+    [RelayCommand]
+    private void ZoomIn() => userSettings.StepUiScale(1);
+
+    [RelayCommand]
+    private void ZoomOut() => userSettings.StepUiScale(-1);
+
+    [RelayCommand]
+    private void ZoomReset() => userSettings.SetUiScale(UiScaleLevels.Default);
 
     /// <summary>在中文与英文之间切换；AtomUI 内置控件文案随之切换，选择保存到 settings.json。</summary>
     [RelayCommand]

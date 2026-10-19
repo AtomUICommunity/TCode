@@ -27,7 +27,7 @@ public abstract record SessionEntry
 public sealed record SessionHeader(string SessionId, string Cwd, int Version) : SessionEntry;
 
 /// <summary>
-/// 会话元数据（不属于对话树，最后一条生效）：用户重命名的标题、是否置顶。字段为 null 表示不变；
+/// 会话元数据（不属于对话树，最后一条生效）：自动生成或手动命名的标题、是否置顶。字段为 null 表示不变；
 /// 标题为空串表示清除自定义标题（回到第一条用户消息）。
 /// </summary>
 public sealed record SessionMetaEntry(string? Title, bool? Pinned) : SessionEntry;

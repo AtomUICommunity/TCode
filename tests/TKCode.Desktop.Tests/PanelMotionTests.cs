@@ -33,7 +33,6 @@ public sealed class PanelMotionTests
             Dispatcher.UIThread.RunJobs();
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
-            window.FindControl<SplashView>("Splash")!.IsVisible = false;
             var editor = window.FindControl<DockPanel>("EditorColumn")!;
             var grid = window.FindControl<Grid>("MainGrid")!;
             var transcript = window.FindControl<Control>("Transcript")!;

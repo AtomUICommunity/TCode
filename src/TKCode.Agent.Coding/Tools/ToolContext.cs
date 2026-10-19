@@ -1,4 +1,5 @@
 using System.Text;
+using TKCode.Agent.Coding.Memory;
 using TKCode.Agent.Coding.Prompt;
 using TKCode.Agent.Coding.Tools.Files;
 using TKCode.Agent.Coding.Tools.Tasks;
@@ -37,6 +38,52 @@ public sealed class ToolContext(WorkspaceRoots workspace, string sessionId, Back
 
     /// <summary>会话的 role（类似 Cursor 的模式）：过滤工具并加入 role 节，在下一批用户输入前生效。null 等同于 agent。</summary>
     public Assets.SessionRole? Role { get; set; }
+
+    /// <summary>本会话的计划文件（docs/design/plan-mode.md §6）：~/.tkcode/plans/&lt;会话文件名&gt;.md；子 Agent 为 null。</summary>
+    public string? PlanFile { get; init; }
+
+    /// <summary>本会话的项目记忆（docs/design/memory.md）：加 memory 节、注入索引；子 Agent 与关闭了 autoMemory 时为 null。</summary>
+    public ProjectMemory? Memory { get; init; }
+
+    /// <summary>会话文件（完整记录）的路径；清空上下文后的交接消息据此告诉模型去哪里查。</summary>
+    public string? TranscriptPath { get; init; }
+
+    /// <summary>只读工具集（explore / plan 子 Agent）。</summary>
+    public bool ReadOnlyToolSet { get; init; }
+
+    /// <summary>只读上下文（只读工具集或只读模式）：可能修改工作区的命令在任何档位都要审批（docs/design/plan-mode.md §8）。</summary>
+    public bool IsReadOnly => ReadOnlyToolSet || Role is { IsReadOnly: true };
+
+    /// <summary>处于 Plan 模式：write / edit 只放行计划文件与记忆文件（docs/design/memory.md §5）。</summary>
+    public bool InPlanMode => PlanFile is not null && Role?.Name == Assets.SessionRole.PlanName;
+
+    public bool IsPlanFile(string path) => PlanFile is not null && PathUtil.SamePath(path, PlanFile);
+
+    /// <summary>Plan 模式下 write / edit 可以写的路径：计划文件与记忆文件。</summary>
+    public bool WritableInPlanMode(string path) => IsPlanFile(path) || Workspace.IsMemoryFile(path);
+
+    /// <summary>
+    /// write / edit 写入前的内容处理：记忆文件补 frontmatter 字段（docs/design/memory.md §6），其他文件原样返回。
+    /// </summary>
+    public string PrepareWrite(string path, string content) =>
+        Workspace.MemoryDirectory is { } memory && Workspace.IsMemoryFile(path) ? ProjectMemory.PrepareWrite(memory, path, content, SessionId) : content;
+
+    /// <summary>write / edit 写入后附在结果后的提醒：MEMORY.md 接近或超过上限时才有。</summary>
+    public string? WriteReminder(string path, string content) =>
+        Workspace.MemoryDirectory is { } memory && Workspace.IsMemoryFile(path) ? ProjectMemory.WriteReminder(memory, path, content) : null;
+
+    /// <summary>Plan 模式下写计划文件以外的路径时的错误（docs/design/plan-mode.md §12.7）。</summary>
+    public string PlanModeWriteMessage =>
+        $"In Plan mode you can only write the plan file ({PlanFile}). Put the change in the plan instead; it will be made after the user approves.";
+
+    /// <summary>工具切换了模式之后调用：新的工具集与模式节在下一次模型请求前生效（Agent.RequestContextRefresh）。</summary>
+    public Action RequestContextRefresh { get; set; } = () => { };
+
+    /// <summary>下一次模型请求前把历史换成交接消息（Agent.RequestHandoff）。</summary>
+    public Action<string> RequestHandoff { get; set; } = _ => { };
+
+    /// <summary>bash 工具使用的 shell（settings.json 的 agent.shell.profile，null 为默认）；每次执行命令时读取，修改后立即生效。</summary>
+    public Func<string?> ShellProfile { get; set; } = () => null;
 
     /// <summary>当前模型（模型可在会话中途切换）。</summary>
     public Func<ModelInfo?> CurrentModel { get; set; } = () => null;
@@ -90,23 +137,39 @@ public sealed class ToolContext(WorkspaceRoots workspace, string sessionId, Back
         }
         found.Reverse();
         var sb = new StringBuilder("<system-reminder>\n");
+        // @import 只展开项目根之内的文件（docs/design/memory.md §7）；导入过的文件同样只附加一次
+        var scope = PathUtil.RealPath(SystemPromptBuilder.ProjectRoot(Cwd));
         foreach (var file in found)
         {
             string content;
             try
             {
-                content = File.ReadAllText(file).Trim();
+                content = File.ReadAllText(file);
             }
             catch (IOException)
             {
                 continue;
             }
-            if (content.Length > 16 * 1024)
+            sb.Append($"Instructions from {file} (they apply to files under {Path.GetDirectoryName(file)}):\n").Append(Clip(content)).Append("\n\n");
+            foreach (var (imported, text) in InstructionImports.Expand(file, content, scope, FirstNestedVisit))
             {
-                content = content[..(16 * 1024)] + "\n[truncated]";
+                sb.Append($"Instructions from {imported} (imported by {file}):\n").Append(Clip(text)).Append("\n\n");
             }
-            sb.Append($"Instructions from {file} (they apply to files under {Path.GetDirectoryName(file)}):\n").Append(content).Append("\n\n");
         }
         return sb.ToString().TrimEnd() + "\n</system-reminder>";
+
+        static string Clip(string content)
+        {
+            content = content.Trim();
+            return content.Length > 16 * 1024 ? content[..(16 * 1024)] + "\n[truncated]" : content;
+        }
+    }
+
+    private bool FirstNestedVisit(string realPath)
+    {
+        lock (_gate)
+        {
+            return _nestedContextFiles.Add(realPath);
+        }
     }
 }

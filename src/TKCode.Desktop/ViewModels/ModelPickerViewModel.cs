@@ -195,7 +195,7 @@ public sealed partial class ModelPickerViewModel : ObservableObject
         }
         ApplyScopeToTabs();
 
-        var selected = Find(previous) ?? Find(_settings.Current.LastModelId) ?? Find(defaultModelRef) ?? _models.FirstOrDefault();
+        var selected = Find(previous) ?? Find(defaultModelRef) ?? Find(_settings.Current.LastModelId) ?? _models.FirstOrDefault();
         if (selected is not null)
         {
             ApplySelection(selected, new SessionOptionsDto(previous is null ? _settings.Current.LastThinkingLevel : ThinkingLevel,

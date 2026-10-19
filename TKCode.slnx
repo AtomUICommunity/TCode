@@ -6,6 +6,7 @@
     <Project Path="src/TKCode.Rpc.Contracts/TKCode.Rpc.Contracts.csproj" />
     <Project Path="src/TKCode.AgentHost/TKCode.AgentHost.csproj" />
     <Project Path="src/TKCode.Config/TKCode.Config.csproj" />
+    <Project Path="src/TKCode.Shell/TKCode.Shell.csproj" />
     <Project Path="src/TKCode.Runtimes/TKCode.Runtimes.csproj" />
     <Project Path="src/TKCode.Mcp/TKCode.Mcp.csproj" />
     <Project Path="src/TKCode.Desktop/TKCode.Desktop.csproj" />
@@ -23,6 +24,7 @@
     <Project Path="tests/TKCode.AgentHost.Tests/TKCode.AgentHost.Tests.csproj" />
     <Project Path="tests/TKCode.Ai.Tests/TKCode.Ai.Tests.csproj" />
     <Project Path="tests/TKCode.Runtimes.Tests/TKCode.Runtimes.Tests.csproj" />
+    <Project Path="tests/TKCode.Shell.Tests/TKCode.Shell.Tests.csproj" />
     <Project Path="tests/TKCode.Mcp.Tests/TKCode.Mcp.Tests.csproj" />
     <Project Path="tests/TKCode.Mcp.TestServer/TKCode.Mcp.TestServer.csproj" />
     <Project Path="tests/TKCode.Mcp.HttpTestServer/TKCode.Mcp.HttpTestServer.csproj" />

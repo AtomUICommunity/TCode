@@ -68,7 +68,7 @@
 | `tool_choice` | `"none"\|"auto"\|"required"` 或对象 | 没有 tools 时默认 `none`，有 tools 时默认 `auto` [SDK] | 一般省略 |
 | `parallel_tool_calls` | bool | 是否允许并行调用函数；设为 `false` 时**只会调用零个或一个**工具 [G-FC「Parallel function calling」] | 一般省略（默认允许并行） |
 | `store` | bool \| null | 是否保存输出以供蒸馏和 evals 使用；图片输入超过 8MB 会被丢弃 [SDK]。官方文档**没有写默认值** | 官方端点显式发 `false` |
-| `prompt_cache_key` | string \| null | 缓存路由与分账键，取代 `user` 字段 [SDK]。GPT-5.6 之前的模型靠它提高命中率；GPT-5.6 及以后可选，主要用于按用户或会话分账、防止跨用户的缓存探测 [G-Cache] | 建议发会话 ID（官方端点） |
+| `prompt_cache_key` | string \| null | 缓存路由与分账键，取代 `user` 字段 [SDK]。GPT-5.6 之前的模型靠它提高命中率；GPT-5.6 及以后可选，主要用于按用户或会话分账、防止跨用户的缓存探测 [G-Cache] | 按会话发送，默认所有端点（Gemini 除外，见 §9） |
 | `prompt_cache_options` | `{mode?: "implicit"\|"explicit", ttl?: "30m"}` | **GPT-5.6 及以后**支持。`implicit`（默认）会自动建 1 个隐式断点，并写入最近 3 个显式断点；`explicit` 不建隐式断点，写入最近 4 个显式断点；`ttl` 只能是 `30m` [SDK] | 暂不使用 |
 | `prompt_cache_retention` | `"in_memory"\|"24h"` \| null | **已弃用**，改用 `prompt_cache_options.ttl`；`gpt-5.5` 及以后只支持 `24h` [SDK] | 不发 |
 | `safety_identifier` | string \| null | 最长 128 字符，建议使用哈希值 [Ref-Chat] | 可选 |
@@ -434,6 +434,14 @@ SDK 从 `body.code`、`body.param`、`body.type` 读取这些字段 [SDK `_excep
 - 显式断点：可以在 text、image、audio、file 部件上加 `prompt_cache_breakpoint: {mode:"explicit"}`（GPT-5.6 及以后），再配合 `prompt_cache_options` 使用 [SDK；Ref-Chat]。**注意：Kimi 遇到这个字段会返回 400** [Kimi chat]。
 - `prompt_cache_key`：GPT-5.6 之前用于路由（每个 key 约 15 rpm 时效果最好）；GPT-5.6 及以后主要用于分账和隔离 [G-Cache]。
 
+**TKCode 的做法**
+
+- `prompt_cache_key: "tkcode:<会话 id>"` 默认发给**所有** Chat 端点：中转 / 网关（OneAPI、NewAPI、LiteLLM 等）会把同一会话分散到多个上游，缓存随之碎片化，转发这个键的网关据此保持亲和；OpenRouter 在没有 `session_id` 时也用它做粘性路由。不认识的厂商通常忽略未知字段。例外是 Gemini 的 OpenAI 兼容端点（`*.googleapis.com`），它对未知字段直接 400（`Unknown name ...: Cannot find field`）。个别端点报错时用 `compat.supportsPromptCacheKey:false` 关闭。
+  - Gemini 的缓存与这些字段无关：Gemini 2.5 及以后默认开启**隐式缓存**，无需任何请求字段，前缀稳定即可命中（最少 2,048 / 4,096 tokens，视模型而定）；**显式缓存**是另一套资源——先用原生接口 `POST /v1beta/cachedContents` 创建缓存（`ttl` 默认 1 小时，按小时收存储费），再在请求里引用（OpenAI 兼容层为 `extra_body.google.cached_content`），目前是 Beta，Gemini 4 Argon 及以后不支持。TKCode 只依赖隐式缓存，不创建显式缓存；`promptCacheTtl` 对 Gemini 不起作用 [Gemini caching；Gemini OpenAI compat]。
+- `stream_options.include_obfuscation:false` 是 OpenAI 专有选项，只发给官方端点，与缓存键无关。
+- 只认请求头的会话亲和：xAI 的 Chat 用 `x-grok-conv-id`（Responses 才用 `prompt_cache_key`）；OpenRouter 用 `x-session-id`。值与缓存键相同。
+- Claude 模型（OpenRouter、转发到 Anthropic 的中转）与百炼 Qwen 的显式缓存需要 content 上的 `cache_control`，否则不缓存。布局同 Messages 协议（anthropic-messages.md §8.3）：developer / system 消息一个断点，最后一条 user / tool 消息一个（分叉请求取最后一条之前的那条）；字符串 content 改写成单个 text part 才能挂断点，助手消息保持字符串不放断点。Claude 用全局 `promptCacheTtl`；百炼显式缓存只有 5 分钟，不发 `ttl`。默认判断：模型 id 含 `claude`，或模型 id 含 `qwen` 且主机是百炼（`dashscope` / `aliyuncs`）；`compat.supportsCacheControl` 可以覆盖。注意 Kimi 遇到 content 里的 `prompt_cache_breakpoint` 会 400，`cache_control` 只发给上面这两类模型。
+
 ---
 
 ## 10. 兼容厂商差异
@@ -568,7 +576,7 @@ SDK 从 `body.code`、`body.param`、`body.type` 读取这些字段 [SDK `_excep
 5. function tool 必须是 `{type:"function", function:{name, description?, parameters?, strict?}}`。`name` 必须匹配 `^[a-zA-Z0-9_-]{1,64}$`，不合规时客户端先改名，并在回放时映射回原名。
 6. 不要默认发 `strict:true`。如果发了，schema 必须满足 §4.2 的全部规则。
 7. GPT-6 Astra 和 GPT-6.1 Sol 在 Chat 上不能带 tools，要改走 Responses。
-8. 官方端点发 `store:false`。建议发 `prompt_cache_key`（会话级）。可以发 `include_obfuscation:false` 来节省带宽。
+8. 官方端点发 `store:false` 与 `include_obfuscation:false`。所有端点（Gemini 除外）发会话级 `prompt_cache_key`，见 §9。
 9. 保持 tools 列表和 developer 前缀在整个会话内稳定。需要限制工具时用 `tool_choice` 或 `allowed_tools`，不要增删工具。
 
 **消息回放**

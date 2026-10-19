@@ -17,6 +17,8 @@
              IsTitleBarVisible="False"
              Background="{DynamicResource TKCode.WindowBg}"
              Foreground="{DynamicResource TKCode.TextPrimary}">
+    <!-- 界面缩放：整个窗口内容等比缩放（弹层各自包一层 ZoomHost） -->
+    <controls:ZoomHost>
     <Grid>
         <!-- 主区背景光晕（铺满整个窗口，侧栏在其上方叠加自己的底色） -->
         <Border Background="{DynamicResource TKCode.GlowMain}" IsHitTestVisible="False" />
@@ -93,7 +95,7 @@
                             </Panel>
                         </Grid>
 
-                        <!-- 会话列表：标题行固定，列表虚拟化（只创建可见行），滚到底部时加载下一页 -->
+                        <!-- 会话列表：标题行固定，列表虚拟化（只创建可见行），底部“展开更多”分页 -->
                         <DockPanel Margin="8,6,8,8">
                             <StackPanel DockPanel.Dock="Top">
                                 <TextBlock Classes="secondary" Text="{loc:TKCodeLangResource NoSessions}" FontSize="12" Margin="8,8,0,0"
@@ -109,6 +111,18 @@
                                 </Button>
                             </StackPanel>
                             <motion:Reveal IsOpen="{Binding Sidebar.IsSessionsExpanded}" Offset="-10">
+                            <!-- 分页：默认显示 20 条；Host 多返回一条说明还有下一页，列表底部固定显示“展开更多”。 -->
+                            <DockPanel>
+                            <Button DockPanel.Dock="Bottom" x:Name="SessionLoadMore" Theme="{StaticResource TKCode.RowButton}"
+                                    MinHeight="28" Margin="0,4,0,0" Command="{Binding Conversation.LoadMoreSessionsCommand}"
+                                    IsVisible="{Binding Conversation.HasMoreSessions}">
+                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                    <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" VerticalAlignment="Center"
+                                                      StrokeBrush="{DynamicResource TKCode.TextTertiary}" />
+                                    <TextBlock Classes="tertiary" FontSize="12" VerticalAlignment="Center"
+                                               Text="{loc:TKCodeLangResource SessionsLoadMore}" />
+                                </StackPanel>
+                            </Button>
                             <ItemsControl x:Name="SessionList" ItemsSource="{Binding Sidebar.VisibleSessions}" motion:ItemsMotion.Enter="SlideDown">
                                 <ItemsControl.Template>
                                     <ControlTemplate>
@@ -190,6 +204,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            </DockPanel>
                             </motion:Reveal>
                         </DockPanel>
                     </DockPanel>
@@ -230,6 +245,9 @@
                         <!-- 空状态：居中的 Composer，上方是设备 / 项目，下方是检出 / 分支 -->
                         <StackPanel MaxWidth="620" Margin="32,0,32,72" Spacing="8" VerticalAlignment="Center"
                                     motion:Presence.IsPresent="{Binding Conversation.IsEmpty}" motion:Presence.Effect="Zoom" motion:Presence.Distance="-8">
+                            <TextBlock x:Name="WelcomeQuip" Text="{Binding Conversation.WelcomeQuip}"
+                                       Classes="secondary" FontSize="18" TextWrapping="Wrap" TextAlignment="Center"
+                                       HorizontalAlignment="Center" Margin="0,0,0,24" />
                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
                                 <Button Theme="{StaticResource TKCode.ChipButton}" ToolTip.Tip="{loc:TKCodeLangResource Online}">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -357,8 +375,11 @@
                                 <!-- Agent 提问：问答面板替换输入框，必须先回答或拒绝回答（docs/design/ask-user.md §7） -->
                                 <views:QuestionPanelView x:Name="QuestionPanel" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.IsAnsweringQuestion, FallbackValue=False}"
                                                          DataContext="{Binding Conversation.Active.CurrentQuestion, FallbackValue={x:Null}}" />
+                                <!-- 计划审批：审批面板替换输入框，批准、修改或退回（docs/design/plan-mode.md §14.1） -->
+                                <views:PlanReviewPanelView x:Name="PlanReviewPanel" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Conversation.ShowPlanReview, FallbackValue=False}"
+                                                           DataContext="{Binding Conversation.Active.CurrentPlanReview, FallbackValue={x:Null}}" />
                                 <views:ComposerView x:Name="DockedComposer" Classes="compact" DataContext="{Binding Conversation}"
-                                                    IsVisible="{Binding !IsAnsweringQuestion}" />
+                                                    IsVisible="{Binding ShowDockedComposer}" />
                                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="6,0">
                                     <Button Theme="{StaticResource TKCode.ChipButton}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -369,20 +390,55 @@
                                     <views:BranchPickerView Grid.Column="1" DataContext="{Binding Conversation.BranchPicker}" />
                                     <views:PermissionPickerView Grid.Column="2" DataContext="{Binding Conversation.Permission}" Margin="4,0,0,0" />
                                     <views:RolePickerView x:Name="DockedRolePicker" Grid.Column="3" DataContext="{Binding Conversation.RolePicker}" Margin="2,0,0,0" />
-                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                                IsVisible="{Binding Conversation.HasContextUsage}" ToolTip.Tip="{Binding Conversation.ContextUsageTip}"
-                                                Background="Transparent">
-                                        <Panel>
-                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
-                                                                  TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.TextSecondary}"
-                                                                  IsVisible="{Binding !Conversation.IsContextNearlyFull}" />
-                                            <!-- 接近自动压缩阈值：换成强调色 -->
-                                            <controls:ContextRing Width="14" Height="14" Value="{Binding Conversation.ContextUsage}"
-                                                                  TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.FileOrange}"
-                                                                  IsVisible="{Binding Conversation.IsContextNearlyFull}" />
-                                        </Panel>
-                                        <TextBlock Classes="secondary" Text="{Binding Conversation.ContextUsageText}" FontSize="12" />
-                                    </StackPanel>
+                                    <!-- 上下文占用：悬停弹出容量卡片（分类占比、平均缓存命中率，docs/design/context-usage.md） -->
+                                    <controls:HoverCard x:Name="ContextUsageCard" Grid.Column="5" VerticalAlignment="Center" Placement="TopEdgeAlignedRight"
+                                                        DataContext="{Binding Conversation.ContextUsage}" x:DataType="vm:ContextUsageViewModel"
+                                                        IsVisible="{Binding HasUsage}" IsOpen="{Binding IsCardOpen}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,2">
+                                            <Panel>
+                                                <controls:ContextRing Width="14" Height="14" Value="{Binding Value}"
+                                                                      TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.TextSecondary}"
+                                                                      IsVisible="{Binding !IsNearlyFull}" />
+                                                <!-- 接近自动压缩阈值：换成强调色 -->
+                                                <controls:ContextRing Width="14" Height="14" Value="{Binding Value}"
+                                                                      TrackBrush="{DynamicResource TKCode.RingTrack}" Foreground="{DynamicResource TKCode.FileOrange}"
+                                                                      IsVisible="{Binding IsNearlyFull}" />
+                                            </Panel>
+                                            <TextBlock Classes="secondary" Text="{Binding PercentText}" FontSize="12" />
+                                        </StackPanel>
+                                        <controls:HoverCard.Card>
+                                            <controls:InfoCard Width="300" Title="{loc:TKCodeLangResource ContextCardTitle}" Extra="{Binding Summary}">
+                                                <StackPanel Spacing="14">
+                                                    <controls:SegmentedBar Segments="{Binding Segments}" TrackBrush="{DynamicResource TKCode.RingTrack}" />
+                                                    <ItemsControl ItemsSource="{Binding Categories}" IsVisible="{Binding HasCategories}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <StackPanel Spacing="4" />
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:ContextCategoryItem">
+                                                                <controls:CardStatRow Label="{Binding Label}" Value="{Binding Share}" MarkerKey="{Binding MarkerKey}" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <TextBlock Classes="tertiary" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsBreakdownUnavailable}"
+                                                               Text="{loc:TKCodeLangResource ContextBreakdownUnavailable}" />
+                                                </StackPanel>
+                                                <controls:InfoCard.Footer>
+                                                    <StackPanel Spacing="8">
+                                                        <controls:CardStatRow Label="{loc:TKCodeLangResource ContextCacheAverage}" Value="{Binding CacheHitRate}" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsNearlyFull}">
+                                                            <icons:LucideIcon Kind="CircleAlert" Width="13" Height="13" VerticalAlignment="Center"
+                                                                              StrokeBrush="{DynamicResource TKCode.FileOrange}" />
+                                                            <TextBlock Classes="secondary" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                                       Text="{loc:TKCodeLangResource ContextNearlyFull}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </controls:InfoCard.Footer>
+                                            </controls:InfoCard>
+                                        </controls:HoverCard.Card>
+                                    </controls:HoverCard>
                                 </Grid>
                                 <motion:Reveal IsOpen="{Binding Conversation.StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                     <TextBlock Classes="secondary" Text="{Binding Conversation.StatusMessage}" TextWrapping="Wrap" Margin="8,0" />
@@ -401,6 +457,10 @@
                                     <!-- Agent 的提问与用户的回答 -->
                                     <DataTemplate DataType="vm:QuestionCardViewModel">
                                         <views:QuestionCardView />
+                                    </DataTemplate>
+                                    <!-- 计划审批：计划快照与结局 -->
+                                    <DataTemplate DataType="vm:PlanCardViewModel">
+                                        <views:PlanCardView />
                                     </DataTemplate>
                                     <!-- 非用户输入：后台任务通知 / 其他 Agent 会话的消息，一行提示，展开看正文 -->
                                     <DataTemplate DataType="vm:NotificationItemViewModel">
@@ -433,7 +493,7 @@
                                                         Command="{Binding ToggleCommand}" Cursor="{Binding HasSummary, Converter={x:Static vm:CompactionCursors.Of}}">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <controls:DotSpinner Width="10" Height="10" VerticalAlignment="Center" IsVisible="{Binding IsRunning}" />
-                                                        <icons:LucideIcon Kind="Minimize2" Width="12" Height="12" VerticalAlignment="Center"
+                                                        <icons:LucideIcon Kind="{Binding Icon}" Width="12" Height="12" VerticalAlignment="Center"
                                                                           StrokeBrush="{DynamicResource TKCode.TextTertiary}"
                                                                           IsVisible="{Binding !IsRunning}" />
                                                         <TextBlock Classes="secondary" Text="{Binding Header}" FontSize="12" VerticalAlignment="Center"
@@ -484,14 +544,8 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
-                                            <Border Background="{DynamicResource TKCode.UserBubble}" CornerRadius="14" Padding="14,9" HorizontalAlignment="Right">
-                                                <Panel>
-                                                    <SelectableTextBlock Text="{Binding DisplayText}" TextWrapping="Wrap" IsVisible="{Binding !HasSegments}" />
-                                                    <!-- 带 tag 的消息：与输入框相同的样子（只读，可选择复制） -->
-                                                    <composer:ComposerEditor IsReadOnly="True" IsVisible="{Binding HasSegments}" Cursor="Arrow"
-                                                                             Document="{Binding Segments, FallbackValue={x:Null}}" />
-                                                </Panel>
-                                            </Border>
+                                            <!-- 太长时默认收起，点按钮展开；短消息不显示按钮 -->
+                                            <views:UserMessageBubble />
                                         </StackPanel>
                                     </DataTemplate>
                                     <!-- 会话顶部：还有更早的消息（滚动到顶部时自动加载） -->
@@ -617,10 +671,19 @@
                                     </DataTemplate>
                                     <DataTemplate DataType="vm:AssistantMessageItemViewModel">
                                         <StackPanel Spacing="8" motion:Entrance.Effect="Fade">
-                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasError}">
-                                                <icons:LucideIcon Kind="CircleAlert" Width="14" Height="14" StrokeBrush="{DynamicResource TKCode.Danger}" />
-                                                <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource TKCode.Danger}" FontSize="12" />
-                                            </StackPanel>
+                                            <!-- 错误卡片：长错误（如服务端返回的 JSON）自动换行，可选中复制，过长时在卡片内滚动 -->
+                                            <Border IsVisible="{Binding HasError}" CornerRadius="8" Padding="12,10" BorderThickness="1"
+                                                    Background="{DynamicResource TKCode.DiffRemoveBg}" BorderBrush="{DynamicResource TKCode.DangerBorder}">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <icons:LucideIcon Kind="CircleAlert" Width="14" Height="14" Margin="0,2,10,0" VerticalAlignment="Top"
+                                                                      StrokeBrush="{DynamicResource TKCode.Danger}" />
+                                                    <ScrollViewer Grid.Column="1" MaxHeight="220" atom:ScrollViewer.IsLiteMode="True"
+                                                                  HorizontalScrollBarVisibility="Disabled">
+                                                        <SelectableTextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" FontSize="12" LineHeight="18"
+                                                                             FontFamily="{StaticResource TKCode.MonoFont}" Foreground="{DynamicResource TKCode.Danger}" />
+                                                    </ScrollViewer>
+                                                </Grid>
+                                            </Border>
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowFooter}">
                                                 <TextBlock Classes="tertiary" Text="{Binding TimestampText}" VerticalAlignment="Center" />
                                                 <Button Theme="{StaticResource TKCode.RowButton}" Width="24" MinHeight="24" Padding="0"
@@ -704,6 +767,7 @@
                             </Button>
                             <motion:Popover x:Name="AddPanelPopup" PlacementTarget="{Binding #AddPanelButton}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
                                    IsLightDismissEnabled="True">
+                                <controls:ZoomHost>
                                 <Border Classes="menu" Width="180" Margin="0,0,16,16">
                                     <ItemsControl ItemsSource="{Binding Workbench.Tools}" Margin="4">
                                         <ItemsControl.ItemTemplate>
@@ -720,6 +784,7 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </Border>
+                                </controls:ZoomHost>
                             </motion:Popover>
                         </Panel>
                             </StackPanel>
@@ -954,9 +1019,6 @@
             </Border>
         </Grid>
 
-        <!-- ============ 启动加载页（后台初始化完成后退场） ============ -->
-        <views:SplashView x:Name="Splash" />
-
         <!-- Windows / Linux 自绘窗口按钮（macOS 使用原生红绿灯） -->
         <StackPanel x:Name="CaptionButtons" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Height="44" IsVisible="False">
@@ -974,4 +1036,5 @@
             </atom:Button>
         </StackPanel>
     </Grid>
+    </controls:ZoomHost>
 </atom:Window>

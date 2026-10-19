@@ -6,6 +6,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
              xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:controls="using:TKCode.Desktop.Controls"
              xmlns:vm="using:TKCode.Desktop.ViewModels"
              xmlns:icons="using:TKCode.Desktop.Icons"
              xmlns:loc="using:TKCode.Desktop.Localization"
@@ -35,6 +36,7 @@
 
         <motion:Popover x:Name="Popup" PlacementTarget="{Binding #Chip}" Placement="BottomEdgeAlignedLeft" VerticalOffset="6"
                IsLightDismissEnabled="True" Closed="OnPopupClosed">
+            <controls:ZoomHost>
             <Border Classes="menu" Width="300" Margin="0,0,24,24">
                 <!-- 三档 ↔ 二次确认：交叉淡入，弹层高度平滑过渡 -->
                 <motion:SmoothSize>
@@ -99,6 +101,7 @@
                 </Panel>
                 </motion:SmoothSize>
             </Border>
+            </controls:ZoomHost>
         </motion:Popover>
     </Panel>
 </UserControl>

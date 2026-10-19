@@ -1,3 +1,4 @@
+using TKCode.Agent.Plans;
 using TKCode.Agent.Questions;
 using TKCode.Ai.Messages;
 using TKCode.Ai.Models;
@@ -57,6 +58,9 @@ public sealed record RuntimeCapabilities
 
     /// <summary>主 Agent 能派生子 Agent（ACP 协调模式依赖它，docs/design/composer.md §11）。</summary>
     public bool SupportsSubagents { get; init; }
+
+    /// <summary>原生实现 plan 模式与计划审批（Claude ExitPlanMode，docs/design/plan-mode.md §15）。</summary>
+    public bool NativePlanMode { get; init; }
 }
 
 public sealed record RuntimeDescriptor(
@@ -167,6 +171,18 @@ public interface IRuntimeHost
     ValueTask<RuntimeElicitationResult> RequestElicitationAsync(RuntimeElicitationRequest request, CancellationToken cancellationToken) =>
         ValueTask.FromResult(RuntimeElicitationResult.Cancel);
 
+    /// <summary>
+    /// 运行时自带的计划审批（Claude ExitPlanMode）交给 TKCode 的审批面板（docs/design/plan-mode.md §15）。
+    /// 不受权限档位影响；没有 UI 或失败时为 Dismissed，轮次中止或请求被撤回时为 Aborted。批准时宿主已切换模式与权限。
+    /// </summary>
+    ValueTask<RuntimePlanReviewResult> RequestPlanReviewAsync(RuntimePlanReviewRequest request, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(new RuntimePlanReviewResult(PlanReviewResult.Dismissed, TKCode.Agent.PermissionMode.Ask));
+
+    /// <summary>运行时自己进入或离开了 plan 模式（例如模型调用了 EnterPlanMode）：宿主同步 TKCode 的模式。</summary>
+    void OnPlanModeChanged(bool planMode)
+    {
+    }
+
     /// <summary>原生会话 id 确定或改变（例如恢复失败后新建）。</summary>
     void OnNativeSessionId(string nativeSessionId);
 
@@ -203,6 +219,13 @@ public sealed record RuntimeElicitationResult(string Action, string? ContentJson
 
 /// <param name="ToolCallId">对应的工具调用（Codex 为合成的工具项 id）。</param>
 public sealed record RuntimeInputRequest(string ToolCallId, IReadOnlyList<UserQuestion> Questions);
+
+/// <param name="PlanPath">运行时自己的计划文件；没有时为 null。</param>
+public sealed record RuntimePlanReviewRequest(string ToolCallId, string Plan, string? PlanPath);
+
+/// <param name="Permission">批准后的权限档位（宿主已切换）：运行时据此设置原生权限模式。</param>
+/// <param name="Steer">批准后要立即追加给模型的说明（交给 ACP 时的模式说明）；null 表示没有。</param>
+public sealed record RuntimePlanReviewResult(PlanReviewResult Result, TKCode.Agent.PermissionMode Permission, string? Steer = null);
 
 public enum ApprovalKind
 {

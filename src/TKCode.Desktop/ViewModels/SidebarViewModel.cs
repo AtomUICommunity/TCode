@@ -96,8 +96,28 @@ public sealed partial class SidebarViewModel : ObservableObject
         Conversation.SetWorkspace(existing.Info);
     }
 
+    /// <summary>
+    /// 托盘 / Dock / 跳转列表里的项目条目：和在侧栏项目选择器里选中该项目一样（筛选会话、新会话默认在该项目中）。
+    /// 不在列表里的目录先加入；目录已不存在则忽略。
+    /// </summary>
+    public void OpenProject(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+        var project = Projects.FirstOrDefault(w => SamePath(w.Path, path));
+        if (project is null)
+        {
+            AddProject(path);
+            project = Projects.First(w => w.Path == path);
+        }
+        SetFilter(project.Info);
+    }
+
     private void SetFilter(WorkspaceInfo? project)
     {
+        var changed = Filter?.Path != project?.Path;
         Filter = project;
         FilterPicker.SetSelected(project);
         // 选中某个项目时，新会话也默认在该项目中创建。
@@ -105,16 +125,39 @@ public sealed partial class SidebarViewModel : ObservableObject
         {
             Conversation.SetWorkspace(project);
         }
+        if (changed)
+        {
+            // 换数据源：整体重建（清空后逐项添加），列表回到顶部且不播放入场动画。
+            VisibleSessions.Clear();
+            OnPropertyChanged(nameof(HasNoSessions));
+        }
         // 按项目在 Host 端分页查询（只加载该项目的会话）
         _ = Conversation.SetSessionFilterAsync(project?.Path);
     }
 
     private void RefreshVisibleSessions()
     {
-        VisibleSessions.Clear();
-        foreach (var item in Conversation.Sessions.Where(s => Filter is null || SamePath(s.Cwd, Filter.Path)))
+        // 增量同步而不是清空重建：分页追加、置顶排序时保留滚动位置与已创建的行。
+        var wanted = Conversation.Sessions.Where(s => Filter is null || SamePath(s.Cwd, Filter.Path)).ToList();
+        var keep = wanted.ToHashSet();
+        for (var i = VisibleSessions.Count - 1; i >= 0; i--)
         {
-            VisibleSessions.Add(item);
+            if (!keep.Contains(VisibleSessions[i]))
+            {
+                VisibleSessions.RemoveAt(i);
+            }
+        }
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var index = VisibleSessions.IndexOf(wanted[i]);
+            if (index < 0)
+            {
+                VisibleSessions.Insert(i, wanted[i]);
+            }
+            else if (index != i)
+            {
+                VisibleSessions.Move(index, i);
+            }
         }
         OnPropertyChanged(nameof(HasNoSessions));
     }

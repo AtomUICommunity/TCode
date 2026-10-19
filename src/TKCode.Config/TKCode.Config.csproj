@@ -4,9 +4,6 @@
         <IsAotCompatible>true</IsAotCompatible>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    </ItemGroup>
-    <ItemGroup>
         <EmbeddedResource Include="settings.schema.json" LogicalName="TKCode.Config.settings.schema.json" />
     </ItemGroup>
 </Project>

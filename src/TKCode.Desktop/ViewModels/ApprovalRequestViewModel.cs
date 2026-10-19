@@ -8,7 +8,8 @@ namespace TKCode.Desktop.ViewModels;
 
 /// <summary>
 /// 一条等待用户决定的工具审批（Host 的 tool/approve 反向请求）。
-/// Kind 为 command / fileChange / read / network / tool；带 Title、Reason，并可能允许“本会话内允许”。
+/// Kind 为 command / fileChange / read / network / mcp / tool，以及 readOnlyCommand（Plan 模式或只读子 Agent 执行了可能修改工作区的命令，
+/// 只能“允许一次”，docs/design/plan-mode.md §8）；带 Title、Reason，并可能允许“本会话内允许”。
 /// </summary>
 public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request) : ObservableObject
 {
@@ -22,7 +23,7 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
 
     public LucideKind Icon => Request.Kind switch
     {
-        "command" => LucideKind.SquareTerminal,
+        "command" or ReadOnlyCommandKind => LucideKind.SquareTerminal,
         "fileChange" => LucideKind.FileCode,
         "read" => LucideKind.Eye,
         "network" => LucideKind.Globe,
@@ -33,6 +34,7 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
     public string KindText => Strings.Get(Request.Kind switch
     {
         "command" => TKCodeLangResourceKind.ApprovalCommand,
+        ReadOnlyCommandKind => TKCodeLangResourceKind.ApprovalReadOnlyCommand,
         "fileChange" => TKCodeLangResourceKind.ApprovalFileChange,
         "read" => TKCodeLangResourceKind.ApprovalRead,
         "network" => TKCodeLangResourceKind.ApprovalNetwork,
@@ -52,6 +54,12 @@ public sealed partial class ApprovalRequestViewModel(ToolApprovalRequest request
     public string? Reason => Request.Reason;
     public bool HasReason => !string.IsNullOrWhiteSpace(Request.Reason);
     public bool CanAllowForSession => Request.CanAllowForSession;
+
+    /// <summary>Plan 模式下可能修改工作区的命令（PermissionPolicy.ReadOnlyCommandKind）。</summary>
+    public const string ReadOnlyCommandKind = "readOnlyCommand";
+
+    /// <summary>任何权限档位下都要用户亲自决定：切换档位时不自动放行。</summary>
+    public bool RequiresUser => Request.Kind == ReadOnlyCommandKind;
 
     [RelayCommand]
     private void AllowOnce() => Decide(new ToolApprovalResponse(true));

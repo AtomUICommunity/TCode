@@ -161,6 +161,22 @@ public sealed class AgentHostConnection(ILogger<AgentHostConnection> logger) : I
         return await Dispatcher.UIThread.InvokeAsync(() => handler(request, cancellationToken)).WaitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 计划审批的处理器（审批面板，UI 线程上调用；docs/design/plan-mode.md §13.1）；没有设置时视为暂不批准。
+    /// 令牌在 Host 撤回请求（$/cancelRequest）时触发，处理器据此收起面板。
+    /// </summary>
+    public Func<PlanReviewRequest, CancellationToken, Task<PlanReviewResponse>>? PlanReviewHandler { get; set; }
+
+    async Task<PlanReviewResponse> IAgentHostClient.ReviewPlanAsync(PlanReviewRequest request, CancellationToken cancellationToken)
+    {
+        var handler = PlanReviewHandler;
+        if (handler is null)
+        {
+            return PlanReviewResponse.Dismiss;
+        }
+        return await Dispatcher.UIThread.InvokeAsync(() => handler(request, cancellationToken)).WaitAsync(cancellationToken);
+    }
+
     /// <summary>MCP OAuth：用系统默认浏览器打开授权页（Host 在本机回环地址等待回调）。</summary>
     Task<McpOpenUrlResponse> IAgentHostClient.OpenMcpUrlAsync(McpOpenUrlRequest request, CancellationToken cancellationToken)
     {

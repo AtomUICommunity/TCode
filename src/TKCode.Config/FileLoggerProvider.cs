@@ -1,9 +1,12 @@
 using Microsoft.Extensions.Logging;
 
-namespace TKCode.AgentHost;
+namespace TKCode.Config;
 
-/// <summary>把 Host 日志追加到 ~/.tkcode/logs/host-yyyyMMdd.log，便于事后排查（stderr 在从桌面端启动时不可见）。</summary>
-public sealed class FileLoggerProvider(string directory) : ILoggerProvider
+/// <summary>
+/// 把日志追加到 &lt;directory&gt;/&lt;prefix&gt;-yyyyMMdd.log（如 ~/.tkcode/logs/host-20261018.log），便于事后排查：
+/// 从 Finder / 桌面端启动的进程 stdout、stderr 都不可见。
+/// </summary>
+public sealed class FileLoggerProvider(string directory, string prefix) : ILoggerProvider
 {
     private readonly object _gate = new();
 
@@ -20,7 +23,7 @@ public sealed class FileLoggerProvider(string directory) : ILoggerProvider
             lock (_gate)
             {
                 Directory.CreateDirectory(directory);
-                File.AppendAllText(Path.Combine(directory, $"host-{DateTime.Now:yyyyMMdd}.log"), line + Environment.NewLine);
+                File.AppendAllText(Path.Combine(directory, $"{prefix}-{DateTime.Now:yyyyMMdd}.log"), line + Environment.NewLine);
             }
         }
         catch (IOException)

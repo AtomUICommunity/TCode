@@ -43,11 +43,13 @@ system prompt 由若干有名字的节组成。每节是一段纯文本，渲染
 | `tools` | 每个启用的工具一行：`- name: PromptSnippet`，没有 snippet 的工具不列 | 工具集变化时 |
 | `rules` | 去重后的规则：先是通用规则（简洁、展示路径、不回滚别人的改动、不执行破坏性 git 命令……），再是各工具的 `PromptGuidelines` | 工具集变化时 |
 | `environment` | 平台、OS 版本、shell、是否 git 仓库、当前分支、今天日期、模型名 | 日期或分支变化时 |
-| `project_context` | 全局 `~/.tkcode/AGENTS.md` 加上从项目根到 cwd 各级的上下文文件，每个文件包成 `<project_instructions path>` | 文件变化时 |
+| `project_context` | 全局 `~/.tkcode/AGENTS.md` 加上从项目根到 cwd 各级的上下文文件，以及它们 `@import` 的文件（[memory.md](memory.md) §7），每个文件包成 `<project_instructions path>` | 文件变化时 |
+| `memory` | 项目记忆的说明与目录（[memory.md](memory.md) §4.1）；`autoMemory` 关闭或子 Agent 时没有 | 固定 |
 | `cwd` | 工作目录（统一用 `/`），以及额外加入的工作区根目录 | 加目录时 |
 
 **上下文文件的发现规则：**
-- 每个目录只取第一个命中的文件，优先级为 `AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md`。
+- 每个目录只取第一个命中的文件，优先级为 `AGENTS.override.md` > `AGENTS.md`（不读 `CLAUDE.md`）。
+- 文件中的 `@path` 导入其他文件，规则见 [memory.md](memory.md) §7。
 - 按真实路径（realpath）去重。
 - 总量上限 32KiB，超出部分截断，并标注 `[truncated]`。
 - 项目根由 `.git` 确定；向上查找时不超过项目根。如果没有找到 `.git`，就退回到 cwd 本身。
@@ -131,14 +133,14 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 
 | 工具 | 参数 | 要点 |
 |---|---|---|
-| `bash` | `command`, `description?`, `timeout?`（毫秒，默认 120000，最大 600000）, `run_in_background?` | Unix 上依次尝试 `$SHELL`（限 bash 或 zsh）、`/bin/bash`、`sh`；Windows 上依次尝试 Git Bash、PowerShell。子进程放在独立的进程组里，abort 或超时时终止整个进程树。输出保留尾部 2000 行或 50KB，完整输出写入 `~/.tkcode/tmp/<session>/<id>.log`，并在结果末尾附上路径。退出码非 0 时 `IsError=true`。执行过程中通过 `ToolExecutionUpdated` 推送输出 |
+| `bash` | `command`, `description?`, `timeout?`（毫秒，默认 120000，最大 600000）, `run_in_background?` | Unix 上依次尝试 `$SHELL`（限 bash 或 zsh）、`/bin/bash`、`sh`；Windows 上依次尝试 PowerShell 7 最新稳定版、Git Bash、Windows PowerShell（选择逻辑在 `TKCode.Shell`）；settings 的 `agent.shell.profile` 可改成别的 shell（[settings.md](../settings.md) §2.8）。PowerShell 在 Windows 上以 UTF-8 输出子进程放在独立的进程组里，abort 或超时时终止整个进程树。输出保留尾部 2000 行或 50KB，完整输出写入 `~/.tkcode/tmp/<session>/<id>.log`，并在结果末尾附上路径。退出码非 0 时 `IsError=true`。执行过程中通过 `ToolExecutionUpdated` 推送输出 |
 | （后台运行） | `run_in_background:true` | 立即返回 `task id` 和输出文件路径。进程结束时，向会话追加一条 `<task-notification>`（类型为 SystemMessage，内容包括状态、退出码和输出路径）。会话空闲时，这条通知会开启新的一轮 |
 | `task_stop` | `task_id` | 终止后台任务或后台子 Agent |
 
 - 读取后台任务的输出，直接用 `read` 打开输出文件（与 Claude Code 一致），不单独设计 output 工具。
 - 每个 bash 调用独立执行。环境变量不会延续到下一次调用；cwd 也不延续（简化处理），模型可以写成 `cd x && …`。
 - 关闭会话时，终止该会话启动的所有后台进程。
-- 工具描述中注入 OS 和 shell 信息。规则中写明：要求模型优先使用专用工具（read、grep、glob），而不是 `cat`、`grep`、`find`。
+- 工具描述只写 OS，不写具体的 shell：工具集在会话开始时冻结，而用户可以随时改 shell。当前 shell 写在系统提示 `environment` 节的 `Shell:` 一行，用户改了 shell 后随系统消息补丁更新。规则中写明：要求模型优先使用专用工具（read、grep、glob），而不是 `cat`、`grep`、`find`。
 
 ## 7. 任务清单
 
@@ -181,7 +183,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
   - `description`：3 到 5 个词的简述。
   - `prompt`。
   - `subagent_type?`：可选 `general-purpose`（默认）、`explore`、`plan`。
-  - `model?`。
+  - `model?`：显式指定时优先；否则使用设置中的 `fastModel`，未配置或不可用时跟随父会话模型。
   - `run_in_background?`。
   - `name?`：起了名字之后，可以用 send_message 按名字寻址。
 - **子 Agent 的会话**：是一个新的 `AgentSession`，与父会话共用 cwd、工作区根目录和权限档位，审批同样经由父会话转给 UI。它的 JSONL 存放在 `~/.tkcode/sessions/<cwd>/<parent>/subagents/<id>.jsonl`，不出现在会话列表里。
@@ -281,7 +283,7 @@ public sealed record ToolInvocation(string ToolCallId, JsonElement Arguments, IP
 |---|---|---|---|
 | P1 | 工具契约 v2、并发（Exclusive）、进度有序、Details 持久化 | `TKCode.Agent/AgentTool.cs`、`Agent.cs` | `ToolExecutionTests`（4 项） |
 | P1 | 系统提示分节、冻结开头、追加 SystemMessage 补丁、`systemPrompt` 快照与恢复 | `Agent.Coding/Prompt/*`、`SessionStore` | `SystemPromptTests`（4 项） |
-| P1 | 上下文文件（override > AGENTS > CLAUDE，止于仓库根，去重，32KiB） | `SystemPromptBuilder.LoadContextFiles` | `SystemPromptTests.ContextFiles_*` |
+| P1 | 上下文文件（override > AGENTS，止于仓库根，去重，32KiB） | `SystemPromptBuilder.LoadContextFiles` | `SystemPromptTests.ContextFiles_*` |
 | P1 | 工作区边界（符号链接）、审批策略、本会话允许、只读命令白名单 | `Workspace/PermissionPolicy.cs`、`ReadOnlyCommands.cs` | `PermissionPolicyTests`（20 项） |
 | P1 | RPC v13：`DetailsJson`、`ToolExecutionUpdated`、`Source` | `TKCode.Rpc.Contracts`、`SessionManager.Map` | `RpcEndToEndTests`（含 AOT Host）、Desktop 端到端测试 |
 | P2 | read：行号、分页、图片、二进制、目录 | `Tools/Files/ReadTool.cs` | `FileToolTests.Read_*` |

@@ -19,14 +19,17 @@ public static class SettingsFile
         AllowTrailingCommas = true,
     };
 
-    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers", "update", "closeToTray", "autoCompact" };
+    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.OrdinalIgnoreCase) { "$schema", "model", "fastModel", "language", "theme", "reduceMotion", "providers", "webSearch", "permissions", "mcpServers", "update", "closeToTray", "autoCompact", "autoMemory", "originalImages", "defaultRole", "skills", "promptCacheTtl", "uiScale", "agent", "terminal" };
     private static readonly HashSet<string> WebSearchKeys = new(StringComparer.OrdinalIgnoreCase) { "provider", "apiKey", "baseUrl" };
     private static readonly HashSet<string> WebSearchProviders = new(StringComparer.OrdinalIgnoreCase) { "brave", "tavily", "exa", "searxng" };
     private static readonly HashSet<string> UpdateKeys = new(StringComparer.OrdinalIgnoreCase) { "prerelease", "autoCheck" };
     private static readonly HashSet<string> PermissionKeys = new(StringComparer.OrdinalIgnoreCase) { "additionalDirectories" };
+    private static readonly HashSet<string> AgentKeys = new(StringComparer.OrdinalIgnoreCase) { "shell" };
+    private static readonly HashSet<string> AgentShellKeys = new(StringComparer.OrdinalIgnoreCase) { "profile" };
+    private static readonly HashSet<string> TerminalKeys = new(StringComparer.OrdinalIgnoreCase) { "defaultProfile" };
     private static readonly HashSet<string> ProviderKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "name", "api", "baseUrl", "apiKey", "enabled", "headers", "models", "compat",
+        "name", "api", "baseUrl", "apiKey", "enabled", "hidden", "headers", "models", "compat",
     };
     private static readonly HashSet<string> ModelKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -121,6 +124,28 @@ public static class SettingsFile
         if (obj["permissions"] is JsonObject permissions)
         {
             Check(permissions, PermissionKeys, "permissions.", warnings);
+        }
+        if (obj["agent"] is JsonObject agent)
+        {
+            Check(agent, AgentKeys, "agent.", warnings);
+            if (agent["shell"] is JsonObject agentShell)
+            {
+                Check(agentShell, AgentShellKeys, "agent.shell.", warnings);
+                CheckShellValue(agentShell, "profile", "agent.shell.profile", warnings);
+            }
+        }
+        if (obj["terminal"] is JsonObject terminal)
+        {
+            Check(terminal, TerminalKeys, "terminal.", warnings);
+            CheckShellValue(terminal, "defaultProfile", "terminal.defaultProfile", warnings);
+        }
+        if (obj["promptCacheTtl"] is JsonNode ttl && ttl.ToString() is not ("5m" or "1h"))
+        {
+            warnings.Add($"promptCacheTtl: expected \"5m\" or \"1h\", got {ttl.ToJsonString()}; using 5m.");
+        }
+        if (obj["uiScale"] is JsonValue scale && scale.TryGetValue<double>(out var scaleValue) && !UiScaleLevels.Same(scaleValue, UiScaleLevels.Clamp(scaleValue)))
+        {
+            warnings.Add($"uiScale: expected a number between {UiScaleLevels.Min} and {UiScaleLevels.Max}, got {scale.ToJsonString()}; using {UiScaleLevels.Clamp(scaleValue)}.");
         }
         if (obj["update"] is JsonObject update)
         {
@@ -244,6 +269,16 @@ public static class SettingsFile
             File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
         File.Move(temp, path, overwrite: true);
+    }
+
+    /// <summary>shell 设置必须是字符串；类型不对时丢掉该字段（按 auto 处理），不让整个文件因反序列化失败而失效。</summary>
+    private static void CheckShellValue(JsonObject section, string key, string path, List<string> warnings)
+    {
+        if (section[key] is { } value && !(value is JsonValue v && v.TryGetValue<string>(out _)))
+        {
+            warnings.Add($"{path}: expected a string, got {value.ToJsonString()}; using auto.");
+            section.Remove(key);
+        }
     }
 
     private static void Check(JsonObject obj, HashSet<string> known, string prefix, List<string> warnings)

@@ -17,6 +17,8 @@ public sealed class AppState
 {
     public List<string> Workspaces { get; set; } = [];
     public string? LastWorkspace { get; set; }
+    /// <summary>最近使用的项目路径，最近的在前；托盘、Dock、任务栏跳转列表的项目菜单按它排序。</summary>
+    public List<string> RecentWorkspaces { get; set; } = [];
     /// <summary>上次选择的模型（Ref：厂商/模型）。</summary>
     public string? LastModelId { get; set; }
     /// <summary>收藏的模型（Ref）。</summary>
@@ -25,12 +27,24 @@ public sealed class AppState
     public string? LastThinkingLevel { get; set; }
     public bool LastFastMode { get; set; }
     public int? LastContextWindow { get; set; }
-    /// <summary>每个项目（路径）上次选择的权限档位：ask / autoApprove（完全授权不记住）。</summary>
+    /// <summary>每个项目（路径）上次选择的权限档位：ask / autoApprove / fullAccess。新会话沿用，包括完全授权。</summary>
     public Dictionary<string, string> PermissionModes { get; set; } = [];
     /// <summary>每个工作区最近在输入框里 @ 过的路径（相对路径，目录以 / 结尾，最近的在前）。</summary>
     public Dictionary<string, List<string>> RecentMentions { get; set; } = [];
     /// <summary>应用内更新的记录（docs/design/auto-update.md §8）。</summary>
     public UpdateRecord Update { get; set; } = new();
+
+    /// <summary>把项目移到最近使用的最前面（超出上限的丢弃）。</summary>
+    public void TouchRecentWorkspace(string path)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        RecentWorkspaces.RemoveAll(p => string.Equals(p, path, comparison));
+        RecentWorkspaces.Insert(0, path);
+        if (RecentWorkspaces.Count > 32)
+        {
+            RecentWorkspaces.RemoveRange(32, RecentWorkspaces.Count - 32);
+        }
+    }
 }
 
 public sealed class UpdateRecord

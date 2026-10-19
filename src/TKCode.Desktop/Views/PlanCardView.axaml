@@ -1,0 +1,64 @@
+<!--
+  转录里的计划卡片（docs/design/plan-mode.md §14.2）：exit_plan_mode / Claude ExitPlanMode，独立显示，不收进活动组。
+  头部：计划 · 文件名 · 结局；正文默认只显示前 8 行，展开后是完整的渲染计划；“在编辑器中打开”。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:smv="using:StreamMark.Avalonia"
+             xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:controls="using:TKCode.Desktop.Controls"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.PlanCardView"
+             x:DataType="vm:PlanCardViewModel">
+    <Border Classes="card" Padding="14,10" Margin="0,4">
+        <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <icons:LucideIcon Kind="ClipboardCheck" Width="14" Height="14" VerticalAlignment="Center"
+                                  StrokeBrush="{DynamicResource TKCode.TextSecondary}" />
+                <TextBlock Grid.Column="1" Classes="strong" Text="{Binding Title}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+                <!-- 结局在前，文件名最后：窄的时候只截断文件名 -->
+                <DockPanel Grid.Column="2" Margin="8,0" VerticalAlignment="Center">
+                    <controls:DotSpinner DockPanel.Dock="Left" Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center" IsVisible="{Binding IsPending}" />
+                    <icons:LucideIcon DockPanel.Dock="Left" Kind="Check" Width="12" Height="12" Margin="0,0,5,0" VerticalAlignment="Center"
+                                      StrokeBrush="{DynamicResource TKCode.Success}" IsVisible="{Binding IsApproved}" />
+                    <TextBlock DockPanel.Dock="Left" Classes="tertiary" Text="{Binding StatusText}" FontSize="12" VerticalAlignment="Center" />
+                    <Border DockPanel.Dock="Left" Classes="kbd" Margin="8,0,0,0" IsVisible="{Binding IsEdited}">
+                        <TextBlock Text="{loc:TKCodeLangResource PlanReviewEdited}" />
+                    </Border>
+                    <TextBlock DockPanel.Dock="Left" Classes="tertiary" Text="·" Margin="8,0" VerticalAlignment="Center" IsVisible="{Binding HasPath}" />
+                    <TextBlock Classes="secondary" Text="{Binding FileName}" FontSize="12" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" IsVisible="{Binding HasPath}" ToolTip.Tip="{Binding Path}" />
+                </DockPanel>
+                <Button Grid.Column="3" Theme="{StaticResource TKCode.TextButton}" Padding="4,0" VerticalAlignment="Center"
+                        Command="{Binding OpenCommand}" IsVisible="{Binding HasPath}" ToolTip.Tip="{Binding Path}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <icons:LucideIcon Kind="ExternalLink" Width="12" Height="12" VerticalAlignment="Center" />
+                        <TextBlock Text="{loc:TKCodeLangResource PlanReviewOpenInEditor}" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <!-- 退回时的反馈（引用样式）；出错时是错误文本 -->
+            <Border IsVisible="{Binding HasFeedback}" BorderBrush="{DynamicResource TKCode.TreeLine}" BorderThickness="2,0,0,0"
+                    Padding="10,2" Margin="22,0,0,0">
+                <SelectableTextBlock Text="{Binding Feedback}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TKCode.TextSecondary}" />
+            </Border>
+            <!-- 计划正文：收起时前 8 行，展开后完整 -->
+            <Border IsVisible="{Binding HasPlan}" Background="{DynamicResource TKCode.CodeBg}" CornerRadius="{StaticResource TKCode.RadiusSmall}"
+                    Padding="14,8,14,10" Margin="22,0,0,0">
+                <StackPanel Spacing="4">
+                    <smv:MarkdownView Markdown="{Binding BodyMarkdown}" HorizontalAlignment="Stretch" />
+                    <Button Theme="{StaticResource TKCode.TextButton}" Padding="0" HorizontalAlignment="Left"
+                            Command="{Binding ToggleCommand}" IsVisible="{Binding HasMore}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <icons:LucideIcon Kind="ChevronRight" Width="11" Height="11" VerticalAlignment="Center"
+                                              motion:Turn.IsOn="{Binding IsExpanded}" />
+                            <TextBlock Text="{Binding ToggleText}" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Border>
+</UserControl>

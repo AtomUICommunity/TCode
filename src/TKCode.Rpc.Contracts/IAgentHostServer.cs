@@ -76,6 +76,9 @@ public interface IAgentHostServer
     /// <summary>压缩上下文（/compact，仅内置 Agent）：空闲时立即开始，运行中则在下一次模型请求前执行。进度以会话事件推送。</summary>
     Task CompactAsync(string sessionId, string? instructions, CancellationToken cancellationToken = default);
 
+    /// <summary>上下文占用：当前 token 数、按来源分类（仅内置 Agent）与整个会话的提示缓存命中率。</summary>
+    Task<ContextUsageDto> GetContextUsageAsync(string sessionId, CancellationToken cancellationToken = default);
+
     /// <summary>切换模型，返回按新模型修正后的会话参数。</summary>
     Task<SessionOptionsDto> SetModelAsync(string sessionId, string modelId, CancellationToken cancellationToken = default);
 
@@ -149,9 +152,15 @@ public interface IAgentHostClient
     /// 不受权限档位影响，从不自动回答；Host 取消请求时 UI 必须收起问答面板。
     /// </summary>
     Task<UserInputResponse> RequestUserInputAsync(UserInputRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 计划审批（内置 exit_plan_mode、Claude ExitPlanMode；docs/design/plan-mode.md §13.1）。
+    /// 不受权限档位影响，从不自动批准；Host 取消请求时 UI 必须收起审批面板。
+    /// </summary>
+    Task<PlanReviewResponse> ReviewPlanAsync(PlanReviewRequest request, CancellationToken cancellationToken = default);
 }
 
 public static class RpcProtocol
 {
-    public const int Version = 20;
+    public const int Version = 23;
 }

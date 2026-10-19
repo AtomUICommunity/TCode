@@ -215,9 +215,10 @@ Linux 没有安装程序。在 Unix 上，运行中的文件可以被改名（�
 ### 9.1 系统托盘
 
 - `Services/AppTray.cs`：Avalonia `TrayIcon`（Windows 通知区域、macOS 菜单栏、Linux StatusNotifier）。
-- 菜单：显示 TKCode / 更新项 / 打开设置 / 退出 TKCode。更新项随状态变化：「检查更新」→「下载 TKCode x」→「正在下载 …」（禁用）→「安装 TKCode x 并重启」；不支持应用内安装时为「TKCode x 可用」（打开窗口）。
+- 菜单：显示 TKCode / 新会话 / 项目 ▸（最近项目）/ 更新项 / 打开设置 / 退出 TKCode。Dock 右键菜单与 Windows 任务栏跳转列表见 [system-menus.md](system-menus.md)。更新项随状态变化：「检查更新」→「下载 TKCode x」→「正在下载 …」（禁用）→「安装 TKCode x 并重启」；不支持应用内安装时为「TKCode x 可用」（打开窗口）。
 - 关闭窗口：只拦截 `WindowCloseReason.WindowClosing`（关闭按钮、Alt+F4、⌘W），隐藏窗口；退出程序（`Shutdown`）、系统关机照常关闭。macOS 点 Dock 图标（`ActivationKind.Reopen`）重新显示窗口。
 - 设置 › 通用：「关闭窗口时保留在托盘」（默认开启）。
+- 单实例（`Services/SingleInstance.cs`）：隐藏在托盘时再启动 TKCode 只会显示已有窗口。应用内更新在 macOS / Linux 上启动新版本之前调用 `SingleInstance.Release()`，否则新进程会把命令转发给正在退出的旧进程。
 
 ## 10. 测试与验证
 

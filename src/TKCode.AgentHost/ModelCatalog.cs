@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using TKCode.AgentHost.Catalog;
+using TKCode.Ai;
 using TKCode.Ai.Fake;
 using TKCode.Ai.Models;
 using TKCode.Config;
@@ -16,8 +17,11 @@ namespace TKCode.AgentHost;
 internal sealed partial class CompatJsonContext : JsonSerializerContext;
 
 /// <summary>厂商下的一个模型（含设置页需要的来源信息）。</summary>
+/// <param name="Api">该模型实际使用的协议。</param>
+/// <param name="ApiOverridden">协议与厂商默认值不同（用户在设置中指定，或目录中的固定规则）。</param>
+/// <param name="DefaultApi">没有用户覆盖时的协议（厂商默认值，或目录中的固定规则）。</param>
 public sealed record ProviderModelState(ModelInfo Model, bool Enabled, CatalogModel? Catalog, bool IsDiscovered, bool HasOverride,
-    string? Api = null, bool ApiOverridden = false)
+    string? Api = null, bool ApiOverridden = false, string? DefaultApi = null)
 {
     public bool InCatalog => Catalog is not null;
 }
@@ -81,6 +85,18 @@ public sealed class ModelCatalog
     public IReadOnlyList<string> Errors => _current.Errors;
     public IReadOnlyList<string> Warnings => _current.Warnings;
 
+    /// <summary>settings.json 的 promptCacheTtl（缓存断点有效期，全局）。文件有错误时沿用上一次的值。</summary>
+    public PromptCacheTtl CacheTtl { get; private set; }
+
+    /// <summary>settings.json 的 agent.shell.profile（bash 工具使用的 shell，null 为默认选择）。文件有错误时沿用上一次的值。</summary>
+    public string? ShellProfile { get; private set; }
+
+    /// <summary>快速模型引用；文件有错误时沿用上一次成功解析的配置。</summary>
+    public string? FastModelRef { get; private set; }
+
+    /// <summary>主模型引用（新会话的默认模型，可能不可用）。</summary>
+    public string? DefaultModelRef { get; private set; }
+
     /// <summary>重新读取 settings.json。返回 false 表示文件有错误（沿用旧配置）。</summary>
     public bool Reload()
     {
@@ -106,6 +122,10 @@ public sealed class ModelCatalog
                     _logger.LogWarning("providers.{Provider}: {Errors}", provider.Id, string.Join("; ", provider.Errors));
                 }
                 _current = new Snapshot(models, providers, [], result.Warnings);
+                CacheTtl = result.Settings.PromptCacheTtl == "1h" ? PromptCacheTtl.OneHour : PromptCacheTtl.FiveMinutes;
+                ShellProfile = result.Settings.Agent?.Shell?.Profile;
+                DefaultModelRef = result.Settings.Model;
+                FastModelRef = result.Settings.FastModel;
                 foreach (var warning in result.Warnings)
                 {
                     _logger.LogWarning("settings.json: {Warning}", warning);
@@ -200,9 +220,6 @@ public sealed class ModelCatalog
 
     public static string RefOf(ModelInfo model) => $"{model.Provider}/{model.Id}";
 
-    /// <summary>settings.json 中 model 字段指定的默认模型（可能不可用）。</summary>
-    public string? DefaultModelRef => SettingsFile.Load().Settings?.Model;
-
     private List<ProviderState> Build(TKCodeSettings settings)
     {
         var states = new List<ProviderState>();
@@ -211,6 +228,8 @@ public sealed class ModelCatalog
             .Concat(BuiltInCatalog.Recommended)
             // 未配置但检测到环境变量 Key 的内置厂商也列出来
             .Concat(_builtIn.Providers.Where(p => p.Value.Env.Any(v => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(v)))).Select(p => p.Key))
+            // 用户在设置页移除的厂商（hidden）完全不出现，直到重新添加
+            .Where(id => configured.GetValueOrDefault(id)?.Hidden != true)
             .Distinct(StringComparer.Ordinal);
         foreach (var id in ids)
         {
@@ -242,15 +261,15 @@ public sealed class ModelCatalog
         var providerCompat = user?.Compat;
         var headers = user?.Headers?.ToDictionary(h => h.Key, h => Secrets.Resolve(h.Value).Value ?? "", StringComparer.OrdinalIgnoreCase);
 
-        // 自定义厂商与本地服务：模型列表可以通过 GET /models 获取，models 可以省略（省略时启用全部发现的模型）
-        var supportsDiscovery = (catalog is null || catalog.KeyOptional) && wireApi is not null && !string.IsNullOrWhiteSpace(baseUrl);
+        // 自定义厂商、本地服务与声明了 Discover 的内置厂商：模型列表可以通过 GET /models 获取，models 可以省略（省略时启用全部发现的模型）
+        var supportsDiscovery = (catalog is null || catalog.KeyOptional || catalog.Discover) && wireApi is not null && !string.IsNullOrWhiteSpace(baseUrl);
         var discovered = supportsDiscovery ? _discovery.Cached(id) : null;
-        var discoveredIds = discovered?.Ids ?? [];
+        var discoveredIds = (discovered?.Ids ?? []).Where(m => catalog?.IsExcluded(m) != true).ToArray();
         var enabledIds = user?.Models is { } listed
             ? listed.Keys.ToHashSet(StringComparer.Ordinal)
             : supportsDiscovery ? discoveredIds.ToHashSet(StringComparer.Ordinal)
             : (catalog is null ? [] : _builtIn.FeaturedModels(catalog).ToHashSet(StringComparer.Ordinal));
-        if (user is not null && catalog is null && user.Models is not { Count: > 0 } && discovered is { Success: false })
+        if (user is not null && (catalog is null || catalog.Discover) && user.Models is not { Count: > 0 } && discovered is { Success: false })
         {
             errors.Add($"no models: list them in \"models\" or fix model discovery ({discovered.Error}).");
         }
@@ -269,15 +288,16 @@ public sealed class ModelCatalog
             {
                 break;
             }
-            // 模型可以单独指定协议与 Base URL，默认跟随厂商
-            var modelApi = fromUser?.Api ?? api;
+            // 模型可以单独指定协议与 Base URL；默认依次为目录中的固定规则、厂商协议
+            var defaultApi = catalog?.ApiFor(modelId) ?? api;
+            var modelApi = fromUser?.Api ?? defaultApi;
             var modelWireApi = KnownApisShort.ToWireApi(modelApi) ?? wireApi;
             var modelBaseUrl = NormalizeBaseUrl(modelApi, fromUser?.BaseUrl ?? baseUrl);
             try
             {
                 models.Add(new ProviderModelState(BuildModel(id, modelId, modelWireApi, modelBaseUrl, headers, fromCatalog, fromUser, providerCompat),
                     enabledIds.Contains(modelId), fromCatalog, discoveredIds.Contains(modelId), fromUser is not null && fromUser != new ModelSettings(),
-                    modelApi, fromUser?.Api is not null));
+                    modelApi, fromUser?.Api is not null || modelApi != api, defaultApi));
             }
             catch (JsonException ex)
             {

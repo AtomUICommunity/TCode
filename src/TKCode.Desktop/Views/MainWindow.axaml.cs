@@ -7,9 +7,12 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using StreamMark.Avalonia.Extensions;
+using StreamMark.Avalonia.Rendering;
 using TKCode.Desktop.Controls;
 using TKCode.Desktop.Localization;
+using TKCode.Desktop.Services;
 using TKCode.Desktop.ViewModels;
 
 namespace TKCode.Desktop.Views;
@@ -17,6 +20,9 @@ namespace TKCode.Desktop.Views;
 public partial class MainWindow : AtomUI.Desktop.Controls.Window
 {
     private const double HeaderHeight = 44;
+    // 与 MainWindow.axaml 中的 MinWidth / MinHeight 一致；窗口最小尺寸随界面缩放按比例放大，内容的可用逻辑尺寸才不会小于设计下限
+    private const double BaseMinWidth = 880;
+    private const double BaseMinHeight = 560;
     private const double MacTrafficLightInset = 78;
     private const double CaptionButtonsWidth = 138;
 
@@ -28,15 +34,9 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
     private const double EditorMinWidth = 320;
     private const double ExplorerMinWidth = 200;
     private readonly TranscriptAdapter _transcript;
-
-    private void OnSessionListScrolled(object? sender, ScrollChangedEventArgs e)
-    {
-        if (e.Source is Avalonia.Controls.ScrollViewer viewer && DataContext is MainWindowViewModel vm && vm.Conversation.HasMoreSessions &&
-            viewer.Offset.Y + viewer.Viewport.Height >= viewer.Extent.Height - 120)
-        {
-            vm.Conversation.LoadMoreSessionsCommand.Execute(null);
-        }
-    }
+    private Point _markdownPress;
+    private bool _markdownArmed;
+    private static readonly Cursor CodePathCursor = new(StandardCursorType.Hand);
 
     /// <summary>双击会话标题：行内重命名。</summary>
     private void OnSessionDoubleTapped(object? sender, TappedEventArgs e)
@@ -111,7 +111,89 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
         {
             e.Handled = true;
             _ = OpenLinkAsync(uri, e.RequiresConfirmation);
+            return;
         }
+        if (DataContext is MainWindowViewModel vm)
+        {
+            // 会话继承工作目录，Markdown 文件预览则继承文件所在目录。
+            var directory = e.Source is AvaloniaObject source ? MarkdownServices.GetImageBaseUri(source) : null;
+            directory ??= vm.Conversation.Active?.Cwd ?? vm.Conversation.Workspace?.Path;
+            if (MarkdownLinks.ResolveFile(e.Url, directory) is { } path)
+            {
+                e.Handled = true;
+                vm.Workbench.OpenFile(path);
+            }
+        }
+    }
+
+    private void OnMarkdownPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _markdownPress = e.GetPosition(this);
+            _markdownArmed = true;
+        }
+    }
+
+    private void OnMarkdownPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (FindSegment(e.Source) is not { } segment || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+        if (MarkdownCodePaths.Hit(segment, e.GetPosition(segment), MarkdownCodePaths.Directory(segment, vm)) is not null)
+        {
+            segment.Cursor = CodePathCursor;
+        }
+    }
+
+    private void OnMarkdownPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_markdownArmed)
+        {
+            return;
+        }
+        _markdownArmed = false;
+        if (e.Handled || e.InitialPressMouseButton != MouseButton.Left)
+        {
+            return;
+        }
+        var delta = e.GetPosition(this) - _markdownPress;
+        if (Math.Abs(delta.X) + Math.Abs(delta.Y) >= 3 || FindSegment(e.Source) is not { } segment)
+        {
+            return;
+        }
+        if (TryOpenCodeSpan(segment, e.GetPosition(segment)))
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>点击行内代码中的文件路径时，在右侧工作区打开预览。</summary>
+    internal bool TryOpenCodeSpan(TextSegmentView segment, Point local)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return false;
+        }
+        if (MarkdownCodePaths.Hit(segment, local, MarkdownCodePaths.Directory(segment, vm)) is not { } path)
+        {
+            return false;
+        }
+        vm.Workbench.OpenFile(path);
+        return true;
+    }
+
+    private static TextSegmentView? FindSegment(object? source)
+    {
+        for (var visual = source as Visual; visual is not null; visual = visual.GetVisualParent())
+        {
+            if (visual is TextSegmentView segment)
+            {
+                return segment;
+            }
+        }
+        return null;
     }
 
     // 链接文字看起来是另一个地址（例如 [https://github.com](https://evil.example)）时先确认
@@ -136,6 +218,9 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             _explorerWidth = MainGrid.ColumnDefinitions[4].Width.Value;
         };
         ConfigureChrome();
+        UiZoom.Changed += ApplyZoom;
+        Closed += (_, _) => UiZoom.Changed -= ApplyZoom;
+        ApplyZoom();
 
         // 会话视图：渲染扩展（公式、代码高亮、图表）对窗口内所有 Markdown 生效
         MarkdownServices.SetServices(this, MarkdownSetup.Services);
@@ -148,8 +233,6 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             UpdateScrollToBottom();
             _ = LoadEarlierIfNearTopAsync();
         };
-        // 侧栏会话列表滚到接近底部时加载下一页
-        SessionList.AddHandler(Avalonia.Controls.ScrollViewer.ScrollChangedEvent, OnSessionListScrolled);
         // 侧栏开合动画期间会话视图固定宽度（降载：长会话不逐帧重新排版），结束后重排一次
         SidebarReveal.AnimatingChanged += (reveal, animating) =>
         {
@@ -165,20 +248,25 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
         // 系统“减少动态效果”可能在后台被修改
         Activated += (_, _) => Motion.MotionSettings.RefreshSystem();
         AddHandler(KeyDownEvent, OnWindowKeyDown, RoutingStrategies.Tunnel);
-        // 把图片拖到消息区域：同样作为输入框的附件（输入框本身目标太小）
+        // 把文件拖到消息区域：同样交给输入框（图片为附件，其他文件为绝对路径；输入框本身目标太小）
         DragDrop.SetAllowDrop(Transcript, true);
         Transcript.AddHandler(DragDrop.DragEnterEvent, (_, e) => DockedComposer.OnDragOver(e));
         Transcript.AddHandler(DragDrop.DragOverEvent, (_, e) => DockedComposer.OnDragOver(e));
         Transcript.AddHandler(DragDrop.DragLeaveEvent, (_, _) => DockedComposer.SetDropTarget(false));
         Transcript.AddHandler(DragDrop.DropEvent, (_, e) => DockedComposer.OnDrop(e));
-        // Markdown 链接（会话与文件预览，含图片链接 / 徽章）：网页与邮件交给系统打开
+        // Markdown 链接（会话与文件预览，含图片链接 / 徽章）：文件在右侧预览，网页与邮件交给系统打开
         AddHandler(StreamMark.Avalonia.MarkdownView.LinkClickedEvent, OnMarkdownLinkClicked);
+        // 行内代码里的文件路径：悬停为手型，点击在右侧打开预览（拖拽选择文字时不打开）
+        AddHandler(PointerPressedEvent, OnMarkdownPointerPressed, RoutingStrategies.Bubble);
+        AddHandler(PointerMovedEvent, OnMarkdownPointerMoved, RoutingStrategies.Bubble);
+        AddHandler(PointerReleasedEvent, OnMarkdownPointerReleased, RoutingStrategies.Bubble);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.Conversation.ConfirmDangerAsync = ConfirmDangerAsync;
                 vm.Workbench.ConfirmAsync = ConfirmAsync;
+                vm.ConfirmAsync = ConfirmAsync;
                 vm.Conversation.SetClipboardAsync = text => Clipboard?.SetTextAsync(text) ?? Task.CompletedTask;
                 // /role：打开当前可见的那个模式选择器
                 vm.Conversation.RolePickerRequested += () => (DockedRolePicker.IsEffectivelyVisible ? DockedRolePicker : EmptyRolePicker).Toggle();
@@ -225,26 +313,8 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
                 vm.Palette.NewProjectFolderRequested += () => OnAddProjectClick(null, new RoutedEventArgs());
                 UpdateHeaderInsets(vm);
                 UpdateColumns(vm, animate: false);
-                // 启动加载页：首次连接 Agent Host、加载模型与会话后退场；最多等 12 秒（失败信息显示在主界面）
-                if (vm.Conversation.IsInitialized)
-                {
-                    Splash.Dismiss();
-                }
-                else
-                {
-                    vm.Conversation.PropertyChanged += (_, e) =>
-                    {
-                        if (e.PropertyName == nameof(ConversationViewModel.IsInitialized) && vm.Conversation.IsInitialized)
-                        {
-                            Splash.Dismiss();
-                        }
-                    };
-                    DispatcherTimer.RunOnce(Splash.Dismiss, TimeSpan.FromSeconds(12));
-                }
             }
         };
-        // 加载页退场时主界面淡入（只动透明度：AtomUI 弹层按触发按钮当时的变换后边界定位，入场期间打开下拉不会偏位）
-        Splash.Dismissing += () => Motion.Presence.PlayEnter(AppPage, Motion.PresenceEffect.Fade);
     }
 
     /// <summary>
@@ -267,9 +337,29 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
         }
     }
 
+    /// <summary>
+    /// 界面缩放变化：窗口最小尺寸、macOS 标题栏高度提示与红绿灯避让宽度都要换算。
+    /// 内容在缩放后的坐标系里排版，而原生红绿灯与窗口边缘不随缩放——避让宽度除以比例，缩放后才落在同一个物理位置。
+    /// </summary>
+    private void ApplyZoom()
+    {
+        var scale = UiZoom.Scale;
+        MinWidth = BaseMinWidth * scale;
+        MinHeight = BaseMinHeight * scale;
+        if (OperatingSystem.IsMacOS())
+        {
+            ExtendClientAreaTitleBarHeightHint = HeaderHeight * scale;
+        }
+        if (DataContext is MainWindowViewModel vm)
+        {
+            UpdateHeaderInsets(vm);
+            UpdateColumns(vm, animate: false);
+        }
+    }
+
     private void UpdateHeaderInsets(MainWindowViewModel vm)
     {
-        var left = OperatingSystem.IsMacOS() ? MacTrafficLightInset : 8;
+        var left = OperatingSystem.IsMacOS() ? MacTrafficLightInset / UiZoom.Scale : 8;
         SidebarHeader.Margin = new Thickness(left, 0, 0, 0);
         SettingsPage.SetTitleBarInset(left);
         MainHeaderLeft.Margin = new Thickness(vm.IsSidebarOpen ? 8 : left, 0, 0, 0);
@@ -325,7 +415,7 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
 
         // 按可用宽度分配：对话栏至少 ConversationMinWidth；文件树未被拖过时不超过 1/4（最大 420），拖过后保持拖出的宽度、
         // 只在放不下时让位；编辑区取剩余与记忆宽度中的较小值
-        var available = MainGrid.Bounds.Width > 0 ? MainGrid.Bounds.Width : Bounds.Width - (vm.IsSidebarOpen ? 256 : 0);
+        var available = MainGrid.Bounds.Width > 0 ? MainGrid.Bounds.Width : Bounds.Width / UiZoom.Scale - (vm.IsSidebarOpen ? 256 : 0);
         var explorerRoom = available - (maximized ? 0 : ConversationMinWidth) - (vm.IsWorkbenchOpen ? EditorMinWidth : 0) - 2;
         var explorerWant = _explorerResized ? _explorerWidth : Math.Min(Math.Min(_explorerWidth, available * 0.25), 420);
         var explorer = vm.IsExplorerOpen ? Math.Max(ExplorerMinWidth, Math.Min(explorerWant, explorerRoom)) : 0;
@@ -472,7 +562,7 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
     private static KeyModifiers CommandModifier => OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
 
     /// <summary>
-    /// 全局快捷键（⌘ 在 Windows / Linux 上为 Ctrl）：⌘K 命令面板、⌘N 新对话、⇧⌘N 新建项目、⌘B 切换侧栏。
+    /// 全局快捷键（⌘ 在 Windows / Linux 上为 Ctrl）：⌘K 命令面板、⌘N 新对话、⇧⌘N 新建项目、⌘B 切换侧栏、⌘+ ⌘- ⌘0 界面缩放。
     /// 命令面板打开时接管 ↑ ↓ ↵ Esc Backspace。
     /// </summary>
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
@@ -520,6 +610,24 @@ public partial class MainWindow : AtomUI.Desktop.Controls.Window
             }
             e.Handled = true;
             return;
+        }
+        // 界面缩放 ⌘+ ⌘- ⌘0：⌘+ 在多数键盘上是 ⇧⌘=，同时接受 ⌘= 与小键盘的 +、-、0
+        var modifiers = e.KeyModifiers;
+        if (modifiers == CommandModifier || modifiers == (CommandModifier | KeyModifiers.Shift))
+        {
+            var zoom = e.Key switch
+            {
+                Key.OemPlus or Key.Add => vm.ZoomInCommand,
+                Key.OemMinus or Key.Subtract when modifiers == CommandModifier => vm.ZoomOutCommand,
+                Key.D0 or Key.NumPad0 when modifiers == CommandModifier => vm.ZoomResetCommand,
+                _ => null,
+            };
+            if (zoom is not null)
+            {
+                zoom.Execute(null);
+                e.Handled = true;
+                return;
+            }
         }
         if (e.KeyModifiers == CommandModifier)
         {

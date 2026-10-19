@@ -28,7 +28,6 @@
     <unit id="AddFavorite"><segment><source>Add to favorites</source><target state="translated">收藏</target></segment></unit>
     <unit id="RemoveFavorite"><segment><source>Remove from favorites</source><target state="translated">取消收藏</target></segment></unit>
     <unit id="NotSupported"><segment><source>Not supported by this model</source><target state="translated">当前模型不支持</target></segment></unit>
-    <unit id="ContextUsageFormat"><segment><source>{0} / {1} tokens used</source><target state="translated">已使用 {0} / {1} tokens</target></segment></unit>
     <unit id="StatusSendFailedFormat"><segment><source>Failed to send: {0}</source><target state="translated">发送失败：{0}</target></segment></unit>
     <unit id="StatusHostDisconnectedFormat"><segment><source>Agent process disconnected: {0}</source><target state="translated">Agent 进程已断开：{0}</target></segment></unit>
     <unit id="StatusHostStartFailedFormat"><segment><source>Could not start the agent process: {0}</source><target state="translated">无法启动 Agent 进程：{0}</target></segment></unit>
@@ -41,6 +40,7 @@
     <unit id="NoProject"><segment><source>Don't work in a project</source><target state="translated">不使用项目</target></segment></unit>
     <unit id="NoProjectName"><segment><source>No project</source><target state="translated">无项目</target></segment></unit>
     <unit id="Sessions"><segment><source>Sessions</source><target state="translated">会话</target></segment></unit>
+    <unit id="SessionsLoadMore"><segment><source>Show more</source><target state="translated">展开更多</target></segment></unit>
     <unit id="NoSessions"><segment><source>No sessions yet</source><target state="translated">还没有会话</target></segment></unit>
     <unit id="NewSession"><segment><source>New session</source><target state="translated">新会话</target></segment></unit>
     <unit id="ToggleSidebar"><segment><source>Toggle sidebar</source><target state="translated">切换侧栏</target></segment></unit>
@@ -116,8 +116,12 @@
     <unit id="ThemeSystem"><segment><source>System</source><target state="translated">跟随系统</target></segment></unit>
     <unit id="ThemeDark"><segment><source>Dark</source><target state="translated">暗色</target></segment></unit>
     <unit id="ThemeLight"><segment><source>Light</source><target state="translated">亮色</target></segment></unit>
-    <unit id="DefaultModelLabel"><segment><source>Default model</source><target state="translated">默认模型</target></segment></unit>
-    <unit id="DefaultModelHint"><segment><source>Used for new sessions when you haven't picked a model yet.</source><target state="translated">新会话在你还没选择模型时使用。</target></segment></unit>
+    <unit id="ModelConfiguration"><segment><source>Model configuration</source><target state="translated">模型配置</target></segment></unit>
+    <unit id="DefaultModelLabel"><segment><source>Primary model</source><target state="translated">主模型</target></segment></unit>
+    <unit id="DefaultModelHint"><segment><source>The default model for new sessions. You can choose another model in each session.</source><target state="translated">新会话默认使用的模型，可在会话中单独切换。</target></segment></unit>
+    <unit id="FastModelLabel"><segment><source>Fast model</source><target state="translated">快速模型</target></segment></unit>
+    <unit id="FastModelHint"><segment><source>Used for subagents and conversation titles. Choose an API model, or follow the session model.</source><target state="translated">子代理和会话标题默认使用，可选择 API 模型；未配置时跟随会话模型。</target></segment></unit>
+    <unit id="FollowSessionModel"><segment><source>Follow session</source><target state="translated">跟随会话</target></segment></unit>
     <unit id="FirstAvailableModel"><segment><source>First available model</source><target state="translated">第一个可用模型</target></segment></unit>
     <unit id="SettingsFileLabel"><segment><source>Settings file</source><target state="translated">配置文件</target></segment></unit>
     <unit id="SettingsFileHint"><segment><source>Edits here are written to settings.json; changes made in an editor apply automatically. Comments in the file are not preserved when saving from here.</source><target state="translated">这里的修改会写入 settings.json；在编辑器里修改也会自动生效。从这里保存时，文件中的注释不会保留。</target></segment></unit>
@@ -138,6 +142,10 @@
     <unit id="KeyNotRequired"><segment><source>No key required</source><target state="translated">无需 Key</target></segment></unit>
     <unit id="Save"><segment><source>Save</source><target state="translated">保存</target></segment></unit>
     <unit id="Remove"><segment><source>Remove</source><target state="translated">移除</target></segment></unit>
+    <unit id="DiscardDraft"><segment><source>Discard</source><target state="translated">放弃</target></segment></unit>
+    <unit id="ProviderRemoveConfirmTitle"><segment><source>Remove “{0}”?</source><target state="translated">移除“{0}”？</target></segment></unit>
+    <unit id="ProviderRemoveConfirmText"><segment><source>This provider's configuration, including its API key, will be deleted from settings.json. This can't be undone.</source><target state="translated">该厂商在 settings.json 中的配置（包括 API Key）将被删除，无法恢复。</target></segment></unit>
+    <unit id="ProviderHideConfirmText"><segment><source>This provider is detected from the environment variable {0}. It will be hidden from TKCode; the variable itself is not changed. You can add it again later.</source><target state="translated">该厂商由环境变量 {0} 检测得到。移除后将在 TKCode 中隐藏，环境变量本身不会被修改，之后可以重新添加。</target></segment></unit>
     <unit id="ClearKey"><segment><source>Clear key</source><target state="translated">清除 Key</target></segment></unit>
     <unit id="BaseUrlLabel"><segment><source>Base URL</source><target state="translated">Base URL</target></segment></unit>
     <unit id="ProtocolLabel"><segment><source>Protocol</source><target state="translated">协议</target></segment></unit>
@@ -281,7 +289,7 @@
     <unit id="PermissionFull"><segment><source>Full access</source><target state="translated">完全授权</target></segment></unit>
     <unit id="PermissionFullDesc"><segment><source>No approvals and no sandbox</source><target state="translated">不询问、不限沙箱</target></segment></unit>
     <unit id="PermissionFullConfirmTitle"><segment><source>Enable full access?</source><target state="translated">确定开启完全授权？</target></segment></unit>
-    <unit id="PermissionFullConfirmText"><segment><source>The agent can run any command and change any file on this computer without asking. Use it only in trusted projects. New sessions don't keep this setting.</source><target state="translated">Agent 将不经询问执行任意命令、修改本机任意文件。仅在可信的项目中使用。新会话不会沿用此设置。</target></segment></unit>
+    <unit id="PermissionFullConfirmText"><segment><source>The agent can run any command and change any file on this computer without asking. Use it only in trusted projects. This project keeps the setting for new and reopened sessions.</source><target state="translated">Agent 将不经询问执行任意命令、修改本机任意文件。仅在可信的项目中使用。本项目会记住此设置，新建和重新打开的会话都会沿用。</target></segment></unit>
     <unit id="PermissionFullConfirm"><segment><source>Enable full access</source><target state="translated">开启完全授权</target></segment></unit>
     <unit id="SettingsAgents"><segment><source>Agents</source><target state="translated">智能体</target></segment></unit>
     <unit id="AgentsHint"><segment><source>External agents are detected automatically from their CLIs. No configuration is needed — install and sign in with the vendor's CLI.</source><target state="translated">外部智能体会通过其命令行工具自动检测，无需配置：用厂商的 CLI 安装并登录即可。</target></segment></unit>
@@ -350,6 +358,8 @@
     <unit id="ImageFileTypeName"><segment><source>Images</source><target state="translated">图片</target></segment></unit>
     <unit id="CodeExpandFormat"><segment><source>Show all {0} lines</source><target state="translated">展开全部 {0} 行</target></segment></unit>
     <unit id="CodeCollapse"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
+    <unit id="UserMessageExpand"><segment><source>Show more</source><target state="translated">展开</target></segment></unit>
+    <unit id="UserMessageCollapse"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
     <unit id="LinkConfirmTitle"><segment><source>Open this link?</source><target state="translated">打开这个链接？</target></segment></unit>
     <unit id="LinkConfirmMessageFormat"><segment><source>The link text points somewhere else. It will actually open {0}</source><target state="translated">链接文字和实际地址不一致，实际将打开 {0}</target></segment></unit>
     <unit id="LinkOpen"><segment><source>Open</source><target state="translated">打开</target></segment></unit>
@@ -369,17 +379,16 @@
     <unit id="ReduceMotionHint"><segment><source>Turn off interface animations. The system Reduce Motion setting is honored too.</source><target state="translated">关闭界面动画；系统的“减少动态效果”同样生效。</target></segment></unit>
     <unit id="OriginalImagesLabel"><segment><source>Full-resolution images</source><target state="translated">图片原始清晰度</target></segment></unit>
     <unit id="OriginalImagesHint"><segment><source>Show Markdown images at full resolution. Off by default: images are decoded at their display size to save memory, and clicking one still opens the original.</source><target state="translated">Markdown 中的图片按原始清晰度显示。默认关闭：按显示尺寸压缩解码以节省内存，点击图片查看的仍是原图。</target></segment></unit>
-    <unit id="SplashLoading"><segment><source>Warming up the agent…</source><target state="translated">正在唤醒智能体…</target></segment></unit>
-    <unit id="SplashQuip1"><segment><source>Fixing one bug — three more come to say hi</source><target state="translated">程序员修 bug——越修越多</target></segment></unit>
-    <unit id="SplashQuip2"><segment><source>A programmer counting sheep — 0, 1, 10, 11, 100…</source><target state="translated">程序员数羊——0、1、10、11、100……</target></segment></unit>
-    <unit id="SplashQuip3"><segment><source>Sesame in bloom — every commit a notch higher</source><target state="translated">芝麻开花——节节高</target></segment></unit>
-    <unit id="SplashQuip4"><segment><source>Ask until you hit the bottom of the pot — the agent never gets tired</source><target state="translated">打破砂锅——问到底</target></segment></unit>
-    <unit id="SplashQuip5"><segment><source>Eight immortals crossing the sea — pick your model, show your magic</source><target state="translated">八仙过海——各显神通</target></segment></unit>
-    <unit id="SplashQuip6"><segment><source>Code without comments — a mystery even to its author</source><target state="translated">写代码不写注释——自己都看不懂</target></segment></unit>
-    <unit id="SplashQuip7"><segment><source>Shipping on a Friday evening — brave, very brave</source><target state="translated">周五晚上上线——胆子不小</target></segment></unit>
-    <unit id="SplashQuip8"><segment><source>Dumplings in a teapot — the ideas are in there, let the agent pour them out</source><target state="translated">茶壶里煮饺子——有货倒不出</target></segment></unit>
-    <unit id="SplashQuip9"><segment><source>Scallions with tofu — clean and clear, like a good diff</source><target state="translated">小葱拌豆腐——一清二白</target></segment></unit>
-    <unit id="SplashQuip10"><segment><source>A rubber duck on the desk — listens to everything, judges nothing</source><target state="translated">桌上的小黄鸭——光听不说</target></segment></unit>
+    <unit id="WelcomeQuip1"><segment><source>Fixing one bug — three more come to say hi</source><target state="translated">程序员修 bug——越修越多</target></segment></unit>
+    <unit id="WelcomeQuip2"><segment><source>A programmer counting sheep — 0, 1, 10, 11, 100…</source><target state="translated">程序员数羊——0、1、10、11、100……</target></segment></unit>
+    <unit id="WelcomeQuip3"><segment><source>Sesame in bloom — every commit a notch higher</source><target state="translated">芝麻开花——节节高</target></segment></unit>
+    <unit id="WelcomeQuip4"><segment><source>Ask until you hit the bottom of the pot — the agent never gets tired</source><target state="translated">打破砂锅——问到底</target></segment></unit>
+    <unit id="WelcomeQuip5"><segment><source>Eight immortals crossing the sea — pick your model, show your magic</source><target state="translated">八仙过海——各显神通</target></segment></unit>
+    <unit id="WelcomeQuip6"><segment><source>Code without comments — a mystery even to its author</source><target state="translated">写代码不写注释——自己都看不懂</target></segment></unit>
+    <unit id="WelcomeQuip7"><segment><source>Shipping on a Friday evening — brave, very brave</source><target state="translated">周五晚上上线——胆子不小</target></segment></unit>
+    <unit id="WelcomeQuip8"><segment><source>Dumplings in a teapot — the ideas are in there, let the agent pour them out</source><target state="translated">茶壶里煮饺子——有货倒不出</target></segment></unit>
+    <unit id="WelcomeQuip9"><segment><source>Scallions with tofu — clean and clear, like a good diff</source><target state="translated">小葱拌豆腐——一清二白</target></segment></unit>
+    <unit id="WelcomeQuip10"><segment><source>A rubber duck on the desk — listens to everything, judges nothing</source><target state="translated">桌上的小黄鸭——光听不说</target></segment></unit>
     <unit id="MarkdownMenuCopy"><segment><source>Copy</source><target state="translated">复制</target></segment></unit>
     <unit id="MarkdownMenuCopyAsMarkdown"><segment><source>Copy as Markdown</source><target state="translated">复制为 Markdown</target></segment></unit>
     <unit id="MarkdownMenuSelectAll"><segment><source>Select All</source><target state="translated">全选</target></segment></unit>
@@ -551,6 +560,7 @@
     <unit id="TerminalPressEnterToRestart"><segment><source>Press Enter to start a new shell.</source><target state="translated">按 Enter 启动新的 shell。</target></segment></unit>
     <unit id="TerminalLost"><segment><source>The terminal service stopped. Press Enter to reopen the terminal in the same folder.</source><target state="translated">终端服务已停止。按 Enter 在相同目录重新打开终端。</target></segment></unit>
     <unit id="TerminalStartFailedFormat"><segment><source>Could not start the terminal: {0}</source><target state="translated">无法启动终端：{0}</target></segment></unit>
+    <unit id="TerminalNativeMissing"><segment><source>This build is missing the terminal library (libghostty-vt). Run tools/terminal/build-ghostty.sh, then rebuild.</source><target state="translated">此构建缺少终端库（libghostty-vt）。请运行 tools/terminal/build-ghostty.sh 后重新构建。</target></segment></unit>
     <unit id="TerminalRunningProgram"><segment><source>A program is running in this terminal.</source><target state="translated">此终端中有程序在运行。</target></segment></unit>
     <unit id="TerminalPasteNeedsConfirm"><segment><source>The paste contains line breaks, so it was not sent.</source><target state="translated">粘贴内容包含换行，已取消发送。</target></segment></unit>
     <unit id="TerminalResyncing"><segment><source>Resynchronizing the terminal…</source><target state="translated">正在重新同步终端…</target></segment></unit>
@@ -608,12 +618,16 @@
     <unit id="TrayQuit"><segment><source>Quit TKCode</source><target state="translated">退出 TKCode</target></segment></unit>
     <unit id="TrayDownloadUpdateFormat"><segment><source>Download TKCode {0}</source><target state="translated">下载 TKCode {0}</target></segment></unit>
     <unit id="TrayInstallUpdateFormat"><segment><source>Install TKCode {0} and restart</source><target state="translated">安装 TKCode {0} 并重启</target></segment></unit>
+    <unit id="TrayProjects"><segment><source>Projects</source><target state="translated">项目</target></segment></unit>
+    <unit id="TrayNoProjects"><segment><source>No projects yet</source><target state="translated">暂无项目</target></segment></unit>
     <unit id="CloseToTrayLabel"><segment><source>Keep running in the tray</source><target state="translated">关闭窗口时保留在托盘</target></segment></unit>
     <unit id="CloseToTrayHint"><segment><source>Closing the window hides TKCode to the system tray and keeps sessions running. Quit from the tray menu.</source><target state="translated">关闭窗口后 TKCode 隐藏到系统托盘，会话继续运行；从托盘菜单退出。</target></segment></unit>
     <unit id="UpdateCheckFailedFormat"><segment><source>Check failed: {0}</source><target state="translated">检查失败：{0}</target></segment></unit>
     <unit id="UpdatePrereleaseLabel"><segment><source>Receive pre-release updates</source><target state="translated">接收预发布版本更新</target></segment></unit>
     <unit id="UpdatePrereleaseHint"><segment><source>Also offer versions marked as Pre-release on GitHub. They may be less stable than regular releases.</source><target state="translated">也接收 GitHub 上标记为预发布（Pre-release）的版本，可能不如正式版稳定。</target></segment></unit>
     <unit id="ChangesFilesChanged"><segment><source>{0} files changed</source><target state="translated">{0} 个文件已更改</target></segment></unit>
+    <unit id="ChangesShowMore"><segment><source>Show {0} more</source><target state="translated">还有 {0} 个文件</target></segment></unit>
+    <unit id="ChangesShowLess"><segment><source>Show less</source><target state="translated">收起</target></segment></unit>
     <unit id="ChangesRevert"><segment><source>Revert</source><target state="translated">撤销</target></segment></unit>
     <unit id="ChangesReview"><segment><source>Review</source><target state="translated">审查</target></segment></unit>
     <unit id="ChangesOpen"><segment><source>Open</source><target state="translated">打开</target></segment></unit>
@@ -630,7 +644,31 @@
     <unit id="CompactionFailedFormat"><segment><source>Compaction failed: {0}</source><target state="translated">压缩失败：{0}</target></segment></unit>
     <unit id="CompactionSuspendedFormat"><segment><source>Auto-compact disabled: {0}</source><target state="translated">已停用自动压缩：{0}</target></segment></unit>
     <unit id="CompactionUnavailable"><segment><source>Compaction is only available for the built-in agent.</source><target state="translated">只有内置 Agent 支持压缩上下文。</target></segment></unit>
-    <unit id="ContextUsageWarnFormat"><segment><source>{0} · Context nearly full, auto-compact soon · /compact to compact now</source><target state="translated">{0} · 上下文即将用满，稍后自动压缩 · 可用 /compact 立即压缩</target></segment></unit>
+    <unit id="ContextCardTitle"><segment><source>Context window</source><target state="translated">上下文容量</target></segment></unit>
+    <unit id="ContextCardSummaryFormat"><segment><source>{0} / {1} ({2})</source><target state="translated">{0}/{1} ({2})</target></segment></unit>
+    <unit id="ContextCategorySystemPrompt"><segment><source>System prompt</source><target state="translated">系统提示词</target></segment></unit>
+    <unit id="ContextCategorySystemTools"><segment><source>System tools</source><target state="translated">系统工具</target></segment></unit>
+    <unit id="ContextCategoryMcpTools"><segment><source>MCP tools</source><target state="translated">MCP 工具</target></segment></unit>
+    <unit id="ContextCategorySkills"><segment><source>Skills</source><target state="translated">技能</target></segment></unit>
+    <unit id="ContextCategoryMessages"><segment><source>Messages</source><target state="translated">消息</target></segment></unit>
+    <unit id="ContextCategoryOther"><segment><source>Other</source><target state="translated">其他</target></segment></unit>
+    <unit id="ContextCacheAverage"><segment><source>Average cache hit rate</source><target state="translated">平均缓存命中率</target></segment></unit>
+    <unit id="ContextNearlyFull"><segment><source>Nearly full: auto-compacts soon, or run /compact now</source><target state="translated">即将用满：稍后自动压缩，也可用 /compact 立即压缩</target></segment></unit>
+    <unit id="ContextBreakdownUnavailable"><segment><source>This agent doesn't report what fills its context</source><target state="translated">外部 Agent 不提供上下文的分类明细</target></segment></unit>
+    <unit id="CacheTtlLabel"><segment><source>Prompt cache lifetime</source><target state="translated">提示缓存有效期</target></segment></unit>
+    <unit id="CacheTtlHint"><segment><source>For Claude (Anthropic protocol, and Claude models over Chat Completions). 5 minutes is renewed by every request; 1 hour suits long pauses between turns, but cache writes cost 2×.</source><target state="translated">作用于 Claude（Anthropic 协议，以及经 Chat 协议调用的 Claude 模型）。5 分钟每次请求自动续期；1 小时适合两次提问间隔较长，但缓存写入按 2 倍计费。</target></segment></unit>
+    <unit id="CacheTtl5m"><segment><source>5 min</source><target state="translated">5 分钟</target></segment></unit>
+    <unit id="CacheTtl1h"><segment><source>1 hour</source><target state="translated">1 小时</target></segment></unit>
+    <unit id="ShellAuto"><segment><source>Auto</source><target state="translated">自动</target></segment></unit>
+    <unit id="AgentShellLabel"><segment><source>Agent shell</source><target state="translated">Agent 使用的 shell</target></segment></unit>
+    <unit id="AgentShellHint"><segment><source>Runs the agent's commands. Auto picks the best shell on this machine; on Windows that is PowerShell 7, then Git Bash, then Windows PowerShell. Applies to the next command.</source><target state="translated">Agent 执行命令使用的 shell。自动会选本机最合适的：Windows 上依次为 PowerShell 7、Git Bash、Windows PowerShell。对之后执行的命令生效。</target></segment></unit>
+    <unit id="TerminalShellLabel"><segment><source>Terminal shell</source><target state="translated">终端默认 shell</target></segment></unit>
+    <unit id="TerminalShellHint"><segment><source>The shell for new terminals. Auto picks PowerShell 7 on Windows (then Windows PowerShell, then cmd); on macOS and Linux it is your login shell. Open terminals are not affected.</source><target state="translated">新建终端使用的 shell。自动在 Windows 上优先 PowerShell 7（其次 Windows PowerShell、cmd），macOS 和 Linux 上是登录 shell。已打开的终端不受影响。</target></segment></unit>
+    <unit id="ShellCustomPlaceholder"><segment><source>Custom path or program name…</source><target state="translated">自定义路径或程序名…</target></segment></unit>
+    <unit id="ShellApply"><segment><source>Use</source><target state="translated">使用</target></segment></unit>
+    <unit id="ShellUnavailable"><segment><source>{0} (unavailable)</source><target state="translated">{0}（不可用）</target></segment></unit>
+    <unit id="ShellCurrent"><segment><source>In use: {0}</source><target state="translated">当前使用：{0}</target></segment></unit>
+    <unit id="ShellFallback"><segment><source>"{0}" is unavailable; using {1}.</source><target state="translated">“{0}”不可用，改用 {1}。</target></segment></unit>
     <unit id="WorkedFor"><segment><source>Worked for {0}</source><target state="translated">已工作 {0}</target></segment></unit>
     <unit id="DurationHM"><segment><source>{0}h {1}m</source><target state="translated">{0} 小时 {1} 分</target></segment></unit>
     <unit id="DurationMS"><segment><source>{0}m {1}s</source><target state="translated">{0} 分 {1} 秒</target></segment></unit>
@@ -664,5 +702,57 @@
     <unit id="QuestionAborted"><segment><source>Stopped</source><target state="translated">已中止</target></segment></unit>
     <unit id="StepQuestion"><segment><source>Question</source><target state="translated">提问</target></segment></unit>
     <unit id="SessionWaitingForYou"><segment><source>Waiting for you</source><target state="translated">等待你的操作</target></segment></unit>
+    <unit id="UiScaleLabel"><segment><source>Interface zoom</source><target state="translated">界面缩放</target></segment></unit>
+    <unit id="UiScaleHint"><segment><source>Scales text, icons and spacing together. Shortcuts: {0} + / − / 0.</source><target state="translated">文字、图标与间距一起缩放。快捷键：{0} + / − / 0。</target></segment></unit>
+    <unit id="ZoomIn"><segment><source>Zoom in</source><target state="translated">放大界面</target></segment></unit>
+    <unit id="ZoomOut"><segment><source>Zoom out</source><target state="translated">缩小界面</target></segment></unit>
+    <unit id="ZoomReset"><segment><source>Reset zoom</source><target state="translated">重置界面缩放</target></segment></unit>
+    <unit id="AllFilesTypeName"><segment><source>All files</source><target state="translated">所有文件</target></segment></unit>
+    <unit id="DocumentFileTypeName"><segment><source>Documents and logs</source><target state="translated">文档和日志</target></segment></unit>
+    <unit id="OpenFilePreview"><segment><source>Open preview</source><target state="translated">打开预览</target></segment></unit>
+    <unit id="PlanReviewTitle"><segment><source>Plan awaiting approval</source><target state="translated">计划待批准</target></segment></unit>
+    <unit id="PlanReviewTitleFormat"><segment><source>{0} plan awaiting approval</source><target state="translated">{0} 计划待批准</target></segment></unit>
+    <unit id="PlanReviewEdit"><segment><source>Edit</source><target state="translated">编辑</target></segment></unit>
+    <unit id="PlanReviewEditDone"><segment><source>Done</source><target state="translated">完成</target></segment></unit>
+    <unit id="PlanReviewEditTip"><segment><source>Edit the plan's Markdown (E)</source><target state="translated">编辑计划的 Markdown（E）</target></segment></unit>
+    <unit id="PlanReviewOpenInEditor"><segment><source>Open in editor</source><target state="translated">在编辑器中打开</target></segment></unit>
+    <unit id="PlanReviewEdited"><segment><source>Edited</source><target state="translated">已编辑</target></segment></unit>
+    <unit id="PlanReviewChoiceClear"><segment><source>Clear context, approve and run automatically</source><target state="translated">清空上下文，批准并自动执行</target></segment></unit>
+    <unit id="PlanReviewChoiceClearFull"><segment><source>Clear context, approve and run with full access</source><target state="translated">清空上下文，批准并完全授权执行</target></segment></unit>
+    <unit id="PlanReviewContextUsedFormat"><segment><source>planning used {0}% of context</source><target state="translated">规划用掉 {0}% 上下文</target></segment></unit>
+    <unit id="PlanReviewChoiceAuto"><segment><source>Approve and run automatically</source><target state="translated">批准，自动执行</target></segment></unit>
+    <unit id="PlanReviewChoiceFull"><segment><source>Approve and run with full access</source><target state="translated">批准，完全授权执行</target></segment></unit>
+    <unit id="PlanReviewChoiceAsk"><segment><source>Approve and review each step</source><target state="translated">批准，逐项审批</target></segment></unit>
+    <unit id="PlanReviewChoiceAcpFormat"><segment><source>Approve and hand off to ACP ({0})</source><target state="translated">批准，交给 ACP 执行（{0}）</target></segment></unit>
+    <unit id="PlanReviewRevise"><segment><source>Keep planning</source><target state="translated">继续完善</target></segment></unit>
+    <unit id="PlanReviewFeedbackPlaceholder"><segment><source>Tell the agent what to change…</source><target state="translated">告诉 Agent 要改什么…</target></segment></unit>
+    <unit id="PlanReviewDiscardWarning"><segment><source>Keeping planning discards your edits to the plan. Confirm again to continue.</source><target state="translated">继续完善会丢弃你对计划的修改，再次确认以继续。</target></segment></unit>
+    <unit id="PlanReviewHintsFormat"><segment><source>↑↓ choose · 1-{0} pick · E edit</source><target state="translated">↑↓ 选择 · 1-{0} 直接选 · E 编辑</target></segment></unit>
+    <unit id="PlanReviewDismiss"><segment><source>Not now</source><target state="translated">暂不批准</target></segment></unit>
+    <unit id="PlanReviewConfirm"><segment><source>Confirm</source><target state="translated">确认</target></segment></unit>
+    <unit id="PlanCardTitle"><segment><source>Plan</source><target state="translated">计划</target></segment></unit>
+    <unit id="PlanCardApproved"><segment><source>Approved</source><target state="translated">已批准</target></segment></unit>
+    <unit id="PlanCardApprovedFormat"><segment><source>Approved · {0}</source><target state="translated">已批准 · {0}</target></segment></unit>
+    <unit id="PlanCardChoiceAuto"><segment><source>running automatically</source><target state="translated">自动执行</target></segment></unit>
+    <unit id="PlanCardChoiceAsk"><segment><source>reviewing each step</source><target state="translated">逐项审批</target></segment></unit>
+    <unit id="PlanCardChoiceAcp"><segment><source>handed off to ACP</source><target state="translated">交给 ACP</target></segment></unit>
+    <unit id="PlanCardChoiceClear"><segment><source>running after clearing context</source><target state="translated">清空上下文后执行</target></segment></unit>
+    <unit id="PlanCardRevised"><segment><source>Sent back</source><target state="translated">已退回</target></segment></unit>
+    <unit id="PlanCardDismissed"><segment><source>Not approved</source><target state="translated">未批准</target></segment></unit>
+    <unit id="PlanCardAborted"><segment><source>Stopped</source><target state="translated">已中止</target></segment></unit>
+    <unit id="PlanCardWaiting"><segment><source>Waiting for approval…</source><target state="translated">等待批准…</target></segment></unit>
+    <unit id="PlanCardExpandFormat"><segment><source>Show all {0} lines</source><target state="translated">展开全部 {0} 行</target></segment></unit>
+    <unit id="PlanCardCollapse"><segment><source>Collapse</source><target state="translated">收起</target></segment></unit>
+    <unit id="EnterPlanTitle"><segment><source>Switch to Plan mode?</source><target state="translated">进入 Plan 模式？</target></segment></unit>
+    <unit id="EnterPlanDefaultQuestion"><segment><source>Plan before making changes?</source><target state="translated">先做计划再动手吗？</target></segment></unit>
+    <unit id="EnterPlanOptionPlan"><segment><source>Plan first (recommended)</source><target state="translated">先做计划（推荐）</target></segment></unit>
+    <unit id="EnterPlanOptionPlanDesc"><segment><source>Research and write a plan; nothing changes until you approve it</source><target state="translated">调研后写计划，你批准后再动手</target></segment></unit>
+    <unit id="EnterPlanOptionProceed"><segment><source>Proceed</source><target state="translated">直接执行</target></segment></unit>
+    <unit id="EnterPlanAccepted"><segment><source>Switched to Plan mode</source><target state="translated">已进入 Plan 模式</target></segment></unit>
+    <unit id="EnterPlanDeclined"><segment><source>Continuing without a plan</source><target state="translated">继续直接执行</target></segment></unit>
+    <unit id="ToolExitPlanMode"><segment><source>Request plan approval</source><target state="translated">请求批准计划</target></segment></unit>
+    <unit id="ToolEnterPlanMode"><segment><source>Ask to enter Plan mode</source><target state="translated">申请进入 Plan 模式</target></segment></unit>
+    <unit id="ApprovalReadOnlyCommand"><segment><source>Plan mode: this command may change the workspace</source><target state="translated">Plan 模式：此命令可能修改工作区</target></segment></unit>
+    <unit id="CompactionPlanHandoff"><segment><source>Context cleared — continuing from the plan</source><target state="translated">已清空上下文，按计划执行</target></segment></unit>
   </file>
 </xliff>

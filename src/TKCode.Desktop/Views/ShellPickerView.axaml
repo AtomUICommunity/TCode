@@ -1,0 +1,67 @@
+<!--
+  设置页里选 shell 的一行：标题与说明、实际使用的 shell，右侧是芯片按钮 + 弹层（自动、探测到的 shell、自定义路径）。
+  Agent 的 bash 工具与新建终端各用一个，DataContext 是 ShellPickerViewModel。
+-->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:motion="using:TKCode.Desktop.Motion"
+             xmlns:controls="using:TKCode.Desktop.Controls"
+             xmlns:vm="using:TKCode.Desktop.ViewModels"
+             xmlns:icons="using:TKCode.Desktop.Icons"
+             xmlns:loc="using:TKCode.Desktop.Localization"
+             x:Class="TKCode.Desktop.Views.ShellPickerView"
+             x:DataType="vm:ShellPickerViewModel">
+    <Grid ColumnDefinitions="*,Auto" Margin="16,12">
+        <StackPanel Spacing="2" VerticalAlignment="Center">
+            <TextBlock Classes="strong" Text="{Binding Title}" />
+            <TextBlock Classes="tertiary" Text="{Binding Hint}" TextWrapping="Wrap" />
+            <TextBlock Classes="tertiary" Text="{Binding Detail}" TextWrapping="Wrap" IsVisible="{Binding HasDetail}"
+                       FontFamily="{StaticResource TKCode.MonoFont}" />
+        </StackPanel>
+        <Panel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+            <Button x:Name="Chip" Theme="{StaticResource TKCode.ChipButton}" MinHeight="30" Padding="10,0"
+                    Foreground="{DynamicResource TKCode.TextPrimary}" Click="OnChipClick">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Label}" MaxWidth="240" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <icons:LucideIcon Kind="ChevronDown" Width="12" Height="12" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <motion:Popover x:Name="Popup" PlacementTarget="{Binding #Chip}" Placement="BottomEdgeAlignedRight"
+                            VerticalOffset="6" IsLightDismissEnabled="True">
+                <controls:ZoomHost>
+                <Border Classes="menu" Width="340" Margin="16,0,16,16">
+                    <StackPanel>
+                        <ScrollViewer MaxHeight="280" atom:ScrollViewer.IsLiteMode="True">
+                            <ItemsControl ItemsSource="{Binding Choices}" Margin="4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SettingsChoiceViewModel">
+                                        <Button Theme="{StaticResource TKCode.MenuItem}" Classes.selected="{Binding IsSelected}" MinHeight="30"
+                                                Command="{Binding $parent[UserControl].((vm:ShellPickerViewModel)DataContext).ChooseCommand, FallbackValue={x:Null}}"
+                                                CommandParameter="{Binding}">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <icons:LucideIcon Grid.Column="1" Kind="Check" Width="13" Height="13" IsVisible="{Binding IsSelected}" />
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <Border Height="1" Background="{DynamicResource TKCode.Divider}" />
+                        <!-- 自定义：可执行文件的路径，或 PATH 里的程序名 -->
+                        <Grid ColumnDefinitions="*,Auto" Margin="8">
+                            <atom:LineEdit SizeType="Small" PlaceholderText="{loc:TKCodeLangResource ShellCustomPlaceholder}"
+                                           Text="{Binding CustomPath, Mode=TwoWay}" FontFamily="{StaticResource TKCode.MonoFont}" />
+                            <atom:Button Grid.Column="1" SizeType="Small" Color="Default" Variant="Outlined" Margin="6,0,0,0"
+                                         Command="{Binding ApplyCustomPathCommand}">
+                                <TextBlock Text="{loc:TKCodeLangResource ShellApply}" FontSize="12" />
+                            </atom:Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                </controls:ZoomHost>
+            </motion:Popover>
+        </Panel>
+    </Grid>
+</UserControl>

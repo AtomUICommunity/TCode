@@ -191,6 +191,116 @@ public sealed class ClaudeFixtureTests
         ];
     }
 
+    /// <summary>ExitPlanMode 的一轮（docs/design/plan-mode.md §15）：assistant 帧 → can_use_tool → TKCode 的应答 → tool_result → result。</summary>
+    private static TranscriptLine[] PlanTurn(string uuid, string input, string response, string toolResult, bool isError, string? beforeResult = null)
+    {
+        string Fill(string template) => template.Replace("@UUID", uuid).Replace("@SESSION", SessionId).Replace("@INPUT", input)
+            .Replace("@RESPONSE", response).Replace("@RESULT", toolResult).Replace("@ERROR", isError ? "true" : "false");
+        TranscriptLine[] lines =
+        [
+            new(true, Fill("""{"type":"user","message":{"role":"user","content":[{"type":"text","text":"build it"}]},"parent_tool_use_id":null,"uuid":"@UUID"}""")),
+            new(false, Fill("""{"type":"assistant","message":{"model":"claude-opus-5-5","id":"msg_plan","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_plan","name":"ExitPlanMode","input":@INPUT}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}},"parent_tool_use_id":null,"session_id":"@SESSION","uuid":"a0000000-0000-4000-8000-000000000011"}""")),
+            new(false, Fill("""{"type":"control_request","request_id":"req_plan","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":@INPUT,"tool_use_id":"toolu_plan","requires_user_interaction":true}}""")),
+            new(true, Fill("""{"type":"control_response","response":{"subtype":"success","request_id":"req_plan","response":@RESPONSE}}""")),
+            new(false, Fill("""{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_plan","type":"tool_result","content":"@RESULT","is_error":@ERROR}]},"parent_tool_use_id":null,"session_id":"@SESSION","uuid":"a0000000-0000-4000-8000-000000000012"}""")),
+        ];
+        return
+        [
+            .. lines,
+            .. beforeResult is null ? [] : new TranscriptLine[] { new(false, Fill(beforeResult)) },
+            new(false, Fill("""{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"@SESSION","terminal_reason":"completed"}""")),
+        ];
+    }
+
+    [Fact]
+    public async Task ExitPlanMode_GoesToPlanReview_AndApprovalSetsTheMode()
+    {
+        var planFile = Path.Combine(Directory.CreateTempSubdirectory("tkcode-claude-plan-").FullName, "plan.md");
+        File.WriteAllText(planFile, "# Plan");
+        var input = $$"""{"plan":"# Plan","planFilePath":{{JsonSerializer.Serialize(planFile)}}}""";
+        var peer = new ScriptedPeer();
+        var uuids = new Queue<string>();
+        var runtime = new FixtureRuntime(peer, uuids, SessionId);
+        RuntimePlanReviewRequest? reviewed = null;
+        ExternalAgent agent = null!;
+        agent = new ExternalAgent(runtime, RuntimeModels.Create(runtime, ClaudeRuntime.DefaultModelId), "/Users/dev/proj")
+        {
+            // 计划审批不是工具审批：任何权限档位都交给审批面板
+            PermissionMode = PermissionMode.AutoApprove,
+            PlanReviewHandler = (request, _) =>
+            {
+                reviewed = request;
+                // 宿主切换权限（这里模拟 SessionManager 选了“批准，逐项审批”）
+                agent.PermissionMode = PermissionMode.Ask;
+                return Task.FromResult(new TKCode.Agent.Plans.PlanReviewResult(TKCode.Agent.Plans.PlanReviewOutcome.Approved,
+                    TKCode.Agent.Plans.PlanReviewChoice.Ask, EditedPlan: "# Edited"));
+            },
+            ApprovalHandler = (_, _) => throw new InvalidOperationException("ExitPlanMode is not a tool approval"),
+        };
+        var events = Record(agent);
+        uuids.Enqueue("00000000-0000-4000-8000-0000000000b1");
+        var run = agent.PromptAsync(UserMessage.FromText("build it"));
+        await peer.RunAsync(Load("### A.1 (a)").Take(2));
+        var response = $$"""{"behavior":"allow","updatedInput":{"planFilePath":{{JsonSerializer.Serialize(planFile)}},"plan":"# Edited"},"updatedPermissions":[{"type":"setMode","mode":"default","destination":"session"}],"toolUseID":"toolu_plan","decisionClassification":"user_temporary"}""";
+        await peer.RunAsync(PlanTurn("00000000-0000-4000-8000-0000000000b1", input, response, "User has approved your plan.", isError: false));
+        await run.WaitAsync(Timeout);
+
+        Assert.Equal(("toolu_plan", "# Plan", planFile), (reviewed!.ToolCallId, reviewed.Plan, reviewed.PlanPath));
+        Assert.Equal("# Edited", File.ReadAllText(planFile).Trim());
+        var end = events.OfType<ToolExecutionEndEvent>().Single(e => e.ToolCallId == "toolu_plan");
+        var details = JsonDocument.Parse(end.Result.Details!).RootElement;
+        Assert.Equal(("planReview", "approved", "ask"),
+            (details.GetProperty("kind").GetString(), details.GetProperty("status").GetString(), details.GetProperty("choice").GetString()));
+    }
+
+    [Fact]
+    public async Task ExitPlanMode_Revise_DeniesWithTheFeedback()
+    {
+        const string input = """{"plan":"# Plan"}""";
+        var peer = new ScriptedPeer();
+        var uuids = new Queue<string>();
+        var runtime = new FixtureRuntime(peer, uuids, SessionId);
+        var agent = new ExternalAgent(runtime, RuntimeModels.Create(runtime, ClaudeRuntime.DefaultModelId), "/Users/dev/proj")
+        {
+            PlanReviewHandler = (_, _) => Task.FromResult(new TKCode.Agent.Plans.PlanReviewResult(TKCode.Agent.Plans.PlanReviewOutcome.Revise,
+                Feedback: "Split step one.")),
+        };
+        uuids.Enqueue("00000000-0000-4000-8000-0000000000b2");
+        var run = agent.PromptAsync(UserMessage.FromText("build it"));
+        await peer.RunAsync(Load("### A.1 (a)").Take(2));
+        var message = JsonSerializer.Serialize(ClaudeSession.PlanFeedbackMessage("Split step one."));
+        await peer.RunAsync(PlanTurn("00000000-0000-4000-8000-0000000000b2", input,
+            """{"behavior":"deny","message":@MESSAGE,"toolUseID":"toolu_plan","decisionClassification":"user_reject"}""".Replace("@MESSAGE", message),
+            "rejected", isError: true));
+        await run.WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task ReportedPermissionMode_EnteringPlan_SyncsTheMode()
+    {
+        const string input = """{"plan":"# Plan"}""";
+        var peer = new ScriptedPeer();
+        var uuids = new Queue<string>();
+        var runtime = new FixtureRuntime(peer, uuids, SessionId);
+        var changes = new List<bool>();
+        var agent = new ExternalAgent(runtime, RuntimeModels.Create(runtime, ClaudeRuntime.DefaultModelId), "/Users/dev/proj")
+        {
+            PlanReviewHandler = (_, _) => Task.FromResult(TKCode.Agent.Plans.PlanReviewResult.Dismissed),
+        };
+        agent.PlanModeChanged += changes.Add;
+        uuids.Enqueue("00000000-0000-4000-8000-0000000000b3");
+        var run = agent.PromptAsync(UserMessage.FromText("build it"));
+        await peer.RunAsync(Load("### A.1 (a)").Take(2));
+        var message = JsonSerializer.Serialize(ClaudeSession.PlanNotApprovedMessage);
+        // 模型自己调用了 EnterPlanMode：CLI 上报 permissionMode 变成 plan
+        await peer.RunAsync(PlanTurn("00000000-0000-4000-8000-0000000000b3", input,
+            """{"behavior":"deny","message":@MESSAGE,"toolUseID":"toolu_plan","decisionClassification":"user_reject"}""".Replace("@MESSAGE", message),
+            "rejected", isError: true,
+            beforeResult: """{"type":"system","subtype":"status","status":null,"permissionMode":"plan","session_id":"@SESSION","uuid":"a0000000-0000-4000-8000-000000000013"}"""));
+        await run.WaitAsync(Timeout);
+        Assert.Equal([true], changes);
+    }
+
     [Fact]
     public async Task AskUserQuestion_AnswersGoIntoUpdatedInput_KeyedByQuestionText()
     {

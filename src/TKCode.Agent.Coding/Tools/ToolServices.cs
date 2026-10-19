@@ -1,4 +1,5 @@
 using TKCode.Agent.Coding.Tools.Agents;
+using TKCode.Agent.Coding.Tools.Plan;
 using TKCode.Agent.Coding.Tools.Questions;
 using TKCode.Agent.Coding.Tools.Web;
 
@@ -23,4 +24,7 @@ public sealed record ToolServices
 
     /// <summary>向用户提问（null 表示不提供 ask_user；子 Agent 总是 null）。</summary>
     public IUserInputService? UserInput { get; init; }
+
+    /// <summary>计划审批与进入 Plan 的确认（null 表示不提供 exit_plan_mode / enter_plan_mode；子 Agent 总是 null）。</summary>
+    public IPlanModeService? PlanMode { get; init; }
 }

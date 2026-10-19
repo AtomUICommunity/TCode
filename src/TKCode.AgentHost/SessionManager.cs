@@ -3,9 +3,12 @@ using Microsoft.Extensions.Logging;
 using TKCode.Agent;
 using TKCode.Agent.Coding;
 using TKCode.Agent.Coding.Assets;
+using TKCode.Agent.Coding.Memory;
 using TKCode.Agent.Coding.Sessions;
 using TKCode.Agent.Coding.Tools;
+using TKCode.Agent.Coding.Tools.Plan;
 using TKCode.Agent.Coding.Tools.Questions;
+using TKCode.Agent.Plans;
 using TKCode.Agent.Questions;
 using TKCode.Agent.Coding.Tools.Web;
 using TKCode.Agent.Coding.Workspace;
@@ -26,7 +29,7 @@ namespace TKCode.AgentHost;
 /// 并为非只读工具向 UI 请求审批。
 /// 空闲的会话会被释放（只留下文件路径与不落盘的状态），再次访问时从会话文件透明地重新打开。
 /// </summary>
-public sealed class SessionManager : IAsyncDisposable, IUserInputService
+public sealed class SessionManager : IAsyncDisposable, IUserInputService, IPlanModeService
 {
     private readonly ConcurrentDictionary<string, Entry> _sessions = new();
     private readonly ConcurrentDictionary<string, Evicted> _evicted = new();
@@ -37,6 +40,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
     private readonly ModelCatalog catalog;
     private readonly RuntimeRegistry runtimes;
     private readonly ILogger<SessionManager> logger;
+    private readonly SessionTitleGenerator _titles;
     private readonly WebFetcher _webFetcher = new();
     private (string? Signature, IWebSearchProvider? Provider) _webSearch;
     private IAgentHostClient? _client;
@@ -54,6 +58,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         this.catalog = catalog;
         this.runtimes = runtimes;
         this.logger = logger;
+        _titles = new SessionTitleGenerator(apis, runtimes, catalog.GetApiKey, CacheTtl);
         Coordinator = new AgentCoordinator(this, peers, logger);
         _sweeper = new Timer(_ => _ = SweepAsync(), null, SweepInterval, SweepInterval);
     }
@@ -88,8 +93,11 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
     public string? GetApiKey(string provider) => catalog.GetApiKey(provider);
 
     /// <summary>子 Agent 可用的模型：只接受内置协议的模型（外部运行时的模型不能作为子 Agent）。</summary>
-    public ModelInfo? FindBuiltinModel(string reference) =>
+    public ModelInfo? FindBuiltinModel(string? reference) =>
         catalog.Find(reference) is { } model && runtimes.Find(model.Provider) is null ? model : null;
+
+    /// <summary>子 Agent 与标题共用的快速模型；未配置或不可用时跟随调用方的会话模型。</summary>
+    public ModelInfo FastModelFor(ModelInfo sessionModel) => FindBuiltinModel(catalog.FastModelRef) ?? sessionModel;
 
     /// <summary>内置工具使用的宿主能力：网页抓取、按 settings 配置的网页搜索、子 Agent 协调。</summary>
     public ToolServices ServicesFor(string cwd) => new()
@@ -98,6 +106,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         WebSearch = CurrentWebSearch(),
         Agents = Coordinator,
         UserInput = this,
+        PlanMode = this,
         // MCP 工具与 skills（docs/design/composer.md §10.1）
         DynamicTools = context => new CompositeToolSource([
             Mcp.CreateSource(context),
@@ -142,8 +151,17 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
             Workspace = new WorkspaceRoots(cwd, settings?.Permissions?.AdditionalDirectories),
             Services = ServicesFor(cwd),
             AutoCompact = settings?.AutoCompact ?? true,
+            CacheTtl = CacheTtl,
+            ShellProfile = ShellProfile,
+            MemoryDirectory = settings?.AutoMemory ?? true ? ProjectMemory.DirectoryFor(cwd) : null,
         };
     }
+
+    /// <summary>全局缓存有效期：读 <see cref="ModelCatalog"/> 最近一次成功解析的设置，修改 settings.json 后对进行中的会话也立即生效。</summary>
+    public Func<PromptCacheTtl> CacheTtl => () => catalog.CacheTtl;
+
+    /// <summary>bash 工具的 shell：同样读最近一次成功解析的设置，修改后对进行中的会话也立即生效。</summary>
+    public Func<string?> ShellProfile => () => catalog.ShellProfile;
 
     /// <summary>会话在 send_message / list_agents 中的名字：项目目录名加会话 id 的末 4 位。</summary>
     public string NameOf(AgentSession session) =>
@@ -319,9 +337,8 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
             // 解析会话文件留下大量临时对象，下一次清理时回收
             Interlocked.Exchange(ref _collectPending, 1);
             SessionOptions.Initialize(session);
-            // 完全授权不沿用到重新打开的会话（回到“询问”）；只是空闲释放过的会话保持原档位。其余档位按记录恢复
-            var permission = evicted?.PermissionMode
-                             ?? (snapshot.PermissionMode is PermissionMode.FullAccess or null ? PermissionMode.Ask : snapshot.PermissionMode.Value);
+            // 档位按记录恢复，包括完全授权；只是空闲释放过的会话用释放前的档位。
+            var permission = evicted?.PermissionMode ?? snapshot.PermissionMode ?? PermissionMode.Ask;
             // role 按记录恢复；自定义 role 已被删除时回到 agent
             SessionOptions.Apply(session, new SessionOptionsDto(snapshot.ThinkingLevel?.ToString(), snapshot.FastMode, snapshot.ContextWindow,
                 PermissionMode: SessionOptions.ToWire(permission), Role: snapshot.Role), Assets.Get(session.Cwd));
@@ -346,12 +363,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         }
         if (_sessions.TryRemove(sessionId, out var entry))
         {
-            entry.Subscription?.Dispose();
-            if (entry.Tasks is { } tasks && entry.TasksChanged is { } changed)
-            {
-                tasks.Changed -= changed;
-            }
-            await entry.Session.DisposeAsync();
+            await DisposeEntryAsync(entry);
         }
         logger.LogInformation("Session {SessionId} switched to {Runtime}", sessionId, runtime?.Id ?? "builtin");
         return Register(runtime is null
@@ -381,6 +393,9 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
             external.ApprovalHandler = (request, ct) => ApproveExternalAsync(session.Id, request, ct);
             external.InputHandler = (request, ct) => RequestUserInputAsync(session.Id, external.RuntimeId, request.ToolCallId, request.Questions, ct);
             external.ElicitationHandler = (request, ct) => ElicitExternalAsync(session.Id, external.RuntimeId, request, ct);
+            external.PlanReviewHandler = (request, ct) =>
+                ReviewPlanAsync(session.Id, external.RuntimeId, request.ToolCallId, request.PlanPath ?? "", request.Plan, ct, allowClear: false);
+            external.PlanModeChanged += planMode => _ = SyncRuntimePlanModeAsync(session.Id, planMode);
             external.CommandsChanged += commands => Publish(entry,
                 new CommandsChanged(commands.Select(c => new RuntimeCommandDto(c.Name, c.Description, c.ArgumentHint)).ToList()));
         }
@@ -488,14 +503,25 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         await Coordinator.CloseChildrenAsync(sessionId);
         if (_sessions.TryRemove(sessionId, out var entry))
         {
-            entry.Subscription?.Dispose();
-            if (entry.Tasks is { } tasks && entry.TasksChanged is { } changed)
-            {
-                tasks.Changed -= changed;
-            }
-            await entry.Session.DisposeAsync();
+            await DisposeEntryAsync(entry);
         }
         await Bridge.ForgetAsync(sessionId);
+    }
+
+    private static async Task DisposeEntryAsync(Entry entry)
+    {
+        entry.Subscription?.Dispose();
+        await entry.TitleCancellation.CancelAsync();
+        if (entry.Tasks is { } tasks && entry.TasksChanged is { } changed)
+        {
+            tasks.Changed -= changed;
+        }
+        await entry.Session.DisposeAsync();
+        if (entry.TitleTask is { } titleTask)
+        {
+            await titleTask;
+        }
+        entry.TitleCancellation.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -516,7 +542,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         string? agentName = null)
     {
         var mode = TryGet(sessionId)?.Agent.PermissionMode ?? session.Agent.PermissionMode;
-        var verdict = PermissionPolicy.Evaluate(ctx.Permission, mode, session.Workspace, session.Approvals);
+        var verdict = PermissionPolicy.Evaluate(ctx.Permission, mode, session.Workspace, session.Approvals, session.Tools?.IsReadOnly ?? false);
         if (verdict.Allowed)
         {
             return ToolCallDecision.Allow;
@@ -581,6 +607,123 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
             .Select(a => new UserAnswer(a.QuestionId, a.Selected, string.IsNullOrWhiteSpace(a.Text) ? null : a.Text)).ToList());
     }
 
+    // ---------------- Plan 模式（docs/design/plan-mode.md） ----------------
+
+    /// <summary>enter_plan_mode 确认问题的 input/request 来源：界面据此本地化标题与选项。</summary>
+    public const string EnterPlanModeSource = "enterPlanMode";
+
+    Task<PlanReviewResult> IPlanModeService.ReviewAsync(string sessionId, string toolCallId, string planPath, string plan,
+        CancellationToken cancellationToken) =>
+        ReviewPlanAsync(sessionId, "builtin", toolCallId, planPath, plan, cancellationToken);
+
+    async Task<UserInputResult> IPlanModeService.ConfirmEnterAsync(string sessionId, string toolCallId, UserQuestion question,
+        CancellationToken cancellationToken)
+    {
+        var result = await RequestUserInputAsync(sessionId, EnterPlanModeSource, toolCallId, [question], cancellationToken);
+        if (EnterPlanModeTool.Accepted(result))
+        {
+            await ApplyHostOptionsAsync(sessionId, new SessionOptionsDto(Role: SessionRole.PlanName));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 计划审批（plan/review，§13.1）：不看权限档位，从不自动批准。批准时按选项切换模式与权限并推送 optionsChanged（§10）。
+    /// 中止时抛出 <see cref="OperationCanceledException"/>；没有 UI 或请求失败时抛出 <see cref="UserInputUnavailableException"/>。
+    /// </summary>
+    /// <param name="allowClear">提供“清空上下文后执行”（只有内置 Agent）。</param>
+    public async Task<PlanReviewResult> ReviewPlanAsync(string sessionId, string source, string? toolCallId, string planPath, string plan,
+        CancellationToken ct, bool allowClear = true)
+    {
+        if (_client is not { } client)
+        {
+            throw new UserInputUnavailableException("No client is connected.");
+        }
+        var session = Get(sessionId);
+        var choices = new List<string>();
+        if (allowClear && session.Agent is TKCode.Agent.Agent { Compactor: not null })
+        {
+            choices.Add(PlanReviews.IdOf(PlanReviewChoice.Clear));
+        }
+        choices.Add(PlanReviews.IdOf(PlanReviewChoice.Auto));
+        choices.Add(PlanReviews.IdOf(PlanReviewChoice.Ask));
+        if (session.External is { } external ? external.SupportsSubagents : session.Tools?.Services.Agents is not null)
+        {
+            choices.Add(PlanReviews.IdOf(PlanReviewChoice.Acp));
+        }
+        var request = new PlanReviewRequest(sessionId, Guid.NewGuid().ToString("N"), source, toolCallId, planPath, plan, choices,
+            SessionOptions.ToWire(session.Agent.PermissionMode));
+        PlanReviewResponse response;
+        try
+        {
+            response = await client.ReviewPlanAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "plan/review failed");
+            throw new UserInputUnavailableException(ex.Message, ex);
+        }
+        switch (response.Outcome)
+        {
+            case PlanReviewResponse.Approved when response.Choice is { } id && choices.Contains(id) && PlanReviews.Parse(id) is { } choice:
+                await ApplyPlanChoiceAsync(sessionId, session, choice);
+                return new PlanReviewResult(PlanReviewOutcome.Approved, choice,
+                    EditedPlan: string.IsNullOrWhiteSpace(response.EditedPlan) ? null : response.EditedPlan);
+            case PlanReviewResponse.Revise:
+                return new PlanReviewResult(PlanReviewOutcome.Revise, Feedback: string.IsNullOrWhiteSpace(response.Feedback) ? null : response.Feedback);
+            default:
+                return PlanReviewResult.Dismissed;
+        }
+    }
+
+    /// <summary>批准的效果（§10）：Agent + 自动批准（完全授权时保持）/ Agent + 询问 / ACP + 当前档位。</summary>
+    private Task ApplyPlanChoiceAsync(string sessionId, AgentSession session, PlanReviewChoice choice)
+    {
+        var current = session.Agent.PermissionMode;
+        var (role, permission) = choice switch
+        {
+            PlanReviewChoice.Acp => (SessionRole.AcpName, current),
+            PlanReviewChoice.Ask => (SessionRole.AgentName, PermissionMode.Ask),
+            _ => (SessionRole.AgentName, current == PermissionMode.FullAccess ? PermissionMode.FullAccess : PermissionMode.AutoApprove),
+        };
+        return ApplyHostOptionsAsync(sessionId, new SessionOptionsDto(PermissionMode: SessionOptions.ToWire(permission), Role: role));
+    }
+
+    /// <summary>Host 主动改变模式或权限：与 options/set 相同的应用与持久化，再推送 optionsChanged 让界面更新选择器（§13.2）。</summary>
+    private async Task ApplyHostOptionsAsync(string sessionId, SessionOptionsDto options)
+    {
+        var session = Get(sessionId);
+        var applied = SessionOptions.Apply(session, options);
+        await session.Store.AppendOptionsChangeAsync(session.Agent.ThinkingLevel, session.Agent.FastMode, session.ContextWindow,
+            CancellationToken.None, session.Agent.PermissionMode, session.Role.Name);
+        if (_sessions.TryGetValue(sessionId, out var entry))
+        {
+            Publish(entry, new SessionOptionsChanged(applied));
+        }
+    }
+
+    /// <summary>外部运行时自己进入或离开了 plan（例如模型调用了 EnterPlanMode）：同步 TKCode 的模式（§15）。</summary>
+    private async Task SyncRuntimePlanModeAsync(string sessionId, bool planMode)
+    {
+        try
+        {
+            var session = Get(sessionId);
+            var inPlan = session.Role.Name == SessionRole.PlanName;
+            if (planMode != inPlan)
+            {
+                await ApplyHostOptionsAsync(sessionId, new SessionOptionsDto(Role: planMode ? SessionRole.PlanName : SessionRole.AgentName));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to sync the runtime's plan mode for session {SessionId}", sessionId);
+        }
+    }
+
     /// <summary>运行时的结构化信息请求（ACP elicitation）→ MCP 表单卡片；没有 UI 或失败时 cancel。</summary>
     private async Task<RuntimeElicitationResult> ElicitExternalAsync(string sessionId, string runtimeId, RuntimeElicitationRequest request,
         CancellationToken ct)
@@ -638,7 +781,36 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         {
             Publish(entry, mapped);
         }
+        if (e is MessageEndEvent { Message: UserMessage { Source: null } user } &&
+            Interlocked.CompareExchange(ref entry.TitleAttempted, 1, 0) == 0)
+        {
+            var model = FastModelFor(entry.Session.Agent.Model);
+            entry.TitleTask = Task.Run(() => GenerateTitleAsync(entry, model, user));
+        }
         return ValueTask.CompletedTask;
+    }
+
+    private async Task GenerateTitleAsync(Entry entry, ModelInfo model, UserMessage user)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(entry.TitleCancellation.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var session = entry.Session;
+            var title = await _titles.GenerateAsync(model, session.Cwd, session.Id, user, timeout.Token);
+            if (title is not null && await session.Store.TryAppendGeneratedTitleAsync(title, timeout.Token))
+            {
+                Publish(entry, new SessionTitleChanged(title));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 关闭会话或超时：保留首条消息作为标题。
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to generate title for session {SessionId}", entry.Session.Id);
+        }
     }
 
     private void PublishBackgroundTasks(Entry entry)
@@ -658,14 +830,17 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         {
             return;
         }
-        try
+        lock (entry.PublishGate)
         {
-            // 通知按发送顺序写入连接；UI 端按 Seq 处理。
-            _client.OnSessionEvent(new SessionEventNotification(entry.Session.Id, Interlocked.Increment(ref entry.Seq), mapped));
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to forward session event");
+            try
+            {
+                // 标题与后台任务可和主循环并发完成；序号分配与发送必须一起串行化。
+                _client.OnSessionEvent(new SessionEventNotification(entry.Session.Id, ++entry.Seq, mapped));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to forward session event");
+            }
         }
     }
 
@@ -679,7 +854,9 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         MessageStartEvent { Message: ToolResultMessage or SystemMessage } => null,
         MessageStartEvent s => new MessageStarted(s.MessageId, "assistant", null),
         MessageUpdateEvent { Event: TextDeltaEvent d } u => new TextDelta(u.MessageId, d.ContentIndex, d.Delta),
+        MessageUpdateEvent { Event: TextEndEvent d } u => new TextEnded(u.MessageId, d.ContentIndex),
         MessageUpdateEvent { Event: ThinkingDeltaEvent d } u => new ThinkingDelta(u.MessageId, d.ContentIndex, d.Delta),
+        MessageUpdateEvent { Event: ThinkingEndEvent d } u => new ThinkingEnded(u.MessageId, d.ContentIndex),
         MessageUpdateEvent { Event: ToolCallStartEvent d } u => new ToolCallStarted(u.MessageId, d.ContentIndex, d.Id, d.Name),
         MessageUpdateEvent { Event: ToolCallDeltaEvent d } u => new ToolCallDelta(u.MessageId, d.ContentIndex, d.JsonFragment),
         MessageUpdateEvent { Event: ToolCallEndEvent d } u => new ToolCallEnded(u.MessageId, d.ContentIndex, d.ToolCall.Id, d.ToolCall.ArgumentsJson),
@@ -700,6 +877,7 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
     {
         TKCode.Agent.Compaction.CompactionTrigger.Auto => "auto",
         TKCode.Agent.Compaction.CompactionTrigger.Reactive => "reactive",
+        TKCode.Agent.Compaction.CompactionTrigger.PlanHandoff => "planHandoff",
         _ => "manual",
     };
 
@@ -714,8 +892,12 @@ public sealed class SessionManager : IAsyncDisposable, IUserInputService
         public IDisposable? Subscription { get; set; }
         public BackgroundTasks? Tasks { get; set; }
         public Action<string?>? TasksChanged { get; set; }
+        public Lock PublishGate { get; } = new();
         public long Seq;
         public long LastActive = Environment.TickCount64;
+        public int TitleAttempted = File.Exists(session.Store.FilePath) ? 1 : 0;
+        public CancellationTokenSource TitleCancellation { get; } = new();
+        public Task? TitleTask;
     }
 
     /// <summary>被释放的会话：重新打开时恢复不落盘的权限档位与本会话内的授权。</summary>

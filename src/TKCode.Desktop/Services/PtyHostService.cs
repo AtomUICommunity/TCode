@@ -10,10 +10,13 @@ namespace TKCode.Desktop.Services;
 /// 桌面端对 pty host 的连接（04 §1.3–§1.4、§13.1）：按需发现或启动当前构建的 host，连接后下发设置，断开后下次使用时重连。
 /// host 不随 Desktop 退出；Desktop 崩溃后的会话由新的 Desktop 重新 attach（§10.5）。
 /// </summary>
-public sealed class PtyHostService(ILogger<PtyHostService> logger) : IDisposable
+public sealed class PtyHostService(ILogger<PtyHostService> logger, UserSettingsService? settings = null) : IDisposable
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private PtyHostClient? _client;
+
+    /// <summary>已经下发给 host 的默认 shell；设置改变后，下一次取连接（新建终端）时重新下发。</summary>
+    private string? _pushedShell;
 
     /// <summary>当前构建的 ID（与 host 的 --build 比较，见 04 §1.2）。</summary>
     public static string Build => PtyHostPaths.ComputeBuild(AppVersion, GhosttyBuildId);
@@ -44,6 +47,7 @@ public sealed class PtyHostService(ILogger<PtyHostService> logger) : IDisposable
         {
             if (_client is { } current && !current.Completion.IsCompleted)
             {
+                await PushDefaultShellAsync(current, cancellationToken).ConfigureAwait(false);
                 return current;
             }
             var sw = Stopwatch.StartNew();
@@ -57,7 +61,9 @@ public sealed class PtyHostService(ILogger<PtyHostService> logger) : IDisposable
             logger.LogInformation("pty host {Scope} connection established in {Ms} ms (host {Version})", client.Scope, sw.ElapsedMilliseconds, client.Host.HostVersion);
             if (client.Scope == "full")
             {
-                await client.ConfigureAsync(Settings(), cancellationToken).ConfigureAwait(false);
+                var shell = DefaultShell;
+                await client.ConfigureAsync(Settings(shell), cancellationToken).ConfigureAwait(false);
+                _pushedShell = shell;
             }
             _client = client;
             return client;
@@ -68,15 +74,37 @@ public sealed class PtyHostService(ILogger<PtyHostService> logger) : IDisposable
         }
     }
 
-    /// <summary>host/configure 的设置（TODO：从 settings.json 的 terminal 节读取，M4）。</summary>
-    private static HostSettingsDto Settings()
+    /// <summary>settings.json 的 terminal.defaultProfile（null 表示 auto）。</summary>
+    private string? DefaultShell => settings?.Current.Terminal?.DefaultProfile is { } profile && !string.IsNullOrWhiteSpace(profile) ? profile.Trim() : null;
+
+    /// <summary>默认 shell 改了：重新下发 host/configure（整份替换），只影响之后创建的会话。失败只记日志，沿用 host 现有的设置。</summary>
+    private async Task PushDefaultShellAsync(PtyHostClient client, CancellationToken cancellationToken)
+    {
+        var shell = DefaultShell;
+        if (client.Scope != "full" || shell == _pushedShell)
+        {
+            return;
+        }
+        try
+        {
+            await client.ConfigureAsync(Settings(shell), cancellationToken).ConfigureAwait(false);
+            _pushedShell = shell;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "pty host did not accept the new default shell");
+        }
+    }
+
+    /// <summary>host/configure 的设置（TODO：其余字段从 settings.json 的 terminal 节读取，M4）。</summary>
+    private static HostSettingsDto Settings(string? defaultShell)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (System.Collections.DictionaryEntry e in Environment.GetEnvironmentVariables())
         {
             env[(string)e.Key] = (string?)e.Value ?? string.Empty;  // 按键赋值：Windows 的环境变量名可能只在大小写上不同
         }
-        return new HostSettingsDto { BaseEnvironment = env };
+        return new HostSettingsDto { BaseEnvironment = env, DefaultShell = defaultShell };
     }
 
     /// <summary>

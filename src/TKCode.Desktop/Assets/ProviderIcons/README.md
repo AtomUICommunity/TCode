@@ -15,5 +15,11 @@
 - `<name>-color.svg` — brand-color variant (some use linear/radial gradients), viewBox `0 0 24 24`.
   Missing for brands that are monochrome by design (anthropic, openai, cursor, grok, xai, ollama, ...).
 
+`png/` holds brand icons that LobeHub does not cover and that the vendor only publishes as bitmaps
+(rendered by `ProviderLogo` through `ProviderRasterIcons`, not by `gen_provider_icons.py`):
+
+- `nextcowork.png` — https://nextco.work/icon.png (1024×1024), cropped to the rounded-square bounds and
+  resized to 128×128 (`sips`). Brand artwork of NextCoWork, used only to identify the provider.
+
 Upstream also ships `-text`, `-text-cn`, `-brand`, `-brand-color` variants (not copied).
 Model-name -> icon keyword rules: upstream `src/features/modelConfig.ts`.

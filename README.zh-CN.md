@@ -8,7 +8,7 @@
 
 简体中文 · [English](README.md)
 
-![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+![.NET](https://img.shields.io/badge/.NET-11_RC2-512BD4?logo=dotnet&logoColor=white)
 ![Avalonia](https://img.shields.io/badge/Avalonia-12.1-8B44AC)
 ![NativeAOT](https://img.shields.io/badge/NativeAOT-ready-success)
 ![Status](https://img.shields.io/badge/status-early%20development-orange)
@@ -86,7 +86,8 @@ TKCode.Desktop ──(JSON-RPC 2.0，经 stdio)──▶ TKCode.AgentHost
 
 ### 环境要求
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)（版本在 `global.json` 中锁定，滚动策略为 `latestFeature`）
+- [.NET 11 RC2 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)（`11.0.100-rc.2.26504.105` 或同一主次版本的更新 SDK；`global.json` 使用 `latestFeature` 并允许预发布版本）。所有项目统一启用 Runtime Async，包括 NativeAOT 发布。
+- [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)：AtomUI 6.2.6 的独立构建工具需要它，已安装 .NET 10 SDK 时也已具备。发布后的 NativeAOT 应用自带运行时。
 - [Rust 工具链](https://rustup.rs/)：用于构建 StreamMark 的 LaTeX 原生库，只在打包时需要一次。
 - **StreamMark** 以 git 子模块的形式放在 `external/StreamMark`。`StreamMark.*` 包从本地源读取（`nuget.config` 中指定的 `packages/streammark`），需要先打包：
 
@@ -95,7 +96,7 @@ TKCode.Desktop ──(JSON-RPC 2.0，经 stdio)──▶ TKCode.AgentHost
   tools/streammark/pack.sh
   ```
 
-- AtomUI（`AtomUI.Desktop.Controls`）直接从 nuget.org 引用，无需源码。
+- AtomUI（`AtomUI.Desktop.Controls` 6.2.6）直接从 nuget.org 引用；Avalonia 锁定在 12.1.4（AtomUI 的最低版本）。无需源码。
 
 ### 构建与运行
 
