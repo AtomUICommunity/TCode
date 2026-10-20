@@ -238,7 +238,8 @@ internal static class SmokeMode
             store.Set("smoke", draft);
             store.FlushAsync().GetAwaiter().GetResult();
             var restarted = new DraftStore(dir);
-            var loaded = restarted.LoadAsync().GetAwaiter().GetResult();
+            // 主线程带着 UI 同步上下文：直接 GetResult() 会让 LoadAsync 的延续投回这个被阻塞的线程而死锁，所以放到线程池上跑
+            var loaded = Task.Run(() => restarted.LoadAsync()).GetAwaiter().GetResult();
             var restored = restarted.Get("smoke");
             check("drafts.roundtrip", loaded == 1 && restored is { McpPrompt: { Name: "review" } } &&
                 restored.Segments.SequenceEqual(draft.Segments) && restored.McpPrompt.Arguments["file"] == "a.cs", File.Exists(Path.Combine(dir, "smoke.json")) ? null : "no file");
